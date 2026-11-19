@@ -18,7 +18,8 @@ export function groupColor(i: number): string {
   return COLORS[i % COLORS.length];
 }
 
-export function avatar(name: string): string {
+export function avatar(name: string, photo?: string | null): string {
+  if (photo) return `<img class="avatar photo" src="${esc(photo)}" alt="" loading="lazy" decoding="async">`;
   const first = [...name.trim()][0] ?? '?';
   return `<span class="avatar" style="background:${colorFor(name)}" aria-hidden="true">${esc(first)}</span>`;
 }

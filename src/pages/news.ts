@@ -93,7 +93,7 @@ function postPage(id: string): string {
 }
 
 function editorPage(id?: string): string {
-  if (!canWriteNews()) return empty('shield', t('news.onlyWriters'));
+  if (!canWriteNews()) return empty('shield', t('news.onlyAdmin'));
   if (!posts) { load(); return loading(); }
   const p = id ? posts.find((x) => x.id === id) : undefined;
   if (id && (!p || !canEdit(p))) return empty('news', t('news.notFound'));

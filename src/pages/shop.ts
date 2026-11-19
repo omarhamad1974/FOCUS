@@ -33,7 +33,9 @@ export function load(force = false): void {
     .finally(() => { busy = false; render(); });
 }
 
-export const featured = (count: number): Product[] | null => products && products.filter((p) => p.active && p.stock > 0).slice(0, count);
+/** For the home page: featured products first, then the newest. */
+export const featured = (count: number): Product[] | null => products && products.filter((p) => p.active && p.approved && p.stock > 0)
+  .sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, count);
 
 const catLabel = (c: ProductCategory) => t(`shop.cat.${c}` as MessageKey);
 const statusLabel = (s: OrderStatus) => t(`shop.status.${s}` as MessageKey);
@@ -41,13 +43,14 @@ const STATUS_BADGE: Record<OrderStatus, string> = { pending: 'gold', confirmed: 
 
 export function productCard(p: Product): string {
   const out = p.stock <= 0;
-  return `<a class="card product rise ${out ? 'out' : ''}" href="#/shop/p/${p.id}">
+  return `<a class="card product rise ${out ? 'out' : ''} ${p.featured ? 'featured' : ''}" href="#/shop/p/${p.id}">
+    ${p.featured ? `<span class="ribbon">${icon('star', 12)} ${t('shop.featured')}</span>` : ''}
     ${cover(p.image_url, p.id, CAT_ICON[p.category], esc(p.name))}
     <div class="product-body">
       <span class="muted small">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
       <h3 dir="auto" class="clamp1">${esc(p.name)}</h3>
       <div class="row between"><b class="price">${money(p.price)}</b>
-        ${out ? `<span class="badge red">${t('shop.soldOut')}</span>` : p.active ? '' : `<span class="badge">${t('shop.hidden')}</span>`}</div>
+        ${out ? `<span class="badge red">${t('shop.soldOut')}</span>` : !p.approved ? `<span class="badge gold">${t('adm.waiting')}</span>` : p.active ? '' : `<span class="badge">${t('shop.hidden')}</span>`}</div>
     </div>
   </a>`;
 }
@@ -62,7 +65,8 @@ function banner(): string {
 function listPage(): string {
   if (!products) { load(); return banner() + skeleton(6); }
   const q = nameKey(query);
-  const shown = products.filter((p) => p.active && (filter === 'all' || p.category === filter) && (!q || nameKey(p.name).includes(q)));
+  const shown = products.filter((p) => p.active && p.approved && (filter === 'all' || p.category === filter) && (!q || nameKey(p.name).includes(q)))
+    .sort((a, b) => Number(b.featured) - Number(a.featured));
   return `${banner()}
   <div class="searchbar">${icon('search', 18)}<input class="input" id="shopQ" data-act="shop-q" placeholder="${esc(t('shop.search'))}" value="${esc(query)}" dir="auto"></div>
   <div class="chips-row">${(['all', ...content.PRODUCT_CATEGORIES] as const).map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="shop-filter" data-v="${c}">
@@ -82,6 +86,7 @@ function productPage(id: string): string {
   const order = !session.profile ? needLogin('shop.loginToOrder')
     : own ? `<p class="muted">${t('shop.ownProduct')}</p>`
     : max === 0 ? `<div class="err">${t('shop.soldOut')}</div>`
+    : !p.approved ? ''
     : `<form data-form="shop-order" data-id="${p.id}" novalidate>
       <div class="row between"><span class="lbl">${t('shop.qty')}</span>
         <div class="stepper"><button type="button" data-act="shop-qty" data-d="-1" aria-label="-">−</button><b>${n(qty)}</b><button type="button" data-act="shop-qty" data-d="1" data-max="${max}" aria-label="+">+</button></div></div>
@@ -99,6 +104,7 @@ function productPage(id: string): string {
       <h1 dir="auto" style="margin-block:8px">${esc(p.name)}</h1>
       <div class="price big">${money(p.price)}</div>
       <p class="muted small">${p.stock > 0 ? t('shop.inStock', { n: p.stock }) : t('shop.soldOut')}</p>
+      ${p.approved ? '' : `<div class="hint">${t('shop.waitingApproval')}</div>`}
       ${p.description ? `<div class="prose"><p dir="auto">${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
       ${seller ? `<div class="seller">${avatar(seller.full_name)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}</div></div>` : ''}
       ${order}
@@ -164,6 +170,7 @@ function editorPage(id?: string): string {
   return `<a class="backlink" href="${p ? `#/shop/p/${p.id}` : '#/shop/manage'}">${icon('back', 18)} ${t('common.cancel')}</a>
   <form class="card" data-form="shop-save" data-id="${p?.id ?? ''}" novalidate>
     <h2>${icon(p ? 'edit' : 'plus', 22)} ${t(p ? 'shop.editProduct' : 'shop.add')}</h2>
+    ${hint('shop.approvalHint')}
     <label class="field"><span>${t('shop.fName')}</span><input class="input" id="pdName" value="${esc(p?.name ?? '')}" dir="auto" maxlength="120"></label>
     <div class="row">
       <label class="field" style="flex:2"><span>${t('shop.fCategory')}</span><select class="input" id="pdCat">${content.PRODUCT_CATEGORIES.map((c) => `<option value="${c}" ${c === cat ? 'selected' : ''}>${catLabel(c)}</option>`).join('')}</select></label>
@@ -281,7 +288,7 @@ export async function onSubmit(kind: string, form: HTMLFormElement): Promise<boo
     products = [{ ...p, price: Number(p.price) }, ...(products ?? []).filter((x) => x.id !== p.id)];
     await content.people([p.seller_id]);
     imageDraft = undefined;
-    toast(`✅ ${t('shop.saved')}`);
+    toast(`✅ ${t(p.approved ? 'shop.saved' : 'shop.savedPending')}`);
     location.hash = `#/shop/p/${p.id}`;
   } catch (e) { toast(authErr(e)); }
   return true;

@@ -14,6 +14,7 @@ export interface PublicProfile {
   bio: string | null;
   is_seller: boolean;
   is_trainer: boolean;
+  avatar_url: string | null;
 }
 
 const peopleCache = new Map<string, PublicProfile>();
@@ -31,6 +32,15 @@ export async function people(ids: string[]): Promise<Map<string, PublicProfile>>
 export const personName = (id: string) => peopleCache.get(id)?.full_name ?? '';
 export const person = (id: string) => peopleCache.get(id);
 export const forgetPeople = () => peopleCache.clear();
+
+export const photoOf = (id: string | undefined) => (id ? peopleCache.get(id)?.avatar_url ?? null : null);
+
+/** Everyone with an account whose name matches (for picking assistants). */
+export async function searchPeople(q: string): Promise<PublicProfile[]> {
+  const rows = check(await db().from('public_profiles').select('*').ilike('full_name', `%${q.replace(/[%_]/g, '')}%`).limit(8)) as PublicProfile[];
+  for (const r of rows) peopleCache.set(r.id, r);
+  return rows;
+}
 
 export async function trainers(): Promise<PublicProfile[]> {
   const rows = check(await db().from('public_profiles').select('*').eq('is_trainer', true).order('full_name')) as PublicProfile[];
@@ -119,6 +129,8 @@ export interface Product {
   stock: number;
   image_url: string | null;
   active: boolean;
+  approved: boolean;
+  featured: boolean;
   created_at: string;
 }
 
@@ -147,6 +159,10 @@ export async function saveProduct(p: Partial<Product> & { name: string }): Promi
   const { id, seller_id: _s, created_at: _c, ...fields } = p;
   const q = id ? db().from('products').update(fields).eq('id', id) : db().from('products').insert(fields);
   return check(await q.select('*').single()) as Product;
+}
+
+export async function setProductFlags(id: string, f: { approved?: boolean; featured?: boolean }): Promise<void> {
+  check(await db().from('products').update(f).eq('id', id));
 }
 
 export async function deleteProduct(id: string): Promise<void> {
@@ -280,10 +296,40 @@ export async function slotsById(ids: string[]): Promise<Slot[]> {
   return rows.map((r) => ({ ...r, price: Number(r.price) }));
 }
 
+/* -------------------------------------------------------- assistants */
+
+export async function assistants(tournamentId: string): Promise<string[]> {
+  const rows = check(await db().from('tournament_assistants').select('user_id').eq('tournament_id', tournamentId)) as { user_id: string }[];
+  return rows.map((r) => r.user_id);
+}
+
+export async function myAssignments(): Promise<string[]> {
+  const s = await getSession();
+  if (!s) return [];
+  const rows = check(await db().from('tournament_assistants').select('tournament_id').eq('user_id', s.user.id)) as { tournament_id: string }[];
+  return rows.map((r) => r.tournament_id);
+}
+
+export async function addAssistant(tournamentId: string, userId: string): Promise<void> {
+  check(await db().from('tournament_assistants').insert({ tournament_id: tournamentId, user_id: userId }));
+}
+
+export async function removeAssistant(tournamentId: string, userId: string): Promise<void> {
+  check(await db().from('tournament_assistants').delete().eq('tournament_id', tournamentId).eq('user_id', userId));
+}
+
+/* ------------------------------------------------------------- admin */
+
+export type AdminCounts = Record<'users' | 'organizers' | 'sellers' | 'trainers' | 'tournaments' | 'running' | 'posts' | 'products' | 'pendingProducts' | 'pendingRoles' | 'orders' | 'bookings', number>;
+
+export async function adminCounts(): Promise<AdminCounts | null> {
+  return check(await db().rpc('admin_counts')) as AdminCounts | null;
+}
+
 /* ------------------------------------------------------------ images */
 
 /** Shrink a photo in the browser and upload it to the public media bucket. Returns its URL. */
-export async function uploadImage(file: File, maxSide = 1280): Promise<string> {
+export async function uploadImage(file: File | Blob, maxSide = 1280): Promise<string> {
   const s = await getSession();
   if (!s) throw new Error('not signed in');
   const blob = await shrink(file, maxSide);
@@ -293,7 +339,25 @@ export async function uploadImage(file: File, maxSide = 1280): Promise<string> {
   return db().storage.from('media').getPublicUrl(path).data.publicUrl;
 }
 
-async function shrink(file: File, maxSide: number): Promise<Blob> {
+/** A small square JPEG as a data URL (kept in the browser until the account can upload it). */
+export async function squareDataUrl(file: File, side = 360): Promise<string> {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(bmp.width, bmp.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = side;
+  canvas.getContext('2d')!.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, side, side);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+export function dataUrlToBlob(url: string): Blob {
+  const [head, b64] = url.split(',');
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: head.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg' });
+}
+
+async function shrink(file: File | Blob, maxSide: number): Promise<Blob> {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
   const canvas = document.createElement('canvas');

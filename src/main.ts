@@ -13,13 +13,15 @@ import { avatar, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
 import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
-import { canOrganize, isAdmin, isSeller, isTrainer, session, setRender } from './app/ctx';
+import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
+import { accountOf, homeTournaments, topTwo } from './domain/tournament';
+import * as admin from './pages/admin';
 import * as content from './data/content';
 import * as news from './pages/news';
 import * as shop from './pages/shop';
 import * as training from './pages/training';
 import { icon } from './ui/icons';
-import { empty, heroArt } from './ui/art';
+import { cover, empty, heroArt } from './ui/art';
 
 /* ------------------------------------------------------------------ state */
 
@@ -54,13 +56,14 @@ function persist(): void {
   }
   for (const tm of data.tournaments) {
     const mine = isAdmin() || !tm.organizerId || tm.organizerId === session.profile?.id;
-    if (!mine) continue;
+    const helper = !mine && assisting.has(tm.id);
+    if (!mine && !helper) continue;
     const { organizerId: _o, ...rest } = tm;
     const json = JSON.stringify(rest);
     if (synced.get(tm.id) === json) continue;
     synced.set(tm.id, json);
     if (!tm.organizerId && session.profile) tm.organizerId = session.profile.id;
-    remote.saveTournament(tm).catch(() => {
+    (helper ? remote.assistantSaveTournament(tm) : remote.saveTournament(tm)).catch(() => {
       synced.delete(tm.id);
       toast(t('sync.failed'));
     });
@@ -79,11 +82,31 @@ async function refreshFromServer(): Promise<void> {
     }
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
-    news.reset(); shop.reset(); training.reset();
+    news.reset(); shop.reset(); training.reset(); admin.reset();
+    assisting.clear();
+    if (session.profile) {
+      for (const id of await content.myAssignments().catch(() => [] as string[])) assisting.add(id);
+      await uploadPendingPhoto();
+    }
   } catch {
     toast(t('auth.err.network'));
   }
   session.loading = false;
+}
+
+const PHOTO_KEY = 'pingo.pendingPhoto';
+
+/** A photo chosen at sign-up is kept in the browser until the account can upload it. */
+async function uploadPendingPhoto(): Promise<void> {
+  let data: string | null = null;
+  try { data = localStorage.getItem(PHOTO_KEY); } catch { /* ignore */ }
+  if (!data || !session.profile || session.profile.avatar_url) return;
+  try {
+    const url = await content.uploadImage(content.dataUrlToBlob(data), 480);
+    await remote.updateProfile(session.profile.id, { avatar_url: url });
+    session.profile.avatar_url = url;
+    localStorage.removeItem(PHOTO_KEY);
+  } catch { /* try again next time */ }
 }
 
 let myRegs: remote.Registration[] = [];
@@ -102,6 +125,24 @@ const app = document.getElementById('app')!;
 const n = (x: number) => numberFmt.format(x);
 const hint = (key: MessageKey) => `<p class="hint">${esc(t(key))}</p>`;
 const bo = (b: BestOf) => t('format.bestOf', { n: b });
+
+/** Player avatar: their profile photo when the account has one. */
+function pAvatar(tm: Tournament, pid: string | null): string {
+  const pl = tm.players.find((x) => x.id === pid);
+  return avatar(playerName(tm, pid), pl ? content.photoOf(accountOf(pl)) : null);
+}
+
+/** Load photos for a tournament's players once. */
+const photosLoaded = new Set<string>();
+function loadPhotos(tm: Tournament): void {
+  if (!online() || photosLoaded.has(tm.id)) return;
+  photosLoaded.add(tm.id);
+  const ids = tm.players.map(accountOf).filter((x): x is string => !!x);
+  if (ids.length) content.people(ids).then(() => route()).catch(() => undefined);
+}
+
+/** May this user enter results in this tournament (organizer view, or assistant)? */
+const canScore = (tm: Tournament) => isOrg() || isAssistantFor(tm.id);
 
 function stageIndex(tm: Tournament): number {
   if (tm.stage === 'setup') return 0;
@@ -187,10 +228,16 @@ function shell(body: string): void {
       <button data-act="view" data-v="organizer" aria-pressed="${v === 'organizer'}">🛠️ <span class="hide-xs">${t('view.organizer')}</span></button>
     </div>` : ''}
     ${online() ? (session.profile
-      ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatar(session.profile.full_name)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
+      ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatar(session.profile.full_name, session.profile.avatar_url)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
       : `<a class="btn gold small" href="#/login">${t('auth.login')}</a>`) : ''}
+    ${isAdmin() ? `<a class="helpbtn adminbtn" href="#/admin" title="${esc(t('adm.title'))}" aria-label="${esc(t('adm.title'))}">${icon('shield', 18)}</a>` : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
+  ${rendering.preview !== 'off' ? `<div class="preview-bar" role="status">${icon('eye', 18)}
+    <span>${t('sim.viewingAs')} <b>${t(`sim.role.${rendering.preview}` as MessageKey)}</b></span>
+    <span class="pv-roles">${PREVIEWS.map((r) => `<button data-act="pv-set" data-v="${r}" ${r === rendering.preview ? 'aria-pressed="true"' : ''}>${t(`sim.role.${r}` as MessageKey)}</button>`).join('')}</span>
+    <a class="btn small gold" href="#/admin/sim">${t('sim.steps')}</a>
+    <button class="btn small soft" data-act="pv-set" data-v="off">${icon('x', 14)} ${t('sim.exit')}</button></div>` : ''}
   <main class="page">${body}</main>
   ${nav.length > 2 ? `<nav class="bottomnav" aria-label="${esc(t('nav.label'))}">${nav.map(([k, href, ic, label]) =>
     `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}`;
@@ -213,49 +260,111 @@ function tournamentTile(tm: Tournament): string {
   </a>`;
 }
 
-/** Landing page: what Pingo offers, with live previews of each section. */
+/** Wide news carousel: newest articles with their pictures, managed by the admin. */
+function newsCarousel(posts: content.Post[]): string {
+  if (!posts.length) {
+    return `<section class="hero landing rise"><div class="hero-text">
+      <span class="kicker">${icon('spark', 16)} ${t('home.kicker')}</span><h1>${t('home.heroTitle')}</h1><p>${t('home.heroText')}</p>
+      <div class="row">${session.profile ? `<a class="btn gold" href="#/training">${icon('calendar')} ${t('home.ctaBook')}</a>`
+        : `<a class="btn gold" href="#/login">${icon('user')} ${t('auth.signup')}</a>`}</div></div>${heroArt()}</section>`;
+  }
+  return `<section class="carousel rise" data-carousel aria-roledescription="carousel" aria-label="${esc(t('nav.news'))}">
+    <div class="car-track">${posts.map((p, i) => `<a class="car-slide" href="#/news/${p.id}" aria-label="${esc(p.title)}" data-i="${i}">
+      ${cover(p.cover_url, p.id, news.CAT_ICON[p.category], esc(p.title))}
+      <div class="car-text"><span class="badge gold">${icon(news.CAT_ICON[p.category], 14)} ${t(`news.cat.${p.category}` as MessageKey)}</span>
+        <h2 dir="auto">${esc(p.title)}</h2>${p.summary ? `<p dir="auto">${esc(p.summary)}</p>` : ''}
+        <span class="car-more">${t('home.readMore')} ${icon('chevron', 16)}</span></div></a>`).join('')}</div>
+    ${posts.length > 1 ? `<div class="car-dots">${posts.map((_, i) => `<button data-act="car-go" data-i="${i}" aria-label="${i + 1}" ${i ? '' : 'aria-current="true"'}></button>`).join('')}</div>
+      <button class="car-arrow prev" data-act="car-step" data-d="-1" aria-label="${esc(t('home.prev'))}">${icon('back', 20)}</button>
+      <button class="car-arrow next" data-act="car-step" data-d="1" aria-label="${esc(t('home.next'))}">${icon('chevron', 20)}</button>` : ''}
+  </section>`;
+}
+
+/** Tournament slider: open and running tournaments, then the top two of those that ended in the last 30 days. */
+function tournamentSlider(): string {
+  const { live, recent } = homeTournaments(data.tournaments);
+  if (!live.length && !recent.length) return '';
+  recent.forEach(loadPhotos);
+  const liveCard = (tm: Tournament) => {
+    const open = registrationOf(tm).open;
+    const p = progress(tm);
+    return `<a class="tslide ${open ? 'open' : ''}" href="#/t/${tm.id}">
+      <span class="badge ${open ? 'gold' : 'green'}">${open ? `📝 ${t('reg.badge')}` : `${icon('bolt', 12)} ${t('home.liveNow')}`}</span>
+      <h3 dir="auto">${esc(tm.name)}</h3>
+      <span class="muted small">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')}</span>
+      ${open ? `<span class="btn gold small">${t('reg.join')}</span>` : xp(p.done, p.total)}</a>`;
+  };
+  const doneCard = (tm: Tournament) => {
+    const top = topTwo(tm)!;
+    const who = (pid: string, medal: string, cls: string) => `<div class="winner ${cls}">${pAvatar(tm, pid)}<span class="medal-dot">${medal}</span><b dir="auto">${esc(playerName(tm, pid))}</b></div>`;
+    return `<a class="tslide done" href="#/t/${tm.id}/knockout">
+      <span class="badge">${icon('trophy', 12)} ${t('home.endedOn', { d: tm.date ? dateFmt.format(new Date(tm.date)) : '' })}</span>
+      <h3 dir="auto">${esc(tm.name)}</h3>
+      <div class="winners">${who(top.first, '🥇', 'w1')}${who(top.second, '🥈', 'w2')}</div></a>`;
+  };
+  return `<div class="sec-head"><h2>${icon('trophy', 22)} ${t('nav.tournaments')}</h2><a class="more" href="#/tournaments">${t('home.seeAll')} ${icon('chevron', 16)}</a></div>
+    <div class="tslider">${live.map(liveCard).join('')}${recent.map(doneCard).join('')}</div>`;
+}
+
+/** Home: news carousel first, then tournaments, then the other sections. */
 function homePage(): string {
   if (!online()) return tournamentsPage();
   if (session.loading) return `<div class="card center muted"><span class="spin"></span> ${t('sync.loading')}</div>`;
-  const posts = news.latest(3);
+  const posts = news.latest(5);
   const prods = shop.featured(4);
   const free = training.openSlots(6);
   if (!posts) news.load();
   if (!prods) shop.load();
   if (!free) training.load();
-  const live = data.tournaments.filter((x) => registrationOf(x).open || x.stage !== 'setup').slice(0, 3);
   const feature = (href: string, ic: string, title: MessageKey, text: MessageKey, cls: string) =>
     `<a class="feature ${cls} rise" href="${href}"><span class="f-ic">${icon(ic, 30)}</span><b>${t(title)}</b><small>${t(text)}</small></a>`;
   const more = (href: string) => `<a class="more" href="${href}">${t('home.seeAll')} ${icon('chevron', 16)}</a>`;
   return `
-  <section class="hero landing">
-    <div class="hero-text">
-      <span class="kicker">${icon('spark', 16)} ${t('home.kicker')}</span>
-      <h1>${t('home.heroTitle')}</h1>
-      <p>${t('home.heroText')}</p>
-      <div class="row">${session.profile
-        ? `<a class="btn gold" href="#/training">${icon('calendar')} ${t('home.ctaBook')}</a><a class="btn soft" href="#/tournaments">${icon('trophy')} ${t('nav.tournaments')}</a>`
-        : `<a class="btn gold" href="#/login">${icon('user')} ${t('auth.signup')}</a><a class="btn soft" href="#/tournaments">${icon('trophy')} ${t('nav.tournaments')}</a>`}</div>
-    </div>
-    ${heroArt()}
-  </section>
+  ${posts === null ? '<div class="sk-row car-sk"></div>' : newsCarousel(posts)}
+  ${tournamentSlider()}
   <div class="features">
     ${feature('#/tournaments', 'trophy', 'nav.tournaments', 'home.fTournaments', 'f1')}
     ${feature('#/training', 'coach', 'nav.training', 'home.fTraining', 'f2')}
     ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
     ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
   </div>
-  ${live.length ? `<div class="sec-head"><h2>${icon('trophy', 22)} ${t('home.liveTournaments')}</h2>${more('#/tournaments')}</div>
-    <div class="grid">${live.map(tournamentTile).join('')}</div>` : ''}
+  <div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
+  ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}
   <div class="sec-head"><h2>${icon('calendar', 22)} ${t('home.nextSlots')}</h2>${more('#/training')}</div>
   ${free === null ? '<div class="sk-row"></div>' : free.length
     ? `<div class="slots strip">${free.map((x) => `<a class="slot" href="#/training/t/${x.trainer_id}"><span class="slot-time">${icon('clock', 16)} ${dateTimeFmt.format(new Date(x.starts_at))}</span>
         <span class="small" dir="auto">${icon('coach', 14)} ${esc(training.trainerName(x.trainer_id))}</span></a>`).join('')}</div>`
-    : `<p class="muted">${t('tr.noSlots')}</p>`}
-  <div class="sec-head"><h2>${icon('shop', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
-  ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}
-  <div class="sec-head"><h2>${icon('news', 22)} ${t('home.latestNews')}</h2>${more('#/news')}</div>
-  ${posts === null ? '<div class="sk-row"></div>' : posts.length ? `<div class="grid">${posts.map((x) => news.postCard(x)).join('')}</div>` : `<p class="muted">${t('news.empty')}</p>`}`;
+    : `<p class="muted">${t('tr.noSlots')}</p>`}`;
+}
+
+/* Carousel: auto-advance every 6 seconds unless the visitor is touching it. */
+let carTimer = 0;
+function carGo(i: number): void {
+  const c = document.querySelector<HTMLElement>('[data-carousel]');
+  const track = c?.querySelector<HTMLElement>('.car-track');
+  if (!c || !track) return;
+  const slides = track.children.length;
+  const k = ((i % slides) + slides) % slides;
+  const slide = track.children[k] as HTMLElement;
+  track.scrollTo({ left: slide.offsetLeft - track.offsetLeft, behavior: 'smooth' });
+  c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
+  c.dataset.at = String(k);
+}
+function startCarousel(): void {
+  clearInterval(carTimer);
+  const c = document.querySelector<HTMLElement>('[data-carousel]');
+  if (!c || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const track = c.querySelector<HTMLElement>('.car-track')!;
+  track.addEventListener('scroll', () => {
+    const w = track.clientWidth || 1;
+    const k = Math.round(Math.abs(track.scrollLeft) / w);
+    c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
+    c.dataset.at = String(k);
+  }, { passive: true });
+  let paused = false;
+  c.addEventListener('pointerenter', () => (paused = true));
+  c.addEventListener('pointerleave', () => (paused = false));
+  carTimer = window.setInterval(() => { if (!paused && document.contains(c)) carGo(Number(c.dataset.at ?? 0) + 1); }, 6000);
 }
 
 function tournamentsPage(): string {
@@ -442,19 +551,23 @@ function validateDraft(step: number): string {
 
 /* ------------------------------------------------------------- tournament */
 
-type Tab = 'register' | 'groups' | 'matches' | 'knockout' | 'settings';
+type Tab = 'register' | 'groups' | 'matches' | 'knockout' | 'media' | 'settings';
 
 function tournamentPage(tm: Tournament, tab: Tab): string {
   const p = progress(tm);
   const tabs: [Tab, MessageKey][] = [['groups', 't.tab.groups'], ['matches', 't.tab.matches'], ['knockout', 't.tab.knockout']];
   if (online() && tm.stage === 'setup') tabs.unshift(['register', 'reg.tab']);
+  if (online() && ((tm.media?.length ?? 0) > 0 || isOrg())) tabs.push(['media', 'media.tab']);
   if (isOrg()) tabs.push(['settings', 't.tab.settings']);
+  loadPhotos(tm);
   let body = '';
   if (tab === 'register') body = registerView(tm);
   else if (tab === 'groups') body = tm.stage === 'setup' ? setupBoard(tm) : groupsView(tm);
   else if (tab === 'matches') body = matchesView(tm);
   else if (tab === 'knockout') body = knockoutView(tm);
+  else if (tab === 'media') body = mediaView(tm);
   else body = settingsView(tm);
+  if (isAssistantFor(tm.id) && !isOrg()) body = `<div class="hint">${t('assist.youAre')}</div>` + body;
   return `
   <section class="hero">
     <h1>${esc(tm.name)}</h1>
@@ -479,7 +592,7 @@ function setupBoard(tm: Tournament): string {
         <span class="badge" style="margin-inline-start:auto">${n(g.playerIds.length)}</span></h3>
       ${g.playerIds.map((pid) => `
         <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
-          ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${avatar(playerName(tm, pid))}<span dir="auto">${esc(playerName(tm, pid))}</span>
+          ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
           <span class="seed">#${n(seedOf(pid))}</span>
           ${org && online() ? `<button class="btn ghost small" data-act="rm-player" data-pid="${pid}" aria-label="${t('dir.remove')}" title="${t('dir.remove')}" style="min-height:28px;padding:2px 8px">✕</button>` : ''}
         </div>`).join('')}
@@ -507,7 +620,7 @@ function standingsTable(tm: Tournament, gi: number): string {
     const tb = r.tiebreak !== 'none' ? `<span class="badge ${r.tiebreak === 'unresolved' ? 'red' : 'blue'}" style="font-size:10px">${t(`tiebreak.${r.tiebreak}` as MessageKey)}</span>` : '';
     return `<tr class="${cls}">
       <td><span class="rank r${r.rank}">${n(r.rank)}</span></td>
-      <td class="name"><div class="row" style="gap:6px;flex-wrap:nowrap">${avatar(playerName(tm, r.playerId))}<span dir="auto">${esc(playerName(tm, r.playerId))}</span> ${tb}</div>
+      <td class="name"><div class="row" style="gap:6px;flex-wrap:nowrap">${pAvatar(tm, r.playerId)}<span dir="auto">${esc(playerName(tm, r.playerId))}</span> ${tb}</div>
         <div class="winbar" title="${t('stats.winRate')} ${pct}%"><span style="width:${pct}%"></span></div></td>
       <td>${n(r.played)}</td><td>${n(r.wins)}</td><td>${n(r.losses)}</td>
       <td class="hide-sm">${pair(n(r.gamesWon), n(r.gamesLost), ':')}</td>
@@ -541,7 +654,7 @@ function tieResolver(tm: Tournament, gi: number, groups: string[][]): string {
       <h3>⚖️ ${t('tie.title')}</h3>
       ${hint('tie.hint')}
       ${order.map((pid, i) => `<div class="chip ro">
-        <span class="rank">${n(i + 1)}</span>${avatar(playerName(tm, pid))}<span dir="auto">${esc(playerName(tm, pid))}</span>
+        <span class="rank">${n(i + 1)}</span>${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
         <span style="margin-inline-start:auto" class="row">
           <button class="btn soft small" data-act="tie-move" data-key="${key}" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="↑">▲</button>
           <button class="btn soft small" data-act="tie-move" data-key="${key}" data-i="${i}" data-d="1" ${i === order.length - 1 ? 'disabled' : ''} aria-label="↓">▼</button>
@@ -596,7 +709,7 @@ function matchCard(tm: Tournament, m: Match, label = ''): string {
     .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('');
   return `<a class="match" href="#/t/${tm.id}/m/${m.id}">
     <span class="p ${s.winner === 'a' ? 'win' : ''}" dir="auto">${esc(a)}</span>
-    <span class="sc ${done ? '' : 'pending'}">${done ? scoreText(m) : (isOrg() ? t('matches.enter') : t('matches.pending'))}</span>
+    <span class="sc ${done ? '' : 'pending'}">${done ? scoreText(m) : (canScore(tm) ? t('matches.enter') : t('matches.pending'))}</span>
     <span class="p b ${s.winner === 'b' ? 'win' : ''}" dir="auto">${esc(b)}</span>
     <span class="meta">${meta}${done && !m.walkover ? gamesList(m.games) : ''}</span>
   </a>`;
@@ -646,7 +759,7 @@ function bracketView(tm: Tournament, b: Bracket): string {
   const step = (p: 1 | 2 | 3) => {
     const x = who(p);
     const medal = ['🥇', '🥈', '🥉'][p - 1];
-    return `<div class="step p${p}"><span class="medal">${medal}</span><div class="nm" dir="auto">${x ? esc(playerName(tm, x.playerId)) : '…'}</div><div class="block">${n(p)}</div></div>`;
+    return `<div class="step p${p}"><span class="medal">${medal}</span>${x ? `<div class="podium-photo">${pAvatar(tm, x.playerId)}</div>` : ''}<div class="nm" dir="auto">${x ? esc(playerName(tm, x.playerId)) : '…'}</div><div class="block">${n(p)}</div></div>`;
   };
   const podium = places.length ? `<h3 style="margin-block-start:14px">🏆 ${t('ko.podium')}</h3>
     <div class="podium">${step(2)}${step(1)}${step(3)}</div>
@@ -684,6 +797,7 @@ function settingsView(tm: Tournament): string {
     ${locked ? `<p class="muted small">🔒 ${t('settings.formatsLocked')}</p>` : hint('wizard.formatsHint')}
     ${(['group', 'early', 'semi', 'final'] as const).map(row).join('')}
   </div>
+  ${online() ? assistantsCard(tm) : ''}
   <div class="card">
     <h3>📄 ${t('settings.duplicate')}</h3>
     ${hint('settings.duplicateHint')}
@@ -692,6 +806,75 @@ function settingsView(tm: Tournament): string {
   <div class="card">
     <button class="btn red" data-act="delete">🗑️ ${deleteArmed ? t('settings.deleteConfirm') : t('settings.delete')}</button>
   </div>`;
+}
+
+/* ------------------------------------------------- media and assistants */
+
+/** YouTube links play inside the page; other links open in a new tab. */
+function youtubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+function mediaView(tm: Tournament): string {
+  const items = tm.media ?? [];
+  const org = isOrg();
+  const item = (x: NonNullable<Tournament['media']>[number]) => {
+    const yt = x.kind === 'video' ? youtubeId(x.url) : null;
+    const view = x.kind === 'photo'
+      ? `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="ph photo"><img src="${esc(x.url)}" alt="${esc(x.caption)}" loading="lazy"></a>`
+      : yt ? `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${yt}" title="${esc(x.caption || 'video')}" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`
+      : `<a class="ph video-link" href="${esc(x.url)}" target="_blank" rel="noopener">${icon('eye', 40)}<span>${t('media.openVideo')}</span></a>`;
+    return `<figure class="card media-item rise">${view}${x.caption ? `<figcaption dir="auto">${esc(x.caption)}</figcaption>` : ''}
+      ${org ? `<button class="btn ghost small" data-act="media-del" data-id="${x.id}">${icon('trash', 14)} ${t('news.delete')}</button>` : ''}</figure>`;
+  };
+  return `${org ? `<div class="card"><h3>${icon('image', 20)} ${t('media.addTitle')}</h3>${hint('media.addHint')}
+    <label class="field"><span>${t('media.caption')}</span><input class="input" id="mdCap" dir="auto" maxlength="140"></label>
+    <div class="row">
+      <label class="btn soft">${icon('image', 18)} ${t('media.addPhoto')}<input type="file" accept="image/*" class="hidden" data-act="media-photo"></label>
+      <input class="input" id="mdUrl" dir="ltr" placeholder="https://youtube.com/…" style="flex:1;min-width:180px">
+      <button class="btn" data-act="media-video">${icon('plus', 18)} ${t('media.addVideo')}</button>
+    </div></div>` : ''}
+  ${items.length ? `<div class="grid media-grid">${items.map(item).join('')}</div>` : empty('image', t('media.none'))}`;
+}
+
+let helpers: string[] | null = null;
+let helpersFor = '';
+let helperHits: content.PublicProfile[] = [];
+
+function assistantsCard(tm: Tournament): string {
+  if (helpersFor !== tm.id) {
+    helpersFor = tm.id; helpers = null; helperHits = [];
+    content.assistants(tm.id).then(async (h) => { helpers = h; await content.people(h); route(); }).catch(() => { helpers = []; route(); });
+  }
+  return `<div class="card"><h3>${icon('users', 20)} ${t('assist.title')}</h3>${hint('assist.hint')}
+    ${helpers === null ? '<span class="spin"></span>' : helpers.length ? helpers.map((id) => `<div class="chip ro">${avatar(content.personName(id) || '?', content.photoOf(id))}<span dir="auto">${esc(content.personName(id))}</span>
+      <button class="btn ghost small" style="margin-inline-start:auto" data-act="assist-del" data-id="${id}">${icon('x', 14)}</button></div>`).join('') : `<p class="muted small">${t('assist.none')}</p>`}
+    <input class="input" id="assistQ" data-act="assist-q" placeholder="${esc(t('assist.search'))}" dir="auto" autocomplete="off" style="margin-block-start:8px">
+    <div id="assistRes">${assistResults()}</div></div>`;
+}
+
+function assistResults(): string {
+  return helperHits.filter((p) => !helpers?.includes(p.id)).map((p) => `<button class="chip" style="width:100%;cursor:pointer;touch-action:auto" data-act="assist-add" data-id="${p.id}">
+    ${avatar(p.full_name, p.avatar_url)}<span dir="auto">${esc(p.full_name)}</span>${p.club ? `<span class="muted small" dir="auto">· ${esc(p.club)}</span>` : ''}
+    <span class="badge green" style="margin-inline-start:auto">${icon('plus', 12)} ${t('assist.add')}</span></button>`).join('');
+}
+
+async function mediaAction(act: string, el: HTMLElement, tm: Tournament): Promise<void> {
+  if (act === 'media-del') {
+    tm.media = (tm.media ?? []).filter((x) => x.id !== el.dataset.id);
+  } else if (act === 'media-video') {
+    const url = val('mdUrl');
+    if (!/^https?:\/\//.test(url)) { toast(t('media.badLink')); return; }
+    tm.media = [...(tm.media ?? []), { id: uid(), kind: 'video', url, caption: val('mdCap') }];
+  } else if (act === 'assist-add' || act === 'assist-del') {
+    try {
+      if (act === 'assist-add') { await content.addAssistant(tm.id, el.dataset.id!); helpers = [...(helpers ?? []), el.dataset.id!]; toast(t('assist.added')); }
+      else { await content.removeAssistant(tm.id, el.dataset.id!); helpers = (helpers ?? []).filter((x) => x !== el.dataset.id); }
+    } catch (e) { toast(authErr(e)); }
+    route(); return;
+  }
+  persist(); route();
 }
 
 /* ------------------------------------------------------------ score entry */
@@ -710,7 +893,7 @@ function errorText(c: MatchCheck): string {
 }
 
 function scorePage(tm: Tournament, m: Match): string {
-  const org = isOrg();
+  const org = canScore(tm);
   const a = playerName(tm, m.aId), b = playerName(tm, m.bId);
   const bracket = m.bracketId ? tm.brackets.find((x) => x.id === m.bracketId) : undefined;
   const locked = (m.stage === 'group' && tm.stage !== 'groups') || (bracket && !canEditKo(m, bracket, tm.matches));
@@ -790,6 +973,7 @@ function scorePage(tm: Tournament, m: Match): string {
 /* ---------------------------------------------------------- online pages */
 
 let authTab: 'login' | 'signup' = 'login';
+let signupPhoto: string | null = null;
 let authMsg = '';
 let busy = false;
 /** Typed values, kept across re-renders of the sign-in form. */
@@ -828,6 +1012,9 @@ function loginPage(): string {
         ${field('aPhone', 'auth.phone', 'tel', 'autocomplete="tel" dir="ltr"')}
         <div class="row"><div style="flex:1">${field('aYear', 'auth.birthYear', 'text', 'inputmode="numeric" maxlength="4" dir="ltr"')}</div>
         <div style="flex:2">${field('aClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+        <span class="lbl">${t('me.photo')}</span>
+        <div class="row">${avatar(authVals.aName || '?', signupPhoto)}<label class="btn soft small">${icon('image', 16)} ${t(signupPhoto ? 'media.change' : 'media.choose')}<input type="file" accept="image/*" class="hidden" data-act="signup-photo"></label>
+          <span class="muted small">${t('me.photoHint')}</span></div>
         <span class="lbl">${t('roles.wantAlso')}</span>
         <div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="aWant-${r}" ${authVals[`aWant-${r}`] === '1' ? 'checked' : ''}> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>
         <p class="muted small">${t('roles.wantHint')}</p>` : ''}
@@ -899,7 +1086,7 @@ function mePage(): string {
   };
   const roleBadges = [isAdmin() ? `<span class="badge red">${icon('shield', 14)} ${t('role.admin')}</span>` : '',
     ...EXTRA.filter(hasRole).map((r) => `<span class="badge blue">${icon(ROLE_ICON[r], 14)} ${t(`roles.${r}` as MessageKey)}</span>`)].join('');
-  return `<section class="banner b-me slim rise"><div class="row">${avatar(p.full_name)}<div><h1 dir="auto">${esc(p.full_name)}</h1>
+  return `<section class="banner b-me slim rise"><div class="row"><label class="me-photo" title="${esc(t('me.photo'))}">${avatar(p.full_name, p.avatar_url)}<span>${icon('image', 14)}</span><input type="file" accept="image/*" class="hidden" data-act="me-photo"></label><div><h1 dir="auto">${esc(p.full_name)}</h1>
     <div class="row" style="gap:6px">${roleBadges || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
   ${training.myBookingsCard()}
   ${shop.myOrdersCard()}
@@ -960,7 +1147,7 @@ function usersPage(): string {
     content.pendingRoleRequests().then((r) => { roleReqs = r; }).catch(() => undefined).finally(route);
   }
   const nameOf = (id: string) => people?.find((p) => p.id === id)?.full_name ?? '…';
-  const requests = isAdmin() && roleReqs?.length ? `<div class="card"><h2>${icon('star', 22)} ${t('roles.requests')}</h2>${hint('roles.requestsHint')}
+  const requests = !location.hash.startsWith('#/admin/users') && isAdmin() && roleReqs?.length ? `<div class="card"><h2>${icon('star', 22)} ${t('roles.requests')}</h2>${hint('roles.requestsHint')}
     ${roleReqs.map((r) => `<div class="chip ro">${avatar(nameOf(r.user_id))}<span><b dir="auto">${esc(nameOf(r.user_id))}</b><br>
       <span class="badge blue">${icon(ROLE_ICON[r.role], 14)} ${t(`roles.${r.role}` as MessageKey)}</span>${r.note ? ` <span class="muted small" dir="auto">${esc(r.note)}</span>` : ''}</span>
       <span class="row" style="margin-inline-start:auto;gap:6px"><button class="btn green small" data-act="role-decide" data-id="${r.id}" data-v="yes">${icon('check', 14)} ${t('roles.approve')}</button>
@@ -1208,7 +1395,7 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
         if (!names.includes(entry.full_name)) draft.players = [...names, entry.full_name].join('\n');
         draft.dirIds[entry.full_name] = entry.id;
       } else if (tm) {
-        try { addPlayerToSetup(tm, entry.full_name, entry.id); persist(); } catch { toast(t('dir.duplicate')); }
+        try { addPlayerToSetup(tm, entry.full_name, entry.id, entry.profile_id ?? undefined); persist(); } catch { toast(t('dir.duplicate')); }
       }
       route();
       document.getElementById('dirQ')?.focus();
@@ -1247,7 +1434,7 @@ async function commitNew(nt: Tournament): Promise<void> {
       for (const p of nt.players) {
         const picked = draft.dirIds[p.name];
         const match = picked ? dir.find((d) => d.id === picked) : exactDirectoryMatch(dir, p.name);
-        if (match) { p.directoryId = match.id; continue; }
+        if (match) { p.directoryId = match.id; if (match.profile_id) p.accountId = match.profile_id; continue; }
         const created = await remote.addPlayer({ full_name: p.name });
         dir.push(created);
         p.directoryId = created.id;
@@ -1273,7 +1460,18 @@ async function commitNew(nt: Tournament): Promise<void> {
 
 /* ------------------------------------------------------------------ router */
 
+/** Draw the page; in the journey simulator, draw it as the chosen kind of user would see it. */
 function route(): void {
+  const real = session.profile;
+  const as: Preview = real?.role === 'admin' ? preview.as : 'off';
+  const onAdmin = location.hash.startsWith('#/admin');
+  rendering.preview = onAdmin ? 'off' : as;
+  if (as !== 'off' && real && !onAdmin) session.profile = previewProfile(real, as);
+  try { draw(); } finally { session.profile = real; rendering.preview = 'off'; }
+  startCarousel();
+}
+
+function draw(): void {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 'new') {
     if (!isOrg()) { location.hash = '#/'; return; }
@@ -1290,7 +1488,7 @@ function route(): void {
     shell(mePage());
   } else if (parts[0] === 'admin' && online()) {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
-    shell(usersPage());
+    shell(isAdmin() ? admin.page(parts) : usersPage());
   } else if (parts[0] === 'players' && online()) {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(playersPage());
@@ -1303,6 +1501,7 @@ function route(): void {
     } else {
       let tab = (parts[2] as Tab) || (tm.stage === 'knockout' ? 'knockout' : online() && tm.stage === 'setup' ? 'register' : 'groups');
       if (tab === 'settings' && !isOrg()) tab = 'groups';
+      if (tab === 'media' && !online()) tab = 'groups';
       if (tab === 'register' && (!online() || tm.stage !== 'setup')) tab = 'groups';
       shell(tournamentPage(tm, tab));
     }
@@ -1330,6 +1529,13 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act.startsWith('role-')) { void roleAction(act, el); return; }
+  if (/^(media|assist)-/.test(act) && tm) { void mediaAction(act, el, tm); return; }
+  if (act === 'car-go' || act === 'car-step') {
+    const c = document.querySelector<HTMLElement>('[data-carousel]');
+    carGo(act === 'car-go' ? Number(el.dataset.i) : Number(c?.dataset.at ?? 0) + Number(el.dataset.d));
+    return;
+  }
+  if (act.startsWith('adm-') || act.startsWith('pv-')) { void admin.onClick(act, el); return; }
   if (online() && ONLINE_ACTS.has(act)) {
     void onlineAction(act, el, tm);
     return;
@@ -1570,9 +1776,23 @@ function syncInputs(): void {
   });
 }
 
+let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
   if (shop.onInput(el as HTMLInputElement)) return;
+  if (el.dataset.act === 'assist-q') {
+    const q = (el as HTMLInputElement).value.trim();
+    clearTimeout(assistTimer);
+    assistTimer = window.setTimeout(() => {
+      if (q.length < 2) { helperHits = []; } 
+      (q.length < 2 ? Promise.resolve([]) : content.searchPeople(q)).then((r) => {
+        helperHits = r;
+        const box = document.getElementById('assistRes');
+        if (box) box.innerHTML = assistResults();
+      }).catch(() => undefined);
+    }, 250);
+    return;
+  }
   if (el.dataset.act === 'dir-q') {
     const res = document.getElementById('dirRes');
     const { tm } = current();
@@ -1664,6 +1884,33 @@ document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
   if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el)) return;
+  if (el.dataset.act === 'media-photo' && el.files?.[0] && tm) {
+    toast(t('media.uploading'));
+    try {
+      const url = await content.uploadImage(el.files[0]);
+      tm.media = [...(tm.media ?? []), { id: uid(), kind: 'photo', url, caption: val('mdCap') }];
+      persist(); toast(t('media.uploaded'));
+    } catch (err) { toast(authErr(err)); }
+    route(); return;
+  }
+  if (el.dataset.act === 'me-photo' && el.files?.[0] && session.profile) {
+    toast(t('media.uploading'));
+    try {
+      const url = await content.uploadImage(el.files[0], 480);
+      await remote.updateProfile(session.profile.id, { avatar_url: url });
+      session.profile.avatar_url = url;
+      toast(t('media.uploaded'));
+    } catch (err) { toast(authErr(err)); }
+    route(); return;
+  }
+  if (el.dataset.act === 'signup-photo' && el.files?.[0]) {
+    try {
+      signupPhoto = await content.squareDataUrl(el.files[0]);
+      try { localStorage.setItem(PHOTO_KEY, signupPhoto); } catch { /* ignore */ }
+    } catch { toast(t('auth.err.upload')); }
+    for (const id of ['aName', 'aEmail', 'aPass', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+    route(); return;
+  }
   if (el.dataset.act === 'role-flag') {
     const id = el.dataset.id!;
     const flag = el.dataset.flag!;
@@ -1797,4 +2044,5 @@ window.addEventListener('hashchange', () => {
   route();
 });
 setRender(route);
+admin.setUsersView(usersPage);
 route();

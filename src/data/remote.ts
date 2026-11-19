@@ -16,6 +16,7 @@ export interface Profile {
   is_seller?: boolean;
   is_trainer?: boolean;
   bio?: string | null;
+  avatar_url?: string | null;
 }
 
 export type RegStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
@@ -103,7 +104,7 @@ export async function myProfile(): Promise<Profile | null> {
   return check(await db().from('profiles').select('*').eq('id', s.user.id).maybeSingle()) as Profile | null;
 }
 
-export async function updateProfile(id: string, p: Partial<Pick<Profile, 'full_name' | 'phone' | 'birth_year' | 'club' | 'bio'>>): Promise<void> {
+export async function updateProfile(id: string, p: Partial<Pick<Profile, 'full_name' | 'phone' | 'birth_year' | 'club' | 'bio' | 'avatar_url'>>): Promise<void> {
   check(await db().from('profiles').update(p).eq('id', id));
 }
 
@@ -140,6 +141,12 @@ export async function saveTournament(t: Tournament): Promise<void> {
     max_players: reg.maxPlayers,
     state,
   }));
+}
+
+/** Assistants save results through a database function that only lets match results change. */
+export async function assistantSaveTournament(t: Tournament): Promise<void> {
+  const { organizerId: _ignored, ...state } = t;
+  check(await db().rpc('assistant_save_state', { t: t.id, new_state: state, new_status: remoteStatus(t) }));
 }
 
 export async function deleteTournament(id: string): Promise<void> {

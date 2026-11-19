@@ -8,6 +8,15 @@ export interface Player {
   profileId?: string;
   /** Row in the shared player directory (online mode). */
   directoryId?: string;
+  /** Account behind this player (for the profile photo), when known. */
+  accountId?: string;
+}
+
+export interface TournamentMedia {
+  id: string;
+  kind: 'photo' | 'video';
+  url: string;
+  caption: string;
 }
 
 export interface RegistrationSettings {
@@ -94,4 +103,6 @@ export interface Tournament {
   matches: Record<string, Match>;
   brackets: Bracket[];
   stage: TournamentStage;
+  /** Photos and video links added by the organizer. */
+  media?: TournamentMedia[];
 }

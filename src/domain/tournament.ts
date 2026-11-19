@@ -198,7 +198,7 @@ export function closeRegistration(t: Tournament, approved: Registrant[]): void {
   t.players = t.players.filter((p) => !p.profileId || keep.has(p.profileId));
   for (const r of approved) {
     if (!t.players.some((p) => p.profileId === r.profileId || (r.directoryId && p.directoryId === r.directoryId))) {
-      t.players.push({ id: uid(), name: r.name, profileId: r.profileId, directoryId: r.directoryId });
+      t.players.push({ id: uid(), name: r.name, profileId: r.profileId, directoryId: r.directoryId, accountId: r.profileId });
     }
   }
   t.registration = { ...registrationOf(t), open: false };
@@ -220,11 +220,11 @@ export function remoteStatus(t: Tournament): 'draft' | 'registration' | 'running
 }
 
 /** Add one player during setup; they go into the smallest group. */
-export function addPlayerToSetup(t: Tournament, name: string, directoryId?: string): string {
+export function addPlayerToSetup(t: Tournament, name: string, directoryId?: string, accountId?: string): string {
   if (t.stage !== 'setup') throw new Error('locked');
   if (directoryId && t.players.some((p) => p.directoryId === directoryId)) throw new Error('duplicate');
   const id = uid();
-  t.players.push({ id, name, directoryId });
+  t.players.push({ id, name, directoryId, ...(accountId ? { accountId } : {}) });
   const smallest = [...t.groups].sort((a, b) => a.playerIds.length - b.playerIds.length)[0];
   smallest.playerIds.push(id);
   return id;
@@ -271,4 +271,39 @@ export function searchDirectory<T extends DirectoryEntry>(dir: T[], query: strin
 export function exactDirectoryMatch<T extends DirectoryEntry>(dir: T[], name: string): T | undefined {
   const k = nameKey(name);
   return dir.find((d) => nameKey(d.full_name) === k);
+}
+
+/** Account behind a player, for photos. */
+export const accountOf = (p: { accountId?: string; profileId?: string }) => p.accountId ?? p.profileId;
+
+/** Champion and runner-up of the main draw, once the final is played. */
+export function topTwo(t: Tournament): { first: string; second: string } | null {
+  const main = t.brackets.find((b) => b.kind === 'main');
+  if (!main) return null;
+  const final = t.matches[main.rounds[main.rounds.length - 1][0]];
+  if (!final?.aId || !final.bId) return null;
+  const s = summarizeMatch(final);
+  if (!s) return null;
+  return s === 'a' ? { first: final.aId, second: final.bId } : { first: final.bId, second: final.aId };
+}
+
+function summarizeMatch(m: Match): Side | null {
+  if (m.walkover) return m.walkover;
+  const need = Math.ceil(m.bestOf / 2);
+  let a = 0, b = 0;
+  for (const g of m.games) { if (g.a > g.b) a++; else if (g.b > g.a) b++; }
+  return a >= need ? 'a' : b >= need ? 'b' : null;
+}
+
+/** Tournaments for the home slider: open or running ones, and ones that ended in the last `days` days. */
+export function homeTournaments(list: Tournament[], now = new Date(), days = 30): { live: Tournament[]; recent: Tournament[] } {
+  const since = now.getTime() - days * 86_400_000;
+  const live: Tournament[] = [], recent: Tournament[] = [];
+  for (const t of list) {
+    if (topTwo(t)) {
+      const when = new Date(t.date || t.createdAt).getTime();
+      if (when >= since) recent.push(t);
+    } else if (t.stage !== 'setup' || registrationOf(t).open) live.push(t);
+  }
+  return { live, recent };
 }

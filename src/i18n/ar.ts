@@ -193,7 +193,7 @@ export const ar = {
   'auth.fullName': 'الاسم الكامل',
   'auth.fullNameHint': 'يظهر في الجداول كما تكتبه تماماً',
   'auth.phone': 'رقم الموبايل',
-  'auth.birthYear': 'سنة الميلاد',
+  'auth.birthYear': 'سنة الميلاد (اختياري)',
   'auth.club': 'النادي (اختياري)',
   'auth.submitLogin': 'دخول',
   'auth.submitSignup': 'إنشاء الحساب',
@@ -300,6 +300,8 @@ export const ar = {
   'users.created': 'تم إنشاء الحساب',
   'users.all': 'كل الحسابات',
   'users.functionMissing': 'خدمة الحسابات غير مفعّلة بعد على Supabase. اطلب من المطوّر نشر الدالة admin-users.',
+  'auth.err.rateLimit': 'تم إرسال رسائل كثيرة في وقت قصير. انتظر قليلاً ثم حاول مرة أخرى، أو اطلب من المنظم إنشاء حسابك.',
+  'auth.err.emailSend': 'تعذّر إرسال رسالة التأكيد إلى هذا البريد. اطلب من المنظم إنشاء حسابك.',
   'auth.err.noFunction': 'خدمة الحسابات غير مفعّلة بعد على Supabase',
 
   'sync.failed': 'تعذّر الحفظ على الخادم، سنحاول مرة أخرى عند الحفظ التالي',

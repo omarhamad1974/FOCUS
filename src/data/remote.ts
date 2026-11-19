@@ -145,8 +145,8 @@ export async function deleteTournament(id: string): Promise<void> {
 async function withNames(regs: Registration[]): Promise<Registration[]> {
   const ids = [...new Set(regs.map((r) => r.player_id))];
   if (!ids.length) return regs;
-  const people = check(await db().from('player_directory').select('id, full_name, club').in('id', ids)) as { id: string; full_name: string; club: string | null }[];
-  const byId = new Map(people.map((p) => [p.id, p]));
+  const people = check(await db().from('player_directory').select('profile_id, full_name, club').in('profile_id', ids)) as { profile_id: string; full_name: string; club: string | null }[];
+  const byId = new Map(people.map((p) => [p.profile_id, p]));
   return regs.map((r) => ({ ...r, full_name: byId.get(r.player_id)?.full_name ?? '', club: byId.get(r.player_id)?.club ?? null }));
 }
 
@@ -173,6 +173,65 @@ export async function decide(registrationId: string, status: 'approved' | 'rejec
   check(await db().from('registrations').update({ status, decided_at: new Date().toISOString() }).eq('id', registrationId));
 }
 
+/* ------------------------------------------------------- player directory */
+
+export interface DirPlayer {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  club: string | null;
+  birth_year: number | null;
+  profile_id: string | null;
+  merged_into: string | null;
+}
+
+export async function listPlayers(): Promise<DirPlayer[]> {
+  const rows = check(await db().from('players').select('*').order('full_name')) as DirPlayer[];
+  return rows.filter((r) => !r.merged_into);
+}
+
+export async function addPlayer(p: { full_name: string; phone?: string | null; club?: string | null; birth_year?: number | null }): Promise<DirPlayer> {
+  return check(await db().from('players').insert(p).select('*').single()) as DirPlayer;
+}
+
+export async function updatePlayer(id: string, p: Partial<Pick<DirPlayer, 'full_name' | 'phone' | 'club' | 'birth_year'>>): Promise<void> {
+  check(await db().from('players').update(p).eq('id', id));
+}
+
+export async function playerForProfile(profileId: string): Promise<string> {
+  return check(await db().rpc('player_for_profile', { p: profileId })) as string;
+}
+
+export async function linkPlayer(playerId: string, profileId: string): Promise<void> {
+  check(await db().rpc('link_player', { player: playerId, account: profileId }));
+}
+
+/* ------------------------------------------- accounts (Edge Function) */
+
+export interface PendingUser {
+  id: string;
+  email: string;
+  full_name: string;
+  created_at: string;
+}
+
+async function adminUsers<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await db().functions.invoke('admin-users', { body });
+  if (error) {
+    // Surface the function's own message when it sent one.
+    const ctx = (error as { context?: Response }).context;
+    let msg = error.message;
+    try { if (ctx) msg = (await ctx.json()).error ?? msg; } catch { /* keep message */ }
+    throw new Error(msg);
+  }
+  return data as T;
+}
+
+export const unconfirmedUsers = () => adminUsers<{ users: PendingUser[] }>({ action: 'unconfirmed' }).then((r) => r.users);
+export const confirmUser = (userId: string) => adminUsers<{ ok: true }>({ action: 'confirm', user_id: userId });
+export const createAccount = (a: { email: string; password: string; full_name: string; phone: string; club: string; birth_year: string }) =>
+  adminUsers<{ id: string }>({ action: 'create', ...a });
+
 /** Map server error text to an Arabic message key suffix. */
 export function errorCode(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
@@ -184,5 +243,7 @@ export function errorCode(e: unknown): string {
   if (/Password should be/i.test(m)) return 'weakPassword';
   if (/row-level security|permission denied|only an admin/i.test(m)) return 'forbidden';
   if (/Failed to fetch|NetworkError/i.test(m)) return 'network';
+  if (/Failed to send a request|FunctionsFetchError|404/i.test(m)) return 'noFunction';
+  if (/already been registered|already exists/i.test(m)) return 'exists';
   return 'unknown';
 }

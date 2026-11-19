@@ -6,6 +6,8 @@ export interface Player {
   name: string;
   /** Account of a player who registered through the website. */
   profileId?: string;
+  /** Row in the shared player directory (online mode). */
+  directoryId?: string;
 }
 
 export interface RegistrationSettings {

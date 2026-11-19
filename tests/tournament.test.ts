@@ -101,3 +101,32 @@ describe('online registration', () => {
     expect(remoteStatus(sampleTournament('finished', 3))).toBe('finished');
   });
 });
+
+import { addPlayerToSetup, exactDirectoryMatch, nameKey, removePlayerFromSetup, searchDirectory } from '../src/domain/tournament';
+
+describe('player directory helpers', () => {
+  const dir = [
+    { id: '1', full_name: 'أحمد السيد' },
+    { id: '2', full_name: 'Lina Adel' },
+    { id: '3', full_name: 'محمد أحمد' },
+    { id: '4', full_name: 'مريم' },
+  ];
+  it('matches names regardless of hamza, spacing and case', () => {
+    expect(nameKey('  احمد   السيد ')).toBe(nameKey('أحمد السيد'));
+    expect(exactDirectoryMatch(dir, 'lina  adel')?.id).toBe('2');
+    expect(exactDirectoryMatch(dir, 'لينا')).toBeUndefined();
+  });
+  it('searches prefix matches before contains matches', () => {
+    expect(searchDirectory(dir, 'احمد').map((d) => d.id)).toEqual(['1', '3']);
+    expect(searchDirectory(dir, '')).toEqual([]);
+  });
+  it('adds a player to the smallest group and refuses duplicates', () => {
+    const t = createTournament({ ...base, playerNames: ['a', 'b', 'c'] });
+    const id = addPlayerToSetup(t, 'Lina Adel', '2');
+    expect(t.groups.map((g) => g.playerIds.length)).toEqual([2, 2]);
+    expect(() => addPlayerToSetup(t, 'Lina Adel', '2')).toThrow('duplicate');
+    removePlayerFromSetup(t, id);
+    expect(t.players).toHaveLength(3);
+    expect(t.groups.flatMap((g) => g.playerIds)).toHaveLength(3);
+  });
+});

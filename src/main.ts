@@ -12,7 +12,7 @@ import type { BestOf, Bracket, Game, Match, StageFormats, Tournament } from './d
 import { avatar, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
-import { closeRegistration, registrationOf } from './domain/tournament';
+import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
 
 /* ------------------------------------------------------------------ state */
 
@@ -84,7 +84,8 @@ async function refreshFromServer(): Promise<void> {
 }
 
 let myRegs: remote.Registration[] = [];
-const ONLINE_ACTS = new Set(['auth-tab', 'forgot', 'logout', 'join', 'withdraw', 'decide', 'reg-open', 'reg-close', 'copy-link']);
+const ONLINE_ACTS = new Set(['auth-tab', 'forgot', 'logout', 'join', 'withdraw', 'decide', 'reg-open', 'reg-close', 'copy-link',
+  'dir-pick', 'dir-new', 'rm-player', 'link-open', 'link-save', 'confirm-user']);
 
 function findT(id: string): Tournament | undefined {
   return data.tournaments.find((x) => x.id === id);
@@ -194,6 +195,7 @@ function homePage(): string {
     ${org ? `<div class="row" style="margin-block-start:12px">
       <a class="btn gold" href="#/new">➕ ${t('home.create')}</a>
       <button class="btn soft" data-act="sample-open">🎲 ${t('home.sample')}</button>
+      ${online() && session.profile ? `<a class="btn soft" href="#/players">👥 ${t('dir.link')}</a><a class="btn soft" href="#/admin">🛡️ ${t('users.link')}</a>` : ''}
     </div>` : ''}
   </section>
   <div class="stats" style="margin-block:14px">
@@ -244,6 +246,8 @@ interface Draft {
   selfReg: boolean;
   autoAccept: boolean;
   maxPlayers: string;
+  /** Names picked from the directory → their directory id. */
+  dirIds: Record<string, string>;
   error: string;
 }
 
@@ -258,6 +262,7 @@ const newDraft = (): Draft => ({
   selfReg: online(),
   autoAccept: false,
   maxPlayers: '',
+  dirIds: {},
   error: '',
 });
 let draft = newDraft();
@@ -281,6 +286,7 @@ function wizardPage(): string {
         ${hint('wizard.playersHint')}
         <textarea class="input" id="wPlayers" placeholder="${esc(t('wizard.playersPh'))}" dir="auto">${esc(draft.players)}</textarea></label>
       <button class="btn soft small" data-act="w-fill">🎲 ${t('wizard.fillSample')}</button>
+      ${online() ? dirPicker(new Set(Object.values(draft.dirIds)), 'dir.pick') : ''}
       ${online() ? `<div class="card" style="background:#f7f9fd">
         <label class="row"><input type="checkbox" id="wSelf" ${draft.selfReg ? 'checked' : ''}> <b>📝 ${t('reg.selfOn')}</b></label>
         ${hint('reg.selfHint')}
@@ -395,6 +401,7 @@ function setupBoard(tm: Tournament): string {
         <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
           ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${avatar(playerName(tm, pid))}<span dir="auto">${esc(playerName(tm, pid))}</span>
           <span class="seed">#${n(seedOf(pid))}</span>
+          ${org && online() ? `<button class="btn ghost small" data-act="rm-player" data-pid="${pid}" aria-label="${t('dir.remove')}" title="${t('dir.remove')}" style="min-height:28px;padding:2px 8px">✕</button>` : ''}
         </div>`).join('')}
     </div>`).join('');
   return `
@@ -404,6 +411,7 @@ function setupBoard(tm: Tournament): string {
     ${org ? hint('setup.hint') : ''}
     <div class="board" id="board">${cols}</div>
   </div>
+  ${org && online() ? dirPicker(new Set(tm.players.map((p) => p.directoryId).filter((x): x is string => !!x)), 'dir.addToTournament') : ''}
   ${org ? `<div class="card">
     ${hint('setup.startHint')}
     <button class="btn green block" data-act="start-groups">▶️ ${t('setup.start')}</button>
@@ -707,6 +715,18 @@ let busy = false;
 /** Typed values, kept across re-renders of the sign-in form. */
 const authVals: Record<string, string> = {};
 
+const RETURN_KEY = 'pingo.returnTo';
+
+/** Where to go after signing in: the tournament the player came from, else home. */
+function takeReturn(): string {
+  try {
+    const back = localStorage.getItem(RETURN_KEY);
+    localStorage.removeItem(RETURN_KEY);
+    if (back) return back;
+  } catch { /* ignore */ }
+  return '#/';
+}
+
 const authErr = (e: unknown) => t(`auth.err.${remote.errorCode(e)}` as MessageKey);
 
 function loginPage(): string {
@@ -746,13 +766,13 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
     if (kind === 'login') {
       await remote.signIn(email, password);
       for (const k of Object.keys(authVals)) delete authVals[k];
-      location.hash = '#/';
+      location.hash = takeReturn();
     } else {
       const year = val('aYear').replace(/[^\d]/g, '');
       const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub') });
       delete authVals.aPass;
       if (needsConfirm) { authMsg = '✅ ' + t('auth.checkEmail'); authTab = 'login'; }
-      else location.hash = '#/';
+      else location.hash = takeReturn();
     }
   } catch (e) {
     authMsg = authErr(e);
@@ -782,24 +802,125 @@ function mePage(): string {
     ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
   </div>
   <div class="row">
-    ${isAdmin() ? `<a class="btn soft" href="#/admin">🛡️ ${t('admin.link')}</a>` : ''}
+    ${canOrganize() ? `<a class="btn soft" href="#/players">👥 ${t('dir.link')}</a><a class="btn soft" href="#/admin">🛡️ ${t('users.link')}</a>` : ''}
     <button class="btn ghost" data-act="logout">🚪 ${t('auth.logout')}</button>
   </div>`;
 }
 
 let people: remote.Profile[] | null = null;
-function adminPage(): string {
-  if (!people) {
-    remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e)));
-    return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`;
-  }
+let pendingUsers: remote.PendingUser[] | null = null;
+let pendingError = '';
+
+function loadUsers(): void {
+  remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e)));
+  remote.unconfirmedUsers()
+    .then((u) => { pendingUsers = u; pendingError = ''; })
+    .catch((e) => { pendingUsers = []; pendingError = remote.errorCode(e) === 'noFunction' ? t('users.functionMissing') : authErr(e); })
+    .finally(route);
+}
+
+function usersPage(): string {
+  if (!people) { loadUsers(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
   const roles: remote.Role[] = ['player', 'organizer', 'admin'];
-  return `<div class="card"><h2>🛡️ ${t('admin.title')}</h2>${hint('admin.hint')}
+  const pending = pendingUsers === null
+    ? `<p class="muted">⏳ ${t('reg.loading')}</p>`
+    : pendingError ? `<div class="err">${esc(pendingError)}</div>`
+    : pendingUsers.length ? pendingUsers.map((u) => `<div class="chip ro">${avatar(u.full_name || u.email)}
+        <span><span dir="auto">${esc(u.full_name)}</span><br><span class="muted small" dir="ltr">${esc(u.email)}</span></span>
+        <button class="btn green small" style="margin-inline-start:auto" data-act="confirm-user" data-id="${u.id}">✅ ${t('users.confirm')}</button></div>`).join('')
+    : `<p class="muted">${t('users.noPending')}</p>`;
+  const f = (id: string, label: MessageKey, type = 'text', extra = '') =>
+    `<label class="field"><span>${t(label)}</span><input class="input" id="${id}" type="${type}" ${extra}></label>`;
+  return `<div class="card"><h2>📨 ${t('users.pending')}</h2>${hint('users.pendingHint')}${pending}</div>
+  <div class="card"><h2>➕ ${t('users.create')}</h2>${hint('users.createHint')}
+    <form data-form="create-account" novalidate>
+      ${f('cName', 'auth.fullName', 'text', 'dir="auto"')}
+      ${f('cEmail', 'auth.email', 'email', 'dir="ltr" autocomplete="off"')}
+      ${f('cPass', 'auth.password', 'text', 'dir="ltr" autocomplete="off"')}
+      <div class="row"><div style="flex:1">${f('cPhone', 'auth.phone', 'tel', 'dir="ltr"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+      <button class="btn green" type="submit" ${busy ? 'disabled' : ''}>➕ ${t('users.create')}</button>
+    </form>
+  </div>
+  <div class="card"><h2>🛡️ ${t('users.all')}</h2>${hint('admin.hint')}
     ${people.map((p) => `<div class="chip ro">${avatar(p.full_name)}<span dir="auto">${esc(p.full_name)}</span>
       <span class="muted small hide-sm" dir="ltr">${esc(p.phone ?? '')}</span>
-      <select class="input" style="width:auto;margin-inline-start:auto" data-act="role" data-id="${p.id}" ${p.id === session.profile?.id ? 'disabled' : ''}>
+      ${isAdmin()
+        ? `<select class="input" style="width:auto;margin-inline-start:auto" data-act="role" data-id="${p.id}" ${p.id === session.profile?.id ? 'disabled' : ''}>
         ${roles.map((r) => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${t(`role.${r}` as MessageKey)}</option>`).join('')}
-      </select></div>`).join('')}
+      </select>`
+        : `<span class="badge" style="margin-inline-start:auto">${t(`role.${p.role}` as MessageKey)}</span>`}</div>`).join('')}
+  </div>`;
+}
+
+/* Player directory */
+let dir: remote.DirPlayer[] | null = null;
+let dirLoading = false;
+let dirFilter = '';
+
+function loadDir(): void {
+  if (dirLoading) return;
+  dirLoading = true;
+  remote.listPlayers().then((d) => { dir = d; }).catch((e) => { dir = []; toast(authErr(e)); }).finally(() => { dirLoading = false; route(); });
+}
+
+function dirResults(query: string, exclude: Set<string>): string {
+  if (!dir) return '';
+  const q = query.trim();
+  if (!q) return '';
+  const hits = searchDirectory(dir, q);
+  const exact = exactDirectoryMatch(dir, q);
+  return `${hits.map((d) => {
+    const inT = exclude.has(d.id);
+    return `<button type="button" class="chip" style="width:100%;cursor:pointer;touch-action:auto" data-act="dir-pick" data-id="${d.id}" ${inT ? 'disabled' : ''}>
+      ${avatar(d.full_name)}<span dir="auto">${esc(d.full_name)}</span>${d.club ? `<span class="muted small" dir="auto">· ${esc(d.club)}</span>` : ''}
+      <span class="badge ${d.profile_id ? 'green' : ''}" style="margin-inline-start:auto">${inT ? t('dir.inTournament') : d.profile_id ? t('dir.account') : t('dir.noAccount')}</span></button>`;
+  }).join('')}
+  ${hits.length ? '' : `<p class="muted small">${t('dir.none')}</p>`}
+  ${exact ? '' : `<button type="button" class="btn soft small" data-act="dir-new" data-name="${esc(q)}">➕ ${esc(t('dir.addNew', { name: q }))}</button>`}`;
+}
+
+/** Search box + live results; `exclude` = directory ids already chosen. */
+function dirPicker(exclude: Set<string>, title: MessageKey): string {
+  if (!dir) { loadDir(); return `<p class="muted small">⏳ ${t('reg.loading')}</p>`; }
+  return `<div class="card" style="background:#f7f9fd">
+    <h3>🔎 ${t(title)}</h3>${hint('dir.pickHint')}
+    <input class="input" id="dirQ" data-act="dir-q" placeholder="${esc(t('dir.search'))}" autocomplete="off" dir="auto">
+    <div id="dirRes" class="stack" style="margin-block-start:8px">${dirResults('', exclude)}</div>
+  </div>`;
+}
+
+let linking: string | null = null;
+function playersPage(): string {
+  if (!dir) { loadDir(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
+  if (linking && !people) { remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e))); }
+  const linkedProfiles = new Set(dir.filter((d) => d.profile_id).map((d) => d.profile_id));
+  const shown = dirFilter ? searchDirectory(dir, dirFilter, 500) : dir;
+  const row = (d: remote.DirPlayer) => `<div class="chip ro" style="flex-wrap:wrap">${avatar(d.full_name)}
+    <span><b dir="auto">${esc(d.full_name)}</b>${d.club ? ` <span class="muted small" dir="auto">· ${esc(d.club)}</span>` : ''}
+    ${d.phone ? `<br><span class="muted small" dir="ltr">${esc(d.phone)}</span>` : ''}</span>
+    <span class="row" style="margin-inline-start:auto;gap:6px">
+      <span class="badge ${d.profile_id ? 'green' : ''}">${d.profile_id ? t('dir.account') : t('dir.noAccount')}</span>
+      ${d.profile_id ? '' : `<button class="btn soft small" data-act="link-open" data-id="${d.id}">🔗 ${t('dir.linkTo')}</button>`}
+    </span>
+    ${linking === d.id ? `<div style="flex-basis:100%">${hint('dir.linkHint')}
+      ${people ? `<div class="row"><select class="input" id="linkSel" style="flex:1"><option value="">${t('dir.choose')}</option>
+        ${people.filter((p) => !linkedProfiles.has(p.id)).map((p) => `<option value="${p.id}">${esc(p.full_name)}${p.phone ? ' · ' + esc(p.phone) : ''}</option>`).join('')}
+      </select><button class="btn green small" data-act="link-save" data-id="${d.id}">${t('common.save')}</button></div>` : '⏳'}</div>` : ''}
+  </div>`;
+  return `<div class="card"><h2>👥 ${t('dir.title')}</h2>${hint('dir.hint')}
+    <input class="input" id="dirFilter" data-act="dir-filter" placeholder="${esc(t('dir.search'))}" value="${esc(dirFilter)}" dir="auto">
+    <div style="margin-block-start:8px">${shown.length ? shown.map(row).join('') : `<p class="muted">${t('dir.empty')}</p>`}</div>
+  </div>
+  <div class="card"><h2>➕ ${t('dir.add')}</h2>${hint('dir.addHint')}
+    <form data-form="add-player" novalidate>
+      <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="pName" dir="auto"></label>
+      <div class="row">
+        <label class="field" style="flex:1"><span>${t('auth.phone')}</span><input class="input" id="pPhone" type="tel" dir="ltr"></label>
+        <label class="field" style="flex:1"><span>${t('auth.club')}</span><input class="input" id="pClub" dir="auto"></label>
+        <label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="pYear" inputmode="numeric" dir="ltr"></label>
+      </div>
+      <button class="btn green" type="submit">➕ ${t('dir.add')}</button>
+    </form>
   </div>`;
 }
 
@@ -908,19 +1029,98 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
       if (!tm) return true;
       if (act === 'reg-open') tm.registration = { ...registrationOf(tm), open: true };
       else {
-        const regs = await remote.tournamentRegistrations(tm.id);
-        closeRegistration(tm, regs.filter((r) => r.status === 'approved').map((r) => ({ profileId: r.player_id, name: r.full_name || '?' })));
+        const regs = (await remote.tournamentRegistrations(tm.id)).filter((r) => r.status === 'approved');
+        const approved = [];
+        for (const r of regs) {
+          let directoryId: string | undefined;
+          try { directoryId = await remote.playerForProfile(r.player_id); } catch { /* keep without directory link */ }
+          approved.push({ profileId: r.player_id, name: r.full_name || '?', directoryId });
+        }
+        closeRegistration(tm, approved);
+        dir = null;
       }
       persist();
       regCache.delete(tm.id);
       if (act === 'reg-close') { location.hash = `#/t/${tm.id}/groups`; return true; }
       route(); return true;
     }
+    case 'dir-pick': case 'dir-new': {
+      let entry: remote.DirPlayer | undefined;
+      try {
+        if (act === 'dir-new') {
+          entry = await remote.addPlayer({ full_name: el.dataset.name! });
+          dir?.push(entry);
+          toast(t('dir.added'));
+        } else entry = dir?.find((d) => d.id === el.dataset.id);
+      } catch (e) { toast(authErr(e)); return true; }
+      if (!entry) return true;
+      if (location.hash.startsWith('#/new')) {
+        readDraft();
+        const names = draftNames();
+        if (!names.includes(entry.full_name)) draft.players = [...names, entry.full_name].join('\n');
+        draft.dirIds[entry.full_name] = entry.id;
+      } else if (tm) {
+        try { addPlayerToSetup(tm, entry.full_name, entry.id); persist(); } catch { toast(t('dir.duplicate')); }
+      }
+      route();
+      document.getElementById('dirQ')?.focus();
+      return true;
+    }
+    case 'rm-player':
+      if (tm) { removePlayerFromSetup(tm, el.dataset.pid!); persist(); route(); }
+      return true;
+    case 'link-open':
+      linking = linking === el.dataset.id ? null : el.dataset.id!;
+      route(); return true;
+    case 'link-save': {
+      const account = (document.getElementById('linkSel') as HTMLSelectElement | null)?.value;
+      if (!account) return true;
+      try { await remote.linkPlayer(el.dataset.id!, account); toast(t('dir.linked')); linking = null; dir = null; } catch (e) { toast(authErr(e)); }
+      route(); return true;
+    }
+    case 'confirm-user':
+      try { await remote.confirmUser(el.dataset.id!); toast(`✅ ${t('users.confirmed')}`); pendingUsers = (pendingUsers ?? []).filter((u) => u.id !== el.dataset.id); }
+      catch (e) { toast(authErr(e)); }
+      route(); return true;
     case 'copy-link':
       try { await navigator.clipboard.writeText(location.href.replace(/\/register$/, '')); toast(t('reg.copied')); } catch { toast(location.href); }
       return true;
   }
   return false;
+}
+
+
+/** Save a tournament made by the wizard; online, link every player to the directory first. */
+async function commitNew(nt: Tournament): Promise<void> {
+  if (online()) {
+    busy = true;
+    try {
+      if (!dir) dir = await remote.listPlayers();
+      for (const p of nt.players) {
+        const picked = draft.dirIds[p.name];
+        const match = picked ? dir.find((d) => d.id === picked) : exactDirectoryMatch(dir, p.name);
+        if (match) { p.directoryId = match.id; continue; }
+        const created = await remote.addPlayer({ full_name: p.name });
+        dir.push(created);
+        p.directoryId = created.id;
+      }
+    } catch (e) {
+      busy = false;
+      draft.error = authErr(e);
+      route();
+      return;
+    }
+    busy = false;
+    if (draft.selfReg) {
+      const max = Number(draft.maxPlayers);
+      nt.registration = { open: true, autoAccept: draft.autoAccept, maxPlayers: max >= 2 ? max : null };
+    }
+    if (session.profile) nt.organizerId = session.profile.id;
+  }
+  data.tournaments.unshift(nt);
+  persist();
+  draft = newDraft();
+  location.hash = `#/t/${nt.id}/${nt.registration?.open ? 'register' : 'groups'}`;
 }
 
 /* ------------------------------------------------------------------ router */
@@ -936,8 +1136,11 @@ function route(): void {
     if (!session.profile) { location.hash = '#/login'; return; }
     shell(mePage());
   } else if (parts[0] === 'admin' && online()) {
-    if (!isAdmin()) { location.hash = '#/'; return; }
-    shell(adminPage());
+    if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
+    shell(usersPage());
+  } else if (parts[0] === 'players' && online()) {
+    if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
+    shell(playersPage());
   } else if (parts[0] === 't') {
     const tm = findT(parts[1]);
     if (!tm) {
@@ -1049,15 +1252,7 @@ document.addEventListener('click', (e) => {
         name: draft.name.trim(), date: draft.date, playerNames: draftNames(), groupCount: draft.groupCount,
         formats: draft.formats, consolation: { enabled: draft.consolation.enabled, name: draft.consolation.name.trim() || 'بطولة الترضية' },
       });
-      if (online() && draft.selfReg) {
-        const max = Number(draft.maxPlayers);
-        nt.registration = { open: true, autoAccept: draft.autoAccept, maxPlayers: max >= 2 ? max : null };
-      }
-      if (session.profile) nt.organizerId = session.profile.id;
-      data.tournaments.unshift(nt);
-      persist();
-      draft = newDraft();
-      location.hash = `#/t/${nt.id}/${nt.registration?.open ? 'register' : 'groups'}`;
+      void commitNew(nt);
       return;
     }
 
@@ -1219,6 +1414,24 @@ function syncInputs(): void {
 
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
+  if (el.dataset.act === 'dir-q') {
+    const res = document.getElementById('dirRes');
+    const { tm } = current();
+    const exclude = new Set(location.hash.startsWith('#/new')
+      ? Object.values(draft.dirIds)
+      : (tm?.players.map((p) => p.directoryId).filter((x): x is string => !!x) ?? []));
+    if (res) res.innerHTML = dirResults((el as HTMLInputElement).value, exclude);
+    return;
+  }
+  if (el.dataset.act === 'dir-filter') {
+    dirFilter = (el as HTMLInputElement).value;
+    const pos = (el as HTMLInputElement).selectionStart;
+    route();
+    const again = document.getElementById('dirFilter') as HTMLInputElement | null;
+    again?.focus();
+    if (again && pos !== null) again.setSelectionRange(pos, pos);
+    return;
+  }
   if (el.id === 'wPlayers') {
     const c = document.getElementById('wCount');
     draft.players = (el as HTMLTextAreaElement).value;
@@ -1247,6 +1460,30 @@ document.addEventListener('submit', async (e) => {
   if (!kind) return;
   e.preventDefault();
   if (kind === 'login' || kind === 'signup') { await submitAuth(kind); return; }
+  if (kind === 'add-player') {
+    const name = val('pName');
+    if (!name) return;
+    if (dir && exactDirectoryMatch(dir, name)) { toast(t('dir.possibleDup')); return; }
+    const year = Number(val('pYear').replace(/[^\d]/g, ''));
+    try {
+      const row = await remote.addPlayer({ full_name: name, phone: val('pPhone') || null, club: val('pClub') || null, birth_year: year >= 1920 ? year : null });
+      dir?.push(row);
+      dir?.sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar'));
+      toast(t('dir.added'));
+    } catch (err) { toast(authErr(err)); }
+    route();
+    return;
+  }
+  if (kind === 'create-account') {
+    busy = true; route();
+    try {
+      await remote.createAccount({ full_name: val('cName'), email: val('cEmail'), password: val('cPass'), phone: val('cPhone'), club: val('cClub'), birth_year: '' });
+      toast(`✅ ${t('users.created')}`);
+      people = null;
+    } catch (err) { toast(authErr(err)); }
+    busy = false; route();
+    return;
+  }
   if (kind === 'me' && session.profile) {
     const year = Number(val('mYear').replace(/[^\d]/g, ''));
     try {
@@ -1366,13 +1603,30 @@ function endDrag(commit: boolean): void {
 document.addEventListener('pointerup', () => endDrag(true));
 document.addEventListener('pointercancel', () => endDrag(false));
 
+
+let lastHash = location.hash;
+
 if (online()) {
   remote.onAuthChange(() => {
-    refreshFromServer().then(route);
+    refreshFromServer().then(() => {
+      // Send a player who signed up from a tournament back to that tournament.
+      let back: string | null = null;
+      try { back = localStorage.getItem(RETURN_KEY); } catch { /* ignore */ }
+      if (session.profile && back && ['', '#', '#/', '#/login'].includes(location.hash)) {
+        try { localStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
+        location.hash = back;
+        return;
+      }
+      route();
+    });
   });
 }
 
 window.addEventListener('hashchange', () => {
+  if (location.hash === '#/login' && lastHash.startsWith('#/t/')) {
+    try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
+  }
+  lastHash = location.hash;
   window.scrollTo(0, 0);
   deleteArmed = false;
   route();

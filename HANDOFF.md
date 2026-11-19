@@ -27,6 +27,11 @@ Also confirmed:
 - Per tournament the organizer chooses approval vs auto-accept and an optional player limit (Omar's answer still pending; both supported).
 - Without Supabase settings the app still runs offline with browser storage.
 
+## Player directory and organizer-managed accounts, 2026-11-19
+- `players` table = shared directory (typed players need no email). `player_for_profile()` makes a row for an account on first use; `link_player()` links a typed player to an account (an existing account row is marked `merged_into`).
+- Edge Function `admin-users` (service-role key stays in Supabase): list unconfirmed sign-ups, confirm manually, create a confirmed account. Callable by organizers and admins only.
+- Email confirmation stays on for normal sign-ups (Omar's choice: organizers can bypass it in special cases).
+
 ## Known limits
 - Offline mode: data lives in one browser (backup download/restore to move it).
 - Online mode: two organizers editing the same tournament at the same moment overwrite each other (last save wins). No live updates yet; pages refresh on navigation.

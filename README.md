@@ -16,8 +16,9 @@ Pushing to `main` runs the tests and publishes `dist/` to GitHub Pages (enable P
 ## Connect Supabase
 
 1. Create a project at supabase.com (region: Frankfurt, closest to Cairo).
-2. In **SQL Editor**, run `supabase/migrations/0001_init.sql`, then `0002_grants.sql`.
-3. In **Authentication → URL Configuration**, set the Site URL to where the app is hosted (for example the GitHub Pages URL) so confirmation emails link back to it.
+2. In **SQL Editor**, run the files in `supabase/migrations/` in order (`0001`, `0002`, `0003`).
+3. Deploy the Edge Function `supabase/functions/admin-users` (Dashboard → Edge Functions → Deploy a new function → Via editor, name `admin-users`, paste `index.ts`, then turn **off** "Verify JWT": the function checks the caller itself). Or add the `SUPABASE_ACCESS_TOKEN` repository secret and the `Deploy Supabase Edge Functions` workflow deploys it from `main`.
+3b. In **Authentication → URL Configuration**, set the Site URL to where the app is hosted (for example the GitHub Pages URL) so confirmation emails link back to it.
 4. Pingo's project URL and publishable key are the defaults in `src/config.ts`. To point at another project, set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in `.env.local` (see `.env.example`) or as repository variables `SUPABASE_URL` / `SUPABASE_ANON_KEY` for the GitHub build. `VITE_OFFLINE=1` builds the browser-storage-only version.
 5. Sign up in the app, then make yourself admin once in the SQL Editor:
    `update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');`
@@ -39,7 +40,9 @@ Players join through the `join_tournament` database function, which checks that 
 
 - **Accounts** (online): sign up with email and password, profile with name, phone, birth year and club; "my tournaments" with registration status.
 - **Online registration**: the organizer opens registration (optional auto-accept and player limit), shares the link, approves or rejects requests, then closes registration to put approved players into the group draw.
-- **Admin page** to make users organizers or admins.
+- **Player directory** (organizers): every player saved once, with or without an account; search-as-you-type when building a tournament so nobody is created twice (Arabic hamza/ya/ta-marbuta variants match); link a typed player to an account later.
+- **Accounts page** (organizers): confirm a sign-up without email in special cases, or create a ready-to-use account for a player (through the `admin-users` Edge Function); admins also change roles.
+- After signing up from a tournament page, the player returns to that tournament.
 - **Organizer / player switch** in the header (shown to organizers). Player view is read-only.
 - **Help hints** (💡) beside each feature; the **؟** button hides or shows them.
 - **Tournament wizard** in 4 steps: name and date, players (one per line, strongest first), number of groups with a live preview, match format per stage and the consolation tournament.

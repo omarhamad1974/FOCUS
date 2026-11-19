@@ -184,6 +184,7 @@ export function registrationOf(t: Tournament): NonNullable<Tournament['registrat
 export interface Registrant {
   profileId: string;
   name: string;
+  directoryId?: string;
 }
 
 /**
@@ -196,7 +197,9 @@ export function closeRegistration(t: Tournament, approved: Registrant[]): void {
   const keep = new Set(approved.map((r) => r.profileId));
   t.players = t.players.filter((p) => !p.profileId || keep.has(p.profileId));
   for (const r of approved) {
-    if (!t.players.some((p) => p.profileId === r.profileId)) t.players.push({ id: uid(), name: r.name, profileId: r.profileId });
+    if (!t.players.some((p) => p.profileId === r.profileId || (r.directoryId && p.directoryId === r.directoryId))) {
+      t.players.push({ id: uid(), name: r.name, profileId: r.profileId, directoryId: r.directoryId });
+    }
   }
   t.registration = { ...registrationOf(t), open: false };
   snakeGroups(t.players.map((p) => p.id), t.groups.length).forEach((ids, i) => {
@@ -214,4 +217,58 @@ export function remoteStatus(t: Tournament): 'draft' | 'registration' | 'running
     if (final && (final.games.length || final.walkover)) return 'finished';
   }
   return 'running';
+}
+
+/** Add one player during setup; they go into the smallest group. */
+export function addPlayerToSetup(t: Tournament, name: string, directoryId?: string): string {
+  if (t.stage !== 'setup') throw new Error('locked');
+  if (directoryId && t.players.some((p) => p.directoryId === directoryId)) throw new Error('duplicate');
+  const id = uid();
+  t.players.push({ id, name, directoryId });
+  const smallest = [...t.groups].sort((a, b) => a.playerIds.length - b.playerIds.length)[0];
+  smallest.playerIds.push(id);
+  return id;
+}
+
+export function removePlayerFromSetup(t: Tournament, playerId: string): void {
+  if (t.stage !== 'setup') throw new Error('locked');
+  t.players = t.players.filter((p) => p.id !== playerId);
+  for (const g of t.groups) g.playerIds = g.playerIds.filter((id) => id !== playerId);
+}
+
+/** Compare names loosely: spacing, case and Arabic letter variants (أ/إ/آ → ا, ى → ي, ة → ه). */
+export function nameKey(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[\u064B-\u0652]/g, '');
+}
+
+export interface DirectoryEntry {
+  id: string;
+  full_name: string;
+}
+
+/** Directory entries whose name matches `query` (prefix or contains), best first. */
+export function searchDirectory<T extends DirectoryEntry>(dir: T[], query: string, limit = 8): T[] {
+  const q = nameKey(query);
+  if (!q) return [];
+  const scored = dir
+    .map((d) => {
+      const k = nameKey(d.full_name);
+      return { d, score: k === q ? 0 : k.startsWith(q) ? 1 : k.includes(q) ? 2 : 9 };
+    })
+    .filter((x) => x.score < 9)
+    .sort((a, b) => a.score - b.score || a.d.full_name.localeCompare(b.d.full_name, 'ar'));
+  return scored.slice(0, limit).map((x) => x.d);
+}
+
+/** The directory entry with exactly this name (loosely compared), if any. */
+export function exactDirectoryMatch<T extends DirectoryEntry>(dir: T[], name: string): T | undefined {
+  const k = nameKey(name);
+  return dir.find((d) => nameKey(d.full_name) === k);
 }

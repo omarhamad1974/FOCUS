@@ -18,9 +18,7 @@ Pushing to `main` runs the tests and publishes `dist/` to GitHub Pages (enable P
 1. Create a project at supabase.com (region: Frankfurt, closest to Cairo).
 2. In **SQL Editor**, paste `supabase/migrations/0001_init.sql` and click **Run**.
 3. In **Authentication → URL Configuration**, set the Site URL to where the app is hosted (for example the GitHub Pages URL) so confirmation emails link back to it.
-4. Copy **Project URL** and the **anon public** key from **Project Settings → API**:
-   - locally: put them in `.env.local` (see `.env.example`);
-   - on GitHub: add them as repository **variables** `SUPABASE_URL` and `SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions → Variables).
+4. Pingo's project URL and publishable key are the defaults in `src/config.ts`. To point at another project, set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in `.env.local` (see `.env.example`) or as repository variables `SUPABASE_URL` / `SUPABASE_ANON_KEY` for the GitHub build. `VITE_OFFLINE=1` builds the browser-storage-only version.
 5. Sign up in the app, then make yourself admin once in the SQL Editor:
    `update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');`
 

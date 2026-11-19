@@ -13,6 +13,13 @@ import { avatar, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
 import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
+import { canOrganize, isAdmin, isSeller, isTrainer, session, setRender } from './app/ctx';
+import * as content from './data/content';
+import * as news from './pages/news';
+import * as shop from './pages/shop';
+import * as training from './pages/training';
+import { icon } from './ui/icons';
+import { empty, heroArt } from './ui/art';
 
 /* ------------------------------------------------------------------ state */
 
@@ -35,12 +42,6 @@ const prefs = {
 
 let data: AppData = load();
 
-/* Online mode (Supabase): the signed-in user and their profile. */
-const session: { profile: remote.Profile | null; loading: boolean } = { profile: null, loading: online() };
-
-/** Can this user manage tournaments at all? Offline everyone can. */
-const canOrganize = () => !online() || session.profile?.role === 'organizer' || session.profile?.role === 'admin';
-const isAdmin = () => session.profile?.role === 'admin';
 const isOrg = () => canOrganize() && prefs.view === 'organizer';
 
 /** JSON of each tournament as last saved on the server, to upload only changes. */
@@ -77,6 +78,8 @@ async function refreshFromServer(): Promise<void> {
       synced.set(tm.id, JSON.stringify(rest));
     }
     myRegs = session.profile ? await remote.myRegistrations() : [];
+    myRoleReqs = null;
+    news.reset(); shop.reset(); training.reset();
   } catch {
     toast(t('auth.err.network'));
   }
@@ -84,6 +87,7 @@ async function refreshFromServer(): Promise<void> {
 }
 
 let myRegs: remote.Registration[] = [];
+let myRoleReqs: content.RoleRequest[] | null = null;
 const ONLINE_ACTS = new Set(['auth-tab', 'forgot', 'logout', 'join', 'withdraw', 'decide', 'reg-open', 'reg-close', 'copy-link',
   'dir-pick', 'dir-new', 'rm-player', 'link-open', 'link-save', 'confirm-user']);
 
@@ -144,51 +148,127 @@ function scoreText(m: Match): string {
 
 /* ------------------------------------------------------------------ shell */
 
-function shell(content: string): void {
+type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'me';
+
+function section(): Section {
+  const p = location.hash.replace(/^#\/?/, '').split('/')[0];
+  if (p === 'news' || p === 'shop' || p === 'training') return p;
+  if (p === 'tournaments' || p === 't' || p === 'new') return 'tournaments';
+  if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
+  return 'home';
+}
+
+function navItems(): [Section, string, string, MessageKey][] {
+  const items: [Section, string, string, MessageKey][] = [
+    ['home', '#/', 'home', 'nav.home'],
+    ['tournaments', '#/tournaments', 'trophy', 'nav.tournaments'],
+  ];
+  if (online()) {
+    items.push(['news', '#/news', 'news', 'nav.news'], ['shop', '#/shop', 'shop', 'nav.shop'], ['training', '#/training', 'coach', 'nav.training']);
+    items.push(['me', session.profile ? '#/me' : '#/login', 'user', session.profile ? 'nav.me' : 'auth.login']);
+  }
+  return items;
+}
+
+function shell(body: string): void {
   const v = prefs.view;
+  const sec = section();
   document.body.classList.toggle('no-hints', !prefs.hints);
+  document.body.dataset.section = sec;
+  const nav = navItems();
   app.innerHTML = `
   <header class="top">
     <a class="brand" href="#/"><span class="ball"></span>${t('app.name')}</a>
+    <nav class="topnav" aria-label="${esc(t('nav.label'))}">${nav.filter(([k]) => k !== 'me').map(([k, href, ic, label]) =>
+      `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>
     <span class="spacer"></span>
-    ${canOrganize() ? `<div class="switch" role="group" aria-label="${esc(t('view.hint'))}" title="${esc(t('view.hint'))}">
-      <button data-act="view" data-v="player" aria-pressed="${v === 'player'}">🎾 ${t('view.player')}</button>
-      <button data-act="view" data-v="organizer" aria-pressed="${v === 'organizer'}">🛠️ ${t('view.organizer')}</button>
+    ${canOrganize() && (sec === 'tournaments' || sec === 'home') ? `<div class="switch" role="group" aria-label="${esc(t('view.hint'))}" title="${esc(t('view.hint'))}">
+      <button data-act="view" data-v="player" aria-pressed="${v === 'player'}">🎾 <span class="hide-xs">${t('view.player')}</span></button>
+      <button data-act="view" data-v="organizer" aria-pressed="${v === 'organizer'}">🛠️ <span class="hide-xs">${t('view.organizer')}</span></button>
     </div>` : ''}
     ${online() ? (session.profile
       ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatar(session.profile.full_name)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
       : `<a class="btn gold small" href="#/login">${t('auth.login')}</a>`) : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
-  <main>${content}</main>`;
+  <main class="page">${body}</main>
+  ${nav.length > 2 ? `<nav class="bottomnav" aria-label="${esc(t('nav.label'))}">${nav.map(([k, href, ic, label]) =>
+    `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}`;
 }
 
 /* ------------------------------------------------------------------- home */
 
+function tournamentTile(tm: Tournament): string {
+  const p = progress(tm);
+  const st = stageIndex(tm);
+  const badge = ['blue', 'green', 'red', 'gold'][st];
+  const labels: MessageKey[] = ['stage.setup', 'stage.groups', 'stage.knockout', 'stage.champion'];
+  const champ = st === 3 ? placements(tm.brackets[0], tm.matches)[0] : null;
+  return `<a class="card tile rise" href="#/t/${tm.id}">
+    <div class="row between"><h3>${icon('trophy', 18)} ${esc(tm.name)}</h3>${registrationOf(tm).open
+      ? `<span class="badge gold">📝 ${t('reg.badge')}</span>` : `<span class="badge ${badge}">${t(labels[st])}</span>`}</div>
+    <div class="muted small">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')} · ${n(tm.groups.length)} ${t('t.groupsCount')}</div>
+    ${champ ? `<div class="row" style="margin-block-start:6px">🏆 <b>${esc(playerName(tm, champ.playerId))}</b></div>` : ''}
+    ${xp(p.done, p.total)}
+  </a>`;
+}
+
+/** Landing page: what Pingo offers, with live previews of each section. */
 function homePage(): string {
+  if (!online()) return tournamentsPage();
+  if (session.loading) return `<div class="card center muted"><span class="spin"></span> ${t('sync.loading')}</div>`;
+  const posts = news.latest(3);
+  const prods = shop.featured(4);
+  const free = training.openSlots(6);
+  if (!posts) news.load();
+  if (!prods) shop.load();
+  if (!free) training.load();
+  const live = data.tournaments.filter((x) => registrationOf(x).open || x.stage !== 'setup').slice(0, 3);
+  const feature = (href: string, ic: string, title: MessageKey, text: MessageKey, cls: string) =>
+    `<a class="feature ${cls} rise" href="${href}"><span class="f-ic">${icon(ic, 30)}</span><b>${t(title)}</b><small>${t(text)}</small></a>`;
+  const more = (href: string) => `<a class="more" href="${href}">${t('home.seeAll')} ${icon('chevron', 16)}</a>`;
+  return `
+  <section class="hero landing">
+    <div class="hero-text">
+      <span class="kicker">${icon('spark', 16)} ${t('home.kicker')}</span>
+      <h1>${t('home.heroTitle')}</h1>
+      <p>${t('home.heroText')}</p>
+      <div class="row">${session.profile
+        ? `<a class="btn gold" href="#/training">${icon('calendar')} ${t('home.ctaBook')}</a><a class="btn soft" href="#/tournaments">${icon('trophy')} ${t('nav.tournaments')}</a>`
+        : `<a class="btn gold" href="#/login">${icon('user')} ${t('auth.signup')}</a><a class="btn soft" href="#/tournaments">${icon('trophy')} ${t('nav.tournaments')}</a>`}</div>
+    </div>
+    ${heroArt()}
+  </section>
+  <div class="features">
+    ${feature('#/tournaments', 'trophy', 'nav.tournaments', 'home.fTournaments', 'f1')}
+    ${feature('#/training', 'coach', 'nav.training', 'home.fTraining', 'f2')}
+    ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
+    ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
+  </div>
+  ${live.length ? `<div class="sec-head"><h2>${icon('trophy', 22)} ${t('home.liveTournaments')}</h2>${more('#/tournaments')}</div>
+    <div class="grid">${live.map(tournamentTile).join('')}</div>` : ''}
+  <div class="sec-head"><h2>${icon('calendar', 22)} ${t('home.nextSlots')}</h2>${more('#/training')}</div>
+  ${free === null ? '<div class="sk-row"></div>' : free.length
+    ? `<div class="slots strip">${free.map((x) => `<a class="slot" href="#/training/t/${x.trainer_id}"><span class="slot-time">${icon('clock', 16)} ${dateTimeFmt.format(new Date(x.starts_at))}</span>
+        <span class="small" dir="auto">${icon('coach', 14)} ${esc(training.trainerName(x.trainer_id))}</span></a>`).join('')}</div>`
+    : `<p class="muted">${t('tr.noSlots')}</p>`}
+  <div class="sec-head"><h2>${icon('shop', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
+  ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}
+  <div class="sec-head"><h2>${icon('news', 22)} ${t('home.latestNews')}</h2>${more('#/news')}</div>
+  ${posts === null ? '<div class="sk-row"></div>' : posts.length ? `<div class="grid">${posts.map((x) => news.postCard(x)).join('')}</div>` : `<p class="muted">${t('news.empty')}</p>`}`;
+}
+
+function tournamentsPage(): string {
   const ts = data.tournaments;
   const players = ts.reduce((s, x) => s + x.players.length, 0);
   const done = ts.reduce((s, x) => s + Object.values(x.matches).filter((m) => summarize(m).winner && m.aId && m.bId).length, 0);
-  const tiles = ts.map((tm) => {
-    const p = progress(tm);
-    const st = stageIndex(tm);
-    const badge = ['blue', 'green', 'red', 'gold'][st];
-    const labels: MessageKey[] = ['stage.setup', 'stage.groups', 'stage.knockout', 'stage.champion'];
-    const champ = st === 3 ? placements(tm.brackets[0], tm.matches)[0] : null;
-    return `<a class="card tile" href="#/t/${tm.id}">
-      <div class="row between"><h3>${esc(tm.name)}</h3>${registrationOf(tm).open
-        ? `<span class="badge gold">📝 ${t('reg.badge')}</span>` : `<span class="badge ${badge}">${t(labels[st])}</span>`}</div>
-      <div class="muted small">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')} · ${n(tm.groups.length)} ${t('t.groupsCount')}</div>
-      ${champ ? `<div class="row" style="margin-block-start:6px">🏆 <b>${esc(playerName(tm, champ.playerId))}</b></div>` : ''}
-      ${xp(p.done, p.total)}
-    </a>`;
-  }).join('');
+  const tiles = ts.map(tournamentTile).join('');
 
   const org = isOrg();
   if (session.loading) return `<div class="card center muted">⏳ ${t('sync.loading')}</div>`;
   return `
   <section class="hero">
-    <h1>${t('app.name')} 🏓</h1>
+    <h1>${icon('trophy', 26)} ${online() ? t('nav.tournaments') : t('app.name') + ' 🏓'}</h1>
     <p class="muted">${t('app.tagline')}</p>
     ${online() && !session.profile ? `<div class="row" style="margin-block-start:12px">
       <a class="btn gold" href="#/login">👤 ${t('auth.signup')}</a><span class="small">${t('auth.hint')}</span></div>` : ''}
@@ -747,7 +827,10 @@ function loginPage(): string {
       ${signup ? `<p class="muted small" style="margin-block-start:-6px">${t('auth.passwordHint')}</p>
         ${field('aPhone', 'auth.phone', 'tel', 'autocomplete="tel" dir="ltr"')}
         <div class="row"><div style="flex:1">${field('aYear', 'auth.birthYear', 'text', 'inputmode="numeric" maxlength="4" dir="ltr"')}</div>
-        <div style="flex:2">${field('aClub', 'auth.club', 'text', 'dir="auto"')}</div></div>` : ''}
+        <div style="flex:2">${field('aClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+        <span class="lbl">${t('roles.wantAlso')}</span>
+        <div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="aWant-${r}" ${authVals[`aWant-${r}`] === '1' ? 'checked' : ''}> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>
+        <p class="muted small">${t('roles.wantHint')}</p>` : ''}
       ${authMsg ? `<div class="${authMsg.startsWith('✅') ? 'hint' : 'err'}" role="alert">${esc(authMsg)}</div>` : ''}
       <button class="btn green block" type="submit" ${busy ? 'disabled' : ''}>${signup ? '🚀 ' + t('auth.submitSignup') : '🔑 ' + t('auth.submitLogin')}</button>
       ${signup ? '' : `<button class="btn ghost small block" type="button" data-act="forgot" style="margin-block-start:8px">${t('auth.forgot')}</button>`}
@@ -759,6 +842,7 @@ const val = (id: string) => ((document.getElementById(id) as HTMLInputElement | 
 
 async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
   for (const id of ['aName', 'aEmail', 'aPass', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+  for (const r of ['organizer', 'seller', 'trainer']) { const c = document.getElementById(`aWant-${r}`) as HTMLInputElement | null; if (c) authVals[`aWant-${r}`] = c.checked ? '1' : ''; }
   const email = val('aEmail'), password = val('aPass');
   if (!email || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
   busy = true; authMsg = ''; route();
@@ -769,7 +853,8 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
       location.hash = takeReturn();
     } else {
       const year = val('aYear').replace(/[^\d]/g, '');
-      const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub') });
+      const wants = EXTRA.filter((r) => (document.getElementById(`aWant-${r}`) as HTMLInputElement | null)?.checked).join(',');
+      const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub'), wants });
       delete authVals.aPass;
       if (needsConfirm) { authMsg = '✅ ' + t('auth.checkEmail'); authTab = 'login'; }
       else location.hash = takeReturn();
@@ -781,6 +866,30 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
   route();
 }
 
+const EXTRA: content.ExtraRole[] = ['organizer', 'seller', 'trainer'];
+const ROLE_ICON: Record<content.ExtraRole, string> = { organizer: 'trophy', seller: 'shop', trainer: 'coach' };
+const hasRole = (r: content.ExtraRole) => (r === 'organizer' ? canOrganize() : r === 'seller' ? isSeller() : isTrainer());
+
+function rolesCard(): string {
+  if (myRoleReqs === null) {
+    myRoleReqs = [];
+    content.myRoleRequests().then((r) => { myRoleReqs = r; }).catch(() => undefined).finally(route);
+  }
+  const req = (r: content.ExtraRole) => myRoleReqs?.find((x) => x.role === r);
+  return `<div class="card"><h3>${icon('star', 20)} ${t('roles.title')}</h3>${hint('roles.hint')}
+    <div class="roles">${EXTRA.map((r) => {
+      const has = hasRole(r);
+      const rq = req(r);
+      const state = has ? `<span class="badge green">${icon('check', 14)} ${t('roles.active')}</span>`
+        : rq?.status === 'pending' ? `<span class="badge gold">${icon('clock', 14)} ${t('roles.pending')}</span>`
+        : `<button class="btn soft small" data-act="role-request" data-v="${r}">${icon('plus', 14)} ${t(rq?.status === 'rejected' ? 'roles.again' : 'roles.request')}</button>`;
+      const link = has ? (r === 'organizer' ? '#/tournaments' : r === 'seller' ? '#/shop/manage' : '#/training/manage') : '';
+      return `<div class="role-card ${has ? 'on' : ''}"><span class="role-ic">${icon(ROLE_ICON[r], 24)}</span>
+        <div><b>${t(`roles.${r}` as MessageKey)}</b><br><small class="muted">${t(`roles.${r}Text` as MessageKey)}</small></div>
+        <div class="role-state">${state}${link ? `<a class="btn small" href="${link}">${t('roles.open')}</a>` : ''}</div></div>`;
+    }).join('')}</div></div>`;
+}
+
 function mePage(): string {
   const p = session.profile!;
   const reg = (r: remote.Registration) => {
@@ -788,24 +897,49 @@ function mePage(): string {
     return `<a class="match" href="#/t/${r.tournament_id}" style="grid-template-columns:1fr auto">
       <span class="p">${esc(tm?.name ?? '…')}</span><span class="badge ${r.status === 'approved' ? 'green' : r.status === 'pending' ? 'gold' : ''}">${t(`reg.status.${r.status}` as MessageKey)}</span></a>`;
   };
-  return `<div class="card">
-    <div class="row between"><h2>👤 ${t('me.title')}</h2><span class="badge blue">${t('me.role')}: ${t(`role.${p.role}` as MessageKey)}</span></div>
+  const roleBadges = [isAdmin() ? `<span class="badge red">${icon('shield', 14)} ${t('role.admin')}</span>` : '',
+    ...EXTRA.filter(hasRole).map((r) => `<span class="badge blue">${icon(ROLE_ICON[r], 14)} ${t(`roles.${r}` as MessageKey)}</span>`)].join('');
+  return `<section class="banner b-me slim rise"><div class="row">${avatar(p.full_name)}<div><h1 dir="auto">${esc(p.full_name)}</h1>
+    <div class="row" style="gap:6px">${roleBadges || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
+  ${training.myBookingsCard()}
+  ${shop.myOrdersCard()}
+  <div class="card"><h3>${icon('trophy', 20)} ${t('me.myTournaments')}</h3>
+    ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
+  </div>
+  ${rolesCard()}
+  <div class="card">
+    <h3>${icon('user', 20)} ${t('me.title')}</h3>
     <form data-form="me" novalidate>
       <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="mName" value="${esc(p.full_name)}" dir="auto"></label>
       <label class="field"><span>${t('auth.phone')}</span><input class="input" id="mPhone" type="tel" value="${esc(p.phone ?? '')}" dir="ltr"></label>
       <div class="row"><label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="mYear" inputmode="numeric" value="${p.birth_year ?? ''}" dir="ltr"></label>
       <label class="field" style="flex:2"><span>${t('auth.club')}</span><input class="input" id="mClub" value="${esc(p.club ?? '')}" dir="auto"></label></div>
-      <button class="btn green" type="submit">💾 ${t('me.save')}</button>
+      ${isTrainer() || isSeller() ? `<label class="field"><span>${t('me.bio')}</span><textarea class="input" id="mBio" dir="auto" style="min-height:90px" maxlength="600" placeholder="${esc(t('me.bioPh'))}">${esc(p.bio ?? '')}</textarea></label>` : ''}
+      <button class="btn green" type="submit">${icon('check')} ${t('me.save')}</button>
     </form>
   </div>
-  <div class="card"><h3>🏓 ${t('me.myTournaments')}</h3>
-    ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
-  </div>
   <div class="row">
-    ${canOrganize() ? `<a class="btn soft" href="#/players">👥 ${t('dir.link')}</a><a class="btn soft" href="#/admin">🛡️ ${t('users.link')}</a>` : ''}
-    <button class="btn ghost" data-act="logout">🚪 ${t('auth.logout')}</button>
+    ${canOrganize() ? `<a class="btn soft" href="#/players">${icon('users')} ${t('dir.link')}</a><a class="btn soft" href="#/admin">${icon('shield')} ${t('users.link')}</a>` : ''}
+    <button class="btn ghost" data-act="logout">${icon('logout')} ${t('auth.logout')}</button>
   </div>`;
 }
+
+async function roleAction(act: string, el: HTMLElement): Promise<void> {
+  try {
+    if (act === 'role-request') {
+      await content.requestRole(el.dataset.v as content.ExtraRole);
+      toast(`📨 ${t('roles.sent')}`);
+      myRoleReqs = null;
+    } else if (act === 'role-decide') {
+      await content.decideRoleRequest(el.dataset.id!, el.dataset.v === 'yes');
+      toast(t('admin.saved'));
+      roleReqs = null; people = null;
+    }
+  } catch (e) { toast(authErr(e)); }
+  route();
+}
+
+let roleReqs: content.RoleRequest[] | null = null;
 
 let people: remote.Profile[] | null = null;
 let pendingUsers: remote.PendingUser[] | null = null;
@@ -821,7 +955,22 @@ function loadUsers(): void {
 
 function usersPage(): string {
   if (!people) { loadUsers(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
-  const roles: remote.Role[] = ['player', 'organizer', 'admin'];
+  if (isAdmin() && roleReqs === null) {
+    roleReqs = [];
+    content.pendingRoleRequests().then((r) => { roleReqs = r; }).catch(() => undefined).finally(route);
+  }
+  const nameOf = (id: string) => people?.find((p) => p.id === id)?.full_name ?? '…';
+  const requests = isAdmin() && roleReqs?.length ? `<div class="card"><h2>${icon('star', 22)} ${t('roles.requests')}</h2>${hint('roles.requestsHint')}
+    ${roleReqs.map((r) => `<div class="chip ro">${avatar(nameOf(r.user_id))}<span><b dir="auto">${esc(nameOf(r.user_id))}</b><br>
+      <span class="badge blue">${icon(ROLE_ICON[r.role], 14)} ${t(`roles.${r.role}` as MessageKey)}</span>${r.note ? ` <span class="muted small" dir="auto">${esc(r.note)}</span>` : ''}</span>
+      <span class="row" style="margin-inline-start:auto;gap:6px"><button class="btn green small" data-act="role-decide" data-id="${r.id}" data-v="yes">${icon('check', 14)} ${t('roles.approve')}</button>
+      <button class="btn ghost small" data-act="role-decide" data-id="${r.id}" data-v="no">${icon('x', 14)}</button></span></div>`).join('')}</div>` : '';
+  const flags: [string, MessageKey, (p: remote.Profile) => boolean][] = [
+    ['is_organizer', 'roles.organizer', (p) => p.role === 'organizer' || !!p.is_organizer],
+    ['is_seller', 'roles.seller', (p) => !!p.is_seller],
+    ['is_trainer', 'roles.trainer', (p) => !!p.is_trainer],
+    ['admin', 'role.admin', (p) => p.role === 'admin'],
+  ];
   const pending = pendingUsers === null
     ? `<p class="muted">⏳ ${t('reg.loading')}</p>`
     : pendingError ? `<div class="err">${esc(pendingError)}</div>`
@@ -831,24 +980,23 @@ function usersPage(): string {
     : `<p class="muted">${t('users.noPending')}</p>`;
   const f = (id: string, label: MessageKey, type = 'text', extra = '') =>
     `<label class="field"><span>${t(label)}</span><input class="input" id="${id}" type="${type}" ${extra}></label>`;
-  return `<div class="card"><h2>📨 ${t('users.pending')}</h2>${hint('users.pendingHint')}${pending}</div>
+  return `${requests}<div class="card"><h2>📨 ${t('users.pending')}</h2>${hint('users.pendingHint')}${pending}</div>
   <div class="card"><h2>➕ ${t('users.create')}</h2>${hint('users.createHint')}
     <form data-form="create-account" novalidate>
       ${f('cName', 'auth.fullName', 'text', 'dir="auto"')}
       ${f('cEmail', 'auth.email', 'email', 'dir="ltr" autocomplete="off"')}
       ${f('cPass', 'auth.password', 'text', 'dir="ltr" autocomplete="off"')}
       <div class="row"><div style="flex:1">${f('cPhone', 'auth.phone', 'tel', 'dir="ltr"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+      ${isAdmin() ? `<span class="lbl">${t('roles.give')}</span><div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="cRole-${r}"> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>` : ''}
       <button class="btn green" type="submit" ${busy ? 'disabled' : ''}>➕ ${t('users.create')}</button>
     </form>
   </div>
   <div class="card"><h2>🛡️ ${t('users.all')}</h2>${hint('admin.hint')}
-    ${people.map((p) => `<div class="chip ro">${avatar(p.full_name)}<span dir="auto">${esc(p.full_name)}</span>
-      <span class="muted small hide-sm" dir="ltr">${esc(p.phone ?? '')}</span>
-      ${isAdmin()
-        ? `<select class="input" style="width:auto;margin-inline-start:auto" data-act="role" data-id="${p.id}" ${p.id === session.profile?.id ? 'disabled' : ''}>
-        ${roles.map((r) => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${t(`role.${r}` as MessageKey)}</option>`).join('')}
-      </select>`
-        : `<span class="badge" style="margin-inline-start:auto">${t(`role.${p.role}` as MessageKey)}</span>`}</div>`).join('')}
+    ${people.map((p) => `<div class="chip ro user-row">${avatar(p.full_name)}<span><span dir="auto">${esc(p.full_name)}</span>
+      ${p.phone ? `<br><span class="muted small" dir="ltr">${esc(p.phone)}</span>` : ''}</span>
+      <span class="flags">${flags.map(([flag, label, on]) => isAdmin()
+        ? `<label class="flag ${on(p) ? 'on' : ''}"><input type="checkbox" data-act="role-flag" data-id="${p.id}" data-flag="${flag}" ${on(p) ? 'checked' : ''} ${p.id === session.profile?.id && flag === 'admin' ? 'disabled' : ''}> ${t(label)}</label>`
+        : on(p) ? `<span class="badge">${t(label)}</span>` : '').join('')}</span></div>`).join('')}
   </div>`;
 }
 
@@ -1130,6 +1278,11 @@ function route(): void {
   if (parts[0] === 'new') {
     if (!isOrg()) { location.hash = '#/'; return; }
     shell(wizardPage());
+  } else if (parts[0] === 'tournaments') {
+    shell(tournamentsPage());
+  } else if (['news', 'shop', 'training'].includes(parts[0])) {
+    if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
+    shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? '');
   } else if (parts[0] === 'login' && online()) {
     shell(loginPage());
   } else if (parts[0] === 'me' && online()) {
@@ -1172,6 +1325,11 @@ document.addEventListener('click', (e) => {
   if (!el || el.tagName === 'INPUT') return;
   const act = el.dataset.act!;
   const { tm, m } = current();
+  if (/^(news|shop|tr)-/.test(act)) {
+    void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
+    return;
+  }
+  if (act.startsWith('role-')) { void roleAction(act, el); return; }
   if (online() && ONLINE_ACTS.has(act)) {
     void onlineAction(act, el, tm);
     return;
@@ -1414,6 +1572,7 @@ function syncInputs(): void {
 
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
+  if (shop.onInput(el as HTMLInputElement)) return;
   if (el.dataset.act === 'dir-q') {
     const res = document.getElementById('dirRes');
     const { tm } = current();
@@ -1460,6 +1619,7 @@ document.addEventListener('submit', async (e) => {
   if (!kind) return;
   e.preventDefault();
   if (kind === 'login' || kind === 'signup') { await submitAuth(kind); return; }
+  if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await training.onSubmit(kind, form)) return;
   if (kind === 'add-player') {
     const name = val('pName');
     if (!name) return;
@@ -1477,7 +1637,8 @@ document.addEventListener('submit', async (e) => {
   if (kind === 'create-account') {
     busy = true; route();
     try {
-      await remote.createAccount({ full_name: val('cName'), email: val('cEmail'), password: val('cPass'), phone: val('cPhone'), club: val('cClub'), birth_year: '' });
+      const roles = EXTRA.filter((r) => (document.getElementById(`cRole-${r}`) as HTMLInputElement | null)?.checked);
+      await remote.createAccount({ full_name: val('cName'), email: val('cEmail'), password: val('cPass'), phone: val('cPhone'), club: val('cClub'), birth_year: '', roles });
       toast(`✅ ${t('users.created')}`);
       people = null;
     } catch (err) { toast(authErr(err)); }
@@ -1490,6 +1651,7 @@ document.addEventListener('submit', async (e) => {
       await remote.updateProfile(session.profile.id, {
         full_name: val('mName') || session.profile.full_name, phone: val('mPhone') || null,
         birth_year: year >= 1920 ? year : null, club: val('mClub') || null,
+        ...(document.getElementById('mBio') ? { bio: (document.getElementById('mBio') as HTMLTextAreaElement).value.trim() || null } : {}),
       });
       session.profile = await remote.myProfile();
       toast(t('settings.saved'));
@@ -1501,12 +1663,15 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
-  if (el.dataset.act === 'role') {
+  if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el)) return;
+  if (el.dataset.act === 'role-flag') {
+    const id = el.dataset.id!;
+    const flag = el.dataset.flag!;
     try {
-      await remote.setRole(el.dataset.id!, el.value as remote.Role);
+      if (flag === 'admin') await content.setRoles(id, { role: el.checked ? 'admin' : 'player' });
+      else await content.setRoles(id, { [flag]: el.checked });
       toast(t('admin.saved'));
-    } catch (err) { toast(authErr(err)); }
-    people = null; route();
+    } catch (err) { toast(authErr(err)); el.checked = !el.checked; }
     return;
   }
   if ((el.dataset.act === 'reg-auto' || el.dataset.act === 'reg-max') && tm) {
@@ -1623,7 +1788,7 @@ if (online()) {
 }
 
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#/login' && lastHash.startsWith('#/t/')) {
+  if (location.hash === '#/login' && /^#\/(t|news|shop|training)\//.test(lastHash)) {
     try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
   }
   lastHash = location.hash;
@@ -1631,4 +1796,5 @@ window.addEventListener('hashchange', () => {
   deleteArmed = false;
   route();
 });
+setRender(route);
 route();

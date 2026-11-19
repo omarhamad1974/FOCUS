@@ -12,6 +12,10 @@ export interface Profile {
   birth_year: number | null;
   club: string | null;
   role: Role;
+  is_organizer?: boolean;
+  is_seller?: boolean;
+  is_trainer?: boolean;
+  bio?: string | null;
 }
 
 export type RegStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
@@ -61,6 +65,8 @@ export interface SignUpInput {
   phone: string;
   birth_year: string;
   club: string;
+  /** Roles the person asks for at sign-up, comma separated. */
+  wants?: string;
 }
 
 /** Returns true when the account still needs email confirmation. */
@@ -97,7 +103,7 @@ export async function myProfile(): Promise<Profile | null> {
   return check(await db().from('profiles').select('*').eq('id', s.user.id).maybeSingle()) as Profile | null;
 }
 
-export async function updateProfile(id: string, p: Partial<Pick<Profile, 'full_name' | 'phone' | 'birth_year' | 'club'>>): Promise<void> {
+export async function updateProfile(id: string, p: Partial<Pick<Profile, 'full_name' | 'phone' | 'birth_year' | 'club' | 'bio'>>): Promise<void> {
   check(await db().from('profiles').update(p).eq('id', id));
 }
 
@@ -227,9 +233,9 @@ async function adminUsers<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-export const unconfirmedUsers = () => adminUsers<{ users: PendingUser[] }>({ action: 'unconfirmed' }).then((r) => r.users);
+export const unconfirmedUsers = () => adminUsers<{ users: PendingUser[] }>({ action: 'unconfirmed' }).then((r) => r.users ?? []);
 export const confirmUser = (userId: string) => adminUsers<{ ok: true }>({ action: 'confirm', user_id: userId });
-export const createAccount = (a: { email: string; password: string; full_name: string; phone: string; club: string; birth_year: string }) =>
+export const createAccount = (a: { email: string; password: string; full_name: string; phone: string; club: string; birth_year: string; roles?: string[] }) =>
   adminUsers<{ id: string }>({ action: 'create', ...a });
 
 /** Map server error text to an Arabic message key suffix. */
@@ -243,6 +249,12 @@ export function errorCode(e: unknown): string {
   if (/Password should be/i.test(m)) return 'weakPassword';
   if (/row-level security|permission denied|only an admin/i.test(m)) return 'forbidden';
   if (/rate limit|over_email_send_rate_limit|429/i.test(m)) return 'rateLimit';
+  if (/slot taken/i.test(m)) return 'slotTaken';
+  if (/slot passed/i.test(m)) return 'slotPassed';
+  if (/own slot|own product/i.test(m)) return 'own';
+  if (/out of stock|product unavailable/i.test(m)) return 'outOfStock';
+  if (/order closed/i.test(m)) return 'orderClosed';
+  if (/Bucket not found|mime type|exceeded the maximum allowed size|payload too large/i.test(m)) return 'upload';
   if (/not authorized|Error sending confirmation/i.test(m)) return 'emailSend';
   if (/Failed to fetch|NetworkError/i.test(m)) return 'network';
   if (/Failed to send a request|FunctionsFetchError|404/i.test(m)) return 'noFunction';

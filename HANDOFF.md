@@ -13,9 +13,11 @@ Decisions confirmed by Omar (2026-11-19):
 - Western digits.
 - Interface: game-like, clear, drag and drop where useful, help text beside features, rich visuals, easy switch between player and organizer views, sample data on demand.
 
-## Assumptions to confirm
-- In a 3+ way tie, game and points difference are counted only in the matches among the tied players (ITTF style), not the whole group.
-- In best of 3, a walkover is recorded as 2–0 (3–0 is impossible); each game counts as 11–0 for points difference.
+Also confirmed:
+- In a 3+ way tie, game and points difference are counted only in the matches among the tied players.
+- In best of 3, a walkover is recorded as 2-0; each game counts as 11-0 for points difference.
+
+## Assumptions still open
 - Knockout seeding: group winners first (group order), then runners-up; first round avoids same-group pairings when possible; byes go to the top seeds when the draw is not a power of two.
 - Consolation draw uses the same per-stage formats as the main draw.
 

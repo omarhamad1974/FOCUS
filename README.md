@@ -16,7 +16,7 @@ Pushing to `main` runs the tests and publishes `dist/` to GitHub Pages (enable P
 ## Connect Supabase
 
 1. Create a project at supabase.com (region: Frankfurt, closest to Cairo).
-2. In **SQL Editor**, run the files in `supabase/migrations/` in order (`0001`, `0002`, `0003`).
+2. In **SQL Editor**, run the files in `supabase/migrations/` in order (`0001` … `0005`). `0004` adds roles, news, shop and training; `0005` creates the public `media` image bucket.
 3. Deploy the Edge Function `supabase/functions/admin-users` (Dashboard → Edge Functions → Deploy a new function → Via editor, name `admin-users`, paste `index.ts`, then turn **off** "Verify JWT": the function checks the caller itself). Or add the `SUPABASE_ACCESS_TOKEN` repository secret and the `Deploy Supabase Edge Functions` workflow deploys it from `main`.
 3b. In **Authentication → URL Configuration**, set the Site URL to where the app is hosted (for example the GitHub Pages URL) so confirmation emails link back to it.
 4. Pingo's project URL and publishable key are the defaults in `src/config.ts`. To point at another project, set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in `.env.local` (see `.env.example`) or as repository variables `SUPABASE_URL` / `SUPABASE_ANON_KEY` for the GitHub build. `VITE_OFFLINE=1` builds the browser-storage-only version.
@@ -34,9 +34,27 @@ Never put the `service_role` key in the app or the repository.
 | Create tournaments, approve entries, enter scores | | | own tournaments | all |
 | Change roles | | | | ✓ |
 
+Roles are additive: one account can be organizer, seller and trainer at once (`profiles.is_organizer / is_seller / is_trainer`; `role = 'admin'` for admins). Players ask for a role from their account page or when signing up; an admin approves it, or grants it directly on the Accounts page or when creating an account.
+
+| | Guest | Signed in | Seller | Trainer | Organizer | Admin |
+| --- | --- | --- | --- | --- | --- | --- |
+| Read news, browse shop and training slots | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Order products, book training slots | | ✓ | ✓ | ✓ | ✓ | ✓ |
+| List products, handle incoming orders | | | ✓ | | | ✓ |
+| Add locations and one-hour slots, see trainees | | | | ✓ | | ✓ |
+| Write news | | | | | ✓ | ✓ |
+
+Orders and bookings go through database functions (`place_order`, `set_order_status`, `book_slot`, `cancel_booking`) that check stock, prevent double booking and only let the right person change a status. There is no online payment: buyers pay the seller on delivery, players pay the trainer at the session. `supabase/tests/content_check.sql` exercises these rules.
+
 Players join through the `join_tournament` database function, which checks that registration is open and the tournament is not full. `supabase/tests/` has a manual check of these rules for plain Postgres.
 
 ## What the app does
+
+- **Home**: animated hero, quick links to each section, the next free training slots, shop picks and latest news. Bottom navigation on phones, top navigation on wide screens.
+- **News**: blog with categories (news, lessons, tips, events, gear), cover photos, drafts; organizers and admins write.
+- **Shop**: products with photos, categories, search, stock; buyers send an order request; sellers get a dashboard with incoming orders (confirm → delivered, or cancel) and their products.
+- **Training**: trainer cards, day strip with free one-hour slots, booking with a note; trainers add locations (with a map link) and generate slots by picking weekdays, hours and number of weeks; they see who booked and can cancel.
+- **Photos** are shrunk in the browser and stored in Supabase Storage; without a photo each card shows a coloured illustration.
 
 - **Accounts** (online): sign up with email and password, profile with name, phone, birth year and club; "my tournaments" with registration status.
 - **Online registration**: the organizer opens registration (optional auto-accept and player limit), shares the link, approves or rejects requests, then closes registration to put approved players into the group draw.

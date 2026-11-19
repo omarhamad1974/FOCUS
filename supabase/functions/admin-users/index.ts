@@ -3,7 +3,8 @@
 //
 // POST JSON { action: 'unconfirmed' }                      -> { users: [{ id, email, full_name, created_at }] }
 // POST JSON { action: 'confirm', user_id }                 -> { ok: true }
-// POST JSON { action: 'create', email, password, full_name, phone?, club?, birth_year? } -> { id }
+// POST JSON { action: 'create', email, password, full_name, phone?, club?, birth_year?, roles? } -> { id }
+//   roles: ['organizer' | 'seller' | 'trainer'], admins only.
 //
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided
 // to every Edge Function automatically by Supabase.
@@ -30,8 +31,9 @@ Deno.serve(async (req) => {
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   const { data: caller } = await service.auth.getUser(token);
   if (!caller?.user) return json({ error: 'not signed in' }, 401);
-  const { data: me } = await service.from('profiles').select('role').eq('id', caller.user.id).maybeSingle();
-  if (!me || (me.role !== 'organizer' && me.role !== 'admin')) return json({ error: 'only organizers' }, 403);
+  const { data: me } = await service.from('profiles').select('role, is_organizer').eq('id', caller.user.id).maybeSingle();
+  const isAdmin = me?.role === 'admin';
+  if (!me || !(isAdmin || me.role === 'organizer' || me.is_organizer)) return json({ error: 'only organizers' }, 403);
 
   let body: Record<string, unknown>;
   try {
@@ -74,6 +76,15 @@ Deno.serve(async (req) => {
       },
     });
     if (error) return json({ error: error.message }, 400);
+    const roles = Array.isArray(body.roles) ? body.roles.map(String) : [];
+    if (roles.length && data.user) {
+      if (!isAdmin) return json({ id: data.user.id, warning: 'only an admin can give roles' });
+      await service.from('profiles').update({
+        is_organizer: roles.includes('organizer'),
+        is_seller: roles.includes('seller'),
+        is_trainer: roles.includes('trainer'),
+      }).eq('id', data.user.id);
+    }
     return json({ id: data.user?.id });
   }
 

@@ -242,6 +242,8 @@ export function errorCode(e: unknown): string {
   if (/already registered|already been registered/i.test(m)) return 'exists';
   if (/Password should be/i.test(m)) return 'weakPassword';
   if (/row-level security|permission denied|only an admin/i.test(m)) return 'forbidden';
+  if (/rate limit|over_email_send_rate_limit|429/i.test(m)) return 'rateLimit';
+  if (/not authorized|Error sending confirmation/i.test(m)) return 'emailSend';
   if (/Failed to fetch|NetworkError/i.test(m)) return 'network';
   if (/Failed to send a request|FunctionsFetchError|404/i.test(m)) return 'noFunction';
   if (/already been registered|already exists/i.test(m)) return 'exists';

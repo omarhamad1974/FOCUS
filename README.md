@@ -16,7 +16,8 @@ Pushing to `main` runs the tests and publishes `dist/` to GitHub Pages (enable P
 ## Connect Supabase
 
 1. Create a project at supabase.com (region: Frankfurt, closest to Cairo).
-2. In **SQL Editor**, run the files in `supabase/migrations/` in order (`0001` … `0005`). `0004` adds roles, news, shop and training; `0005` creates the public `media` image bucket.
+2. In **SQL Editor**, run the files in `supabase/migrations/` in order (`0001` … `0006`). `0004` adds roles, news, shop and training; `0005` creates the public `media` image bucket; `0006` adds profile photos, admin-only news, product approval and featured products, and match-result assistants.
+2b. Optional demo content: run `supabase/seed/demo_content.sql` to add 24 demo people with photos, 6 articles, 10 products, 3 trainers with slots for the next 10 days, and 3 tournaments (finished, running, open). The pictures ship with the app in `public/demo/`. Demo accounts have no password. `supabase/seed/demo_remove.sql` removes it all. Regenerate with `npx vite-node scripts/demo-seed.ts` (content) and `node scripts/demo-art.cjs` (pictures).
 3. Deploy the Edge Function `supabase/functions/admin-users` (Dashboard → Edge Functions → Deploy a new function → Via editor, name `admin-users`, paste `index.ts`, then turn **off** "Verify JWT": the function checks the caller itself). Or add the `SUPABASE_ACCESS_TOKEN` repository secret and the `Deploy Supabase Edge Functions` workflow deploys it from `main`.
 3b. In **Authentication → URL Configuration**, set the Site URL to where the app is hosted (for example the GitHub Pages URL) so confirmation emails link back to it.
 4. Pingo's project URL and publishable key are the defaults in `src/config.ts`. To point at another project, set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in `.env.local` (see `.env.example`) or as repository variables `SUPABASE_URL` / `SUPABASE_ANON_KEY` for the GitHub build. `VITE_OFFLINE=1` builds the browser-storage-only version.
@@ -32,7 +33,10 @@ Never put the `service_role` key in the app or the repository.
 | See published tournaments and approved entrants | ✓ | ✓ | ✓ | ✓ |
 | Join / withdraw (while registration is open) | | ✓ | ✓ | ✓ |
 | Create tournaments, approve entries, enter scores | | | own tournaments | all |
+| Enter match results only (assistant named by the organizer) | | assigned tournaments | | |
 | Change roles | | | | ✓ |
+
+At sign-up a person picks player (no approval) or asks to be organizer, trainer or seller (an admin approves). Only an admin grants those roles. A seller's new product, or one whose name, description, photo or category changes, waits for admin approval. Assistants save results through `assistant_save_state`, which refuses any change other than match results.
 
 Roles are additive: one account can be organizer, seller and trainer at once (`profiles.is_organizer / is_seller / is_trainer`; `role = 'admin'` for admins). Players ask for a role from their account page or when signing up; an admin approves it, or grants it directly on the Accounts page or when creating an account.
 
@@ -42,7 +46,8 @@ Roles are additive: one account can be organizer, seller and trainer at once (`p
 | Order products, book training slots | | ✓ | ✓ | ✓ | ✓ | ✓ |
 | List products, handle incoming orders | | | ✓ | | | ✓ |
 | Add locations and one-hour slots, see trainees | | | | ✓ | | ✓ |
-| Write news | | | | | ✓ | ✓ |
+| Write and publish news | | | | | | ✓ |
+| Approve products, pick featured products | | | | | | ✓ |
 
 Orders and bookings go through database functions (`place_order`, `set_order_status`, `book_slot`, `cancel_booking`) that check stock, prevent double booking and only let the right person change a status. There is no online payment: buyers pay the seller on delivery, players pay the trainer at the session. `supabase/tests/content_check.sql` exercises these rules.
 
@@ -50,7 +55,9 @@ Players join through the `join_tournament` database function, which checks that 
 
 ## What the app does
 
-- **Home**: animated hero, quick links to each section, the next free training slots, shop picks and latest news. Bottom navigation on phones, top navigation on wide screens.
+- **Home**: a wide news carousel (each slide opens its article), a tournaments slider (open and running tournaments, plus the champion and runner-up with photos for tournaments that ended in the last 30 days), quick links, featured products and the next free training slots.
+- **Admin screen** (`#/admin`): counts, approvals (roles and products), accounts, news publishing, featured products, tournaments, and a **journey simulator** that shows the app as a guest, player, organizer, assistant, trainer or seller (display only; saving still uses the admin's rights).
+- **Profile photos** at sign-up or on the account page; **tournament photos and video links** (YouTube plays inline) on a tournament's media tab. Bottom navigation on phones, top navigation on wide screens.
 - **News**: blog with categories (news, lessons, tips, events, gear), cover photos, drafts; organizers and admins write.
 - **Shop**: products with photos, categories, search, stock; buyers send an order request; sellers get a dashboard with incoming orders (confirm → delivered, or cancel) and their products.
 - **Training**: trainer cards, day strip with free one-hour slots, booking with a note; trainers add locations (with a map link) and generate slots by picking weekdays, hours and number of weeks; they see who booked and can cancel.

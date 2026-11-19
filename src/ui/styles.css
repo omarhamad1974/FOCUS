@@ -350,3 +350,6 @@ a.match:hover { border-color: var(--blue); }
 .games { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 .games > i { font-style: normal; opacity: .5; }
 .scoreboard .big .pair { gap: 10px; }
+
+.acct { display: inline-flex; align-items: center; gap: 6px; color: #fff; text-decoration: none; font-weight: 700; font-size: 13px; }
+form .btn.block { margin-block-start: 8px; }

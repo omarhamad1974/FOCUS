@@ -10,6 +10,9 @@ import { checkGame, gamesToWin, summarize, type MatchCheck } from './domain/scor
 import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample';
 import type { BestOf, Bracket, Game, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, confetti, esc, groupColor, toast } from './ui/util';
+import { online } from './config';
+import * as remote from './data/remote';
+import { closeRegistration, registrationOf } from './domain/tournament';
 
 /* ------------------------------------------------------------------ state */
 
@@ -31,11 +34,57 @@ const prefs = {
 };
 
 let data: AppData = load();
-const isOrg = () => prefs.view === 'organizer';
+
+/* Online mode (Supabase): the signed-in user and their profile. */
+const session: { profile: remote.Profile | null; loading: boolean } = { profile: null, loading: online() };
+
+/** Can this user manage tournaments at all? Offline everyone can. */
+const canOrganize = () => !online() || session.profile?.role === 'organizer' || session.profile?.role === 'admin';
+const isAdmin = () => session.profile?.role === 'admin';
+const isOrg = () => canOrganize() && prefs.view === 'organizer';
+
+/** JSON of each tournament as last saved on the server, to upload only changes. */
+const synced = new Map<string, string>();
 
 function persist(): void {
-  if (!save(data)) toast(t('common.storageFull'));
+  if (!online()) {
+    if (!save(data)) toast(t('common.storageFull'));
+    return;
+  }
+  for (const tm of data.tournaments) {
+    const mine = isAdmin() || !tm.organizerId || tm.organizerId === session.profile?.id;
+    if (!mine) continue;
+    const { organizerId: _o, ...rest } = tm;
+    const json = JSON.stringify(rest);
+    if (synced.get(tm.id) === json) continue;
+    synced.set(tm.id, json);
+    if (!tm.organizerId && session.profile) tm.organizerId = session.profile.id;
+    remote.saveTournament(tm).catch(() => {
+      synced.delete(tm.id);
+      toast(t('sync.failed'));
+    });
+  }
 }
+
+async function refreshFromServer(): Promise<void> {
+  if (!online()) return;
+  try {
+    session.profile = await remote.myProfile();
+    data = { version: 1, tournaments: await remote.listTournaments() };
+    synced.clear();
+    for (const tm of data.tournaments) {
+      const { organizerId: _o, ...rest } = tm;
+      synced.set(tm.id, JSON.stringify(rest));
+    }
+    myRegs = session.profile ? await remote.myRegistrations() : [];
+  } catch {
+    toast(t('auth.err.network'));
+  }
+  session.loading = false;
+}
+
+let myRegs: remote.Registration[] = [];
+const ONLINE_ACTS = new Set(['auth-tab', 'forgot', 'logout', 'join', 'withdraw', 'decide', 'reg-open', 'reg-close', 'copy-link']);
 
 function findT(id: string): Tournament | undefined {
   return data.tournaments.find((x) => x.id === id);
@@ -101,10 +150,13 @@ function shell(content: string): void {
   <header class="top">
     <a class="brand" href="#/"><span class="ball"></span>${t('app.name')}</a>
     <span class="spacer"></span>
-    <div class="switch" role="group" aria-label="${esc(t('view.hint'))}" title="${esc(t('view.hint'))}">
+    ${canOrganize() ? `<div class="switch" role="group" aria-label="${esc(t('view.hint'))}" title="${esc(t('view.hint'))}">
       <button data-act="view" data-v="player" aria-pressed="${v === 'player'}">🎾 ${t('view.player')}</button>
       <button data-act="view" data-v="organizer" aria-pressed="${v === 'organizer'}">🛠️ ${t('view.organizer')}</button>
-    </div>
+    </div>` : ''}
+    ${online() ? (session.profile
+      ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatar(session.profile.full_name)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
+      : `<a class="btn gold small" href="#/login">${t('auth.login')}</a>`) : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
   <main>${content}</main>`;
@@ -123,7 +175,8 @@ function homePage(): string {
     const labels: MessageKey[] = ['stage.setup', 'stage.groups', 'stage.knockout', 'stage.champion'];
     const champ = st === 3 ? placements(tm.brackets[0], tm.matches)[0] : null;
     return `<a class="card tile" href="#/t/${tm.id}">
-      <div class="row between"><h3>${esc(tm.name)}</h3><span class="badge ${badge}">${t(labels[st])}</span></div>
+      <div class="row between"><h3>${esc(tm.name)}</h3>${registrationOf(tm).open
+        ? `<span class="badge gold">📝 ${t('reg.badge')}</span>` : `<span class="badge ${badge}">${t(labels[st])}</span>`}</div>
       <div class="muted small">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')} · ${n(tm.groups.length)} ${t('t.groupsCount')}</div>
       ${champ ? `<div class="row" style="margin-block-start:6px">🏆 <b>${esc(playerName(tm, champ.playerId))}</b></div>` : ''}
       ${xp(p.done, p.total)}
@@ -131,10 +184,13 @@ function homePage(): string {
   }).join('');
 
   const org = isOrg();
+  if (session.loading) return `<div class="card center muted">⏳ ${t('sync.loading')}</div>`;
   return `
   <section class="hero">
     <h1>${t('app.name')} 🏓</h1>
     <p class="muted">${t('app.tagline')}</p>
+    ${online() && !session.profile ? `<div class="row" style="margin-block-start:12px">
+      <a class="btn gold" href="#/login">👤 ${t('auth.signup')}</a><span class="small">${t('auth.hint')}</span></div>` : ''}
     ${org ? `<div class="row" style="margin-block-start:12px">
       <a class="btn gold" href="#/new">➕ ${t('home.create')}</a>
       <button class="btn soft" data-act="sample-open">🎲 ${t('home.sample')}</button>
@@ -148,7 +204,7 @@ function homePage(): string {
   ${org ? samplePanel() : ''}
   <h2 style="margin-block:18px 4px">${t('home.title')}</h2>
   ${ts.length ? `<div class="grid">${tiles}</div>` : `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`}
-  ${org ? `<div class="card">
+  ${org && !online() ? `<div class="card">
     <h3>💾 ${t('home.backup')}</h3>
     ${hint('home.backupHint')}
     <div class="row">
@@ -185,6 +241,9 @@ interface Draft {
   groupCount: number;
   formats: StageFormats;
   consolation: { enabled: boolean; name: string };
+  selfReg: boolean;
+  autoAccept: boolean;
+  maxPlayers: string;
   error: string;
 }
 
@@ -196,6 +255,9 @@ const newDraft = (): Draft => ({
   groupCount: 4,
   formats: { group: 3, early: 3, semi: 5, final: 5 },
   consolation: { enabled: true, name: 'بطولة الترضية' },
+  selfReg: online(),
+  autoAccept: false,
+  maxPlayers: '',
   error: '',
 });
 let draft = newDraft();
@@ -218,7 +280,15 @@ function wizardPage(): string {
       <label class="field"><span>👥 ${t('wizard.players')} <span class="badge blue" id="wCount">${n(draftNames().length)} ${t('wizard.count')}</span></span>
         ${hint('wizard.playersHint')}
         <textarea class="input" id="wPlayers" placeholder="${esc(t('wizard.playersPh'))}" dir="auto">${esc(draft.players)}</textarea></label>
-      <button class="btn soft small" data-act="w-fill">🎲 ${t('wizard.fillSample')}</button>`;
+      <button class="btn soft small" data-act="w-fill">🎲 ${t('wizard.fillSample')}</button>
+      ${online() ? `<div class="card" style="background:#f7f9fd">
+        <label class="row"><input type="checkbox" id="wSelf" ${draft.selfReg ? 'checked' : ''}> <b>📝 ${t('reg.selfOn')}</b></label>
+        ${hint('reg.selfHint')}
+        <label class="row"><input type="checkbox" id="wAuto" ${draft.autoAccept ? 'checked' : ''}> ${t('reg.autoAccept')}</label>
+        ${hint('reg.autoAcceptHint')}
+        <label class="field"><span>${t('reg.maxPlayers')}</span>
+          <input class="input" id="wMax" inputmode="numeric" value="${esc(draft.maxPlayers)}" style="max-width:160px"></label>
+      </div>` : ''}`;
   } else if (s === 2) {
     const per = draftNames().length / draft.groupCount;
     body = `
@@ -268,29 +338,34 @@ function readDraft(): void {
   if (v('wPlayers')) draft.players = (v('wPlayers') as unknown as HTMLTextAreaElement).value;
   if (v('wCons')) draft.consolation.enabled = v('wCons')!.checked;
   if (v('wConsName')) draft.consolation.name = v('wConsName')!.value;
+  if (v('wSelf')) draft.selfReg = v('wSelf')!.checked;
+  if (v('wAuto')) draft.autoAccept = v('wAuto')!.checked;
+  if (v('wMax')) draft.maxPlayers = v('wMax')!.value.replace(/[^\d]/g, '');
 }
 
 function validateDraft(step: number): string {
   if (step === 0 && !draft.name.trim()) return t('wizard.errName');
   if (step >= 1) {
     const names = draftNames();
-    if (names.length < 2) return t('wizard.errPlayers');
+    if (names.length < 2 && !draft.selfReg) return t('wizard.errPlayers');
     if (new Set(names).size !== names.length) return t('wizard.errDup');
   }
-  if (step >= 2 && draftNames().length < draft.groupCount * 2) return t('wizard.errPlayers');
+  if (step >= 2 && !draft.selfReg && draftNames().length < draft.groupCount * 2) return t('wizard.errPlayers');
   return '';
 }
 
 /* ------------------------------------------------------------- tournament */
 
-type Tab = 'groups' | 'matches' | 'knockout' | 'settings';
+type Tab = 'register' | 'groups' | 'matches' | 'knockout' | 'settings';
 
 function tournamentPage(tm: Tournament, tab: Tab): string {
   const p = progress(tm);
   const tabs: [Tab, MessageKey][] = [['groups', 't.tab.groups'], ['matches', 't.tab.matches'], ['knockout', 't.tab.knockout']];
+  if (online() && tm.stage === 'setup') tabs.unshift(['register', 'reg.tab']);
   if (isOrg()) tabs.push(['settings', 't.tab.settings']);
   let body = '';
-  if (tab === 'groups') body = tm.stage === 'setup' ? setupBoard(tm) : groupsView(tm);
+  if (tab === 'register') body = registerView(tm);
+  else if (tab === 'groups') body = tm.stage === 'setup' ? setupBoard(tm) : groupsView(tm);
   else if (tab === 'matches') body = matchesView(tm);
   else if (tab === 'knockout') body = knockoutView(tm);
   else body = settingsView(tm);
@@ -623,6 +698,231 @@ function scorePage(tm: Tournament, m: Match): string {
   ${history}`;
 }
 
+
+/* ---------------------------------------------------------- online pages */
+
+let authTab: 'login' | 'signup' = 'login';
+let authMsg = '';
+let busy = false;
+/** Typed values, kept across re-renders of the sign-in form. */
+const authVals: Record<string, string> = {};
+
+const authErr = (e: unknown) => t(`auth.err.${remote.errorCode(e)}` as MessageKey);
+
+function loginPage(): string {
+  if (session.profile) return `<div class="card center"><p>${t('auth.welcome', { name: esc(session.profile.full_name) })}</p><a class="btn" href="#/">${t('t.backHome')}</a></div>`;
+  const signup = authTab === 'signup';
+  const field = (id: string, label: MessageKey, type = 'text', extra = '') =>
+    `<label class="field"><span>${t(label)}</span><input class="input" id="${id}" type="${type}" value="${esc(authVals[id] ?? '')}" ${extra}></label>`;
+  return `<div class="card" style="max-width:480px;margin-inline:auto">
+    <div class="choice" style="margin-block-end:12px">
+      <button data-act="auth-tab" data-v="login" aria-pressed="${!signup}">🔑 ${t('auth.login')}</button>
+      <button data-act="auth-tab" data-v="signup" aria-pressed="${signup}">👤 ${t('auth.signup')}</button>
+    </div>
+    ${hint('auth.hint')}
+    <form data-form="${signup ? 'signup' : 'login'}" novalidate>
+      ${signup ? field('aName', 'auth.fullName', 'text', 'autocomplete="name" dir="auto" required') + `<p class="muted small" style="margin-block-start:-6px">${t('auth.fullNameHint')}</p>` : ''}
+      ${field('aEmail', 'auth.email', 'email', 'autocomplete="email" dir="ltr" required')}
+      ${field('aPass', 'auth.password', 'password', `autocomplete="${signup ? 'new-password' : 'current-password'}" dir="ltr" required minlength="6"`)}
+      ${signup ? `<p class="muted small" style="margin-block-start:-6px">${t('auth.passwordHint')}</p>
+        ${field('aPhone', 'auth.phone', 'tel', 'autocomplete="tel" dir="ltr"')}
+        <div class="row"><div style="flex:1">${field('aYear', 'auth.birthYear', 'text', 'inputmode="numeric" maxlength="4" dir="ltr"')}</div>
+        <div style="flex:2">${field('aClub', 'auth.club', 'text', 'dir="auto"')}</div></div>` : ''}
+      ${authMsg ? `<div class="${authMsg.startsWith('✅') ? 'hint' : 'err'}" role="alert">${esc(authMsg)}</div>` : ''}
+      <button class="btn green block" type="submit" ${busy ? 'disabled' : ''}>${signup ? '🚀 ' + t('auth.submitSignup') : '🔑 ' + t('auth.submitLogin')}</button>
+      ${signup ? '' : `<button class="btn ghost small block" type="button" data-act="forgot" style="margin-block-start:8px">${t('auth.forgot')}</button>`}
+    </form>
+  </div>`;
+}
+
+const val = (id: string) => ((document.getElementById(id) as HTMLInputElement | null)?.value ?? '').trim();
+
+async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
+  for (const id of ['aName', 'aEmail', 'aPass', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+  const email = val('aEmail'), password = val('aPass');
+  if (!email || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
+  busy = true; authMsg = ''; route();
+  try {
+    if (kind === 'login') {
+      await remote.signIn(email, password);
+      for (const k of Object.keys(authVals)) delete authVals[k];
+      location.hash = '#/';
+    } else {
+      const year = val('aYear').replace(/[^\d]/g, '');
+      const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub') });
+      delete authVals.aPass;
+      if (needsConfirm) { authMsg = '✅ ' + t('auth.checkEmail'); authTab = 'login'; }
+      else location.hash = '#/';
+    }
+  } catch (e) {
+    authMsg = authErr(e);
+  }
+  busy = false;
+  route();
+}
+
+function mePage(): string {
+  const p = session.profile!;
+  const reg = (r: remote.Registration) => {
+    const tm = findT(r.tournament_id);
+    return `<a class="match" href="#/t/${r.tournament_id}" style="grid-template-columns:1fr auto">
+      <span class="p">${esc(tm?.name ?? '…')}</span><span class="badge ${r.status === 'approved' ? 'green' : r.status === 'pending' ? 'gold' : ''}">${t(`reg.status.${r.status}` as MessageKey)}</span></a>`;
+  };
+  return `<div class="card">
+    <div class="row between"><h2>👤 ${t('me.title')}</h2><span class="badge blue">${t('me.role')}: ${t(`role.${p.role}` as MessageKey)}</span></div>
+    <form data-form="me" novalidate>
+      <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="mName" value="${esc(p.full_name)}" dir="auto"></label>
+      <label class="field"><span>${t('auth.phone')}</span><input class="input" id="mPhone" type="tel" value="${esc(p.phone ?? '')}" dir="ltr"></label>
+      <div class="row"><label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="mYear" inputmode="numeric" value="${p.birth_year ?? ''}" dir="ltr"></label>
+      <label class="field" style="flex:2"><span>${t('auth.club')}</span><input class="input" id="mClub" value="${esc(p.club ?? '')}" dir="auto"></label></div>
+      <button class="btn green" type="submit">💾 ${t('me.save')}</button>
+    </form>
+  </div>
+  <div class="card"><h3>🏓 ${t('me.myTournaments')}</h3>
+    ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
+  </div>
+  <div class="row">
+    ${isAdmin() ? `<a class="btn soft" href="#/admin">🛡️ ${t('admin.link')}</a>` : ''}
+    <button class="btn ghost" data-act="logout">🚪 ${t('auth.logout')}</button>
+  </div>`;
+}
+
+let people: remote.Profile[] | null = null;
+function adminPage(): string {
+  if (!people) {
+    remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e)));
+    return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`;
+  }
+  const roles: remote.Role[] = ['player', 'organizer', 'admin'];
+  return `<div class="card"><h2>🛡️ ${t('admin.title')}</h2>${hint('admin.hint')}
+    ${people.map((p) => `<div class="chip ro">${avatar(p.full_name)}<span dir="auto">${esc(p.full_name)}</span>
+      <span class="muted small hide-sm" dir="ltr">${esc(p.phone ?? '')}</span>
+      <select class="input" style="width:auto;margin-inline-start:auto" data-act="role" data-id="${p.id}" ${p.id === session.profile?.id ? 'disabled' : ''}>
+        ${roles.map((r) => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${t(`role.${r}` as MessageKey)}</option>`).join('')}
+      </select></div>`).join('')}
+  </div>`;
+}
+
+/* Registration tab */
+const regCache = new Map<string, remote.Registration[]>();
+const regLoading = new Set<string>();
+
+function loadRegs(id: string): void {
+  if (regLoading.has(id)) return;
+  regLoading.add(id);
+  remote.tournamentRegistrations(id)
+    .then((r) => regCache.set(id, r))
+    .catch(() => regCache.set(id, []))
+    .finally(() => { regLoading.delete(id); route(); });
+}
+
+function registerView(tm: Tournament): string {
+  const reg = registrationOf(tm);
+  const regs = regCache.get(tm.id);
+  if (!regs) { loadRegs(tm.id); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
+  const approved = regs.filter((r) => r.status === 'approved');
+  const pending = regs.filter((r) => r.status === 'pending');
+  const others = regs.filter((r) => r.status === 'rejected' || r.status === 'withdrawn');
+  const countText = reg.maxPlayers ? t('reg.count', { n: approved.length, max: reg.maxPlayers }) : n(approved.length);
+  const person = (r: remote.Registration, actions = '') => `<div class="chip ro">${avatar(r.full_name ?? '?')}<span dir="auto">${esc(r.full_name ?? '')}</span>
+    ${r.club ? `<span class="muted small" dir="auto">· ${esc(r.club)}</span>` : ''}<span class="row" style="margin-inline-start:auto;gap:6px">${actions}</span></div>`;
+  const status = `<div class="row between"><h2>📝 ${t('reg.title')}</h2>
+    <span class="badge ${reg.open ? 'gold' : ''}">${reg.open ? t('reg.open') : t('reg.closed')}</span></div>
+    ${reg.maxPlayers ? `${xp(approved.length, reg.maxPlayers)}<p class="small muted">${countText}</p>` : ''}`;
+
+  if (!isOrg()) {
+    const mine = session.profile ? regs.find((r) => r.player_id === session.profile!.id) : undefined;
+    let action = '';
+    if (!session.profile) action = reg.open ? `<a class="btn gold block" href="#/login">👤 ${t('auth.needLogin')}</a>` : '';
+    else if (mine && (mine.status === 'pending' || mine.status === 'approved')) {
+      action = `<div class="hint" style="background:${mine.status === 'approved' ? '#e2f7ef' : ''}">${t(`reg.status.${mine.status}` as MessageKey)}</div>
+        ${reg.open ? `<button class="btn ghost small" data-act="withdraw">${t('reg.withdraw')}</button>` : ''}`;
+    } else if (mine?.status === 'rejected') action = `<div class="err">${t('reg.status.rejected')}</div>`;
+    else if (reg.open) action = `<button class="btn green block" data-act="join" ${busy ? 'disabled' : ''}>🏓 ${t('reg.join')}</button>`;
+    return `<div class="card">${status}${action}</div>
+      <div class="card"><h3>✅ ${t('reg.approved')} (${countText})</h3>
+        ${approved.length ? approved.map((r) => person(r)).join('') : `<p class="muted">${t('reg.empty')}</p>`}</div>`;
+  }
+
+  const decide = (r: remote.Registration, opts: ('approved' | 'rejected' | 'pending')[]) => opts.map((s) =>
+    `<button class="btn ${s === 'approved' ? 'green' : s === 'rejected' ? 'red' : 'soft'} small" data-act="decide" data-id="${r.id}" data-s="${s}">${t(s === 'approved' ? 'reg.approve' : s === 'rejected' ? 'reg.reject' : 'reg.undo')}</button>`).join('');
+  return `<div class="card">${status}
+    ${reg.open ? hint('reg.shareHint') + `<button class="btn soft small" data-act="copy-link">🔗 ${t('reg.copyLink')}</button>` : ''}
+    <label class="row" style="margin-block-start:10px"><input type="checkbox" data-act="reg-auto" ${reg.autoAccept ? 'checked' : ''}> ${t('reg.autoAccept')}</label>
+    ${hint('reg.autoAcceptHint')}
+    <label class="field"><span>${t('reg.maxPlayers')}</span>
+      <input class="input" id="rMax" inputmode="numeric" value="${reg.maxPlayers ?? ''}" style="max-width:160px" data-act="reg-max"></label>
+    <div style="margin-block-start:12px">
+      ${reg.open
+        ? `${hint('reg.closeHint')}<button class="btn gold block" data-act="reg-close">🔒 ${t('reg.closeBtn')}</button>`
+        : `<button class="btn green block" data-act="reg-open">📝 ${t('reg.openBtn')}</button>`}
+    </div>
+  </div>
+  ${pending.length ? `<div class="card" style="border-color:var(--warn)"><h3>⏳ ${t('reg.pending')} (${n(pending.length)})</h3>
+    ${pending.map((r) => person(r, decide(r, ['approved', 'rejected']))).join('')}</div>` : ''}
+  <div class="card"><h3>✅ ${t('reg.approved')} (${countText})</h3>
+    ${approved.length ? approved.map((r) => person(r, decide(r, ['pending']))).join('') : `<p class="muted">${t('reg.empty')}</p>`}</div>
+  ${others.length ? `<div class="card"><h3>${t('reg.others')}</h3>
+    ${others.map((r) => person(r, `<span class="badge">${t(`reg.status.${r.status}` as MessageKey)}</span>${r.status === 'rejected' ? decide(r, ['approved']) : ''}`)).join('')}</div>` : ''}`;
+}
+
+/** Actions that talk to Supabase. Returns true when handled. */
+async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Promise<boolean> {
+  switch (act) {
+    case 'auth-tab':
+      for (const id of ['aName', 'aEmail', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+      authTab = el.dataset.v as typeof authTab; authMsg = ''; route(); return true;
+    case 'forgot': {
+      const email = val('aEmail');
+      if (!email) { authMsg = t('auth.err.required'); route(); return true; }
+      try { await remote.resetPassword(email); authMsg = '✅ ' + t('auth.resetSent'); } catch (e) { authMsg = authErr(e); }
+      route(); return true;
+    }
+    case 'logout':
+      await remote.signOut();
+      location.hash = '#/';
+      return true;
+    case 'join': case 'withdraw': {
+      if (!tm) return true;
+      busy = true; route();
+      try {
+        if (act === 'join') {
+          const st = await remote.joinTournament(tm.id);
+          toast(st === 'approved' ? `✅ ${t('reg.joinedApproved')}` : `📨 ${t('reg.joined')}`);
+        } else {
+          await remote.withdraw(tm.id);
+          toast(t('reg.withdrawn'));
+        }
+        myRegs = await remote.myRegistrations();
+      } catch (e) { toast(authErr(e)); }
+      busy = false;
+      regCache.delete(tm.id);
+      route(); return true;
+    }
+    case 'decide': {
+      if (!tm) return true;
+      try { await remote.decide(el.dataset.id!, el.dataset.s as 'approved'); } catch (e) { toast(authErr(e)); }
+      regCache.delete(tm.id); route(); return true;
+    }
+    case 'reg-open': case 'reg-close': {
+      if (!tm) return true;
+      if (act === 'reg-open') tm.registration = { ...registrationOf(tm), open: true };
+      else {
+        const regs = await remote.tournamentRegistrations(tm.id);
+        closeRegistration(tm, regs.filter((r) => r.status === 'approved').map((r) => ({ profileId: r.player_id, name: r.full_name || '?' })));
+      }
+      persist();
+      regCache.delete(tm.id);
+      if (act === 'reg-close') { location.hash = `#/t/${tm.id}/groups`; return true; }
+      route(); return true;
+    }
+    case 'copy-link':
+      try { await navigator.clipboard.writeText(location.href.replace(/\/register$/, '')); toast(t('reg.copied')); } catch { toast(location.href); }
+      return true;
+  }
+  return false;
+}
+
 /* ------------------------------------------------------------------ router */
 
 function route(): void {
@@ -630,6 +930,14 @@ function route(): void {
   if (parts[0] === 'new') {
     if (!isOrg()) { location.hash = '#/'; return; }
     shell(wizardPage());
+  } else if (parts[0] === 'login' && online()) {
+    shell(loginPage());
+  } else if (parts[0] === 'me' && online()) {
+    if (!session.profile) { location.hash = '#/login'; return; }
+    shell(mePage());
+  } else if (parts[0] === 'admin' && online()) {
+    if (!isAdmin()) { location.hash = '#/'; return; }
+    shell(adminPage());
   } else if (parts[0] === 't') {
     const tm = findT(parts[1]);
     if (!tm) {
@@ -637,8 +945,9 @@ function route(): void {
     } else if (parts[2] === 'm' && tm.matches[parts[3]]) {
       shell(scorePage(tm, tm.matches[parts[3]]));
     } else {
-      let tab = (parts[2] as Tab) || (tm.stage === 'knockout' ? 'knockout' : 'groups');
+      let tab = (parts[2] as Tab) || (tm.stage === 'knockout' ? 'knockout' : online() && tm.stage === 'setup' ? 'register' : 'groups');
       if (tab === 'settings' && !isOrg()) tab = 'groups';
+      if (tab === 'register' && (!online() || tm.stage !== 'setup')) tab = 'groups';
       shell(tournamentPage(tm, tab));
     }
   } else {
@@ -660,6 +969,10 @@ document.addEventListener('click', (e) => {
   if (!el || el.tagName === 'INPUT') return;
   const act = el.dataset.act!;
   const { tm, m } = current();
+  if (online() && ONLINE_ACTS.has(act)) {
+    void onlineAction(act, el, tm);
+    return;
+  }
 
   switch (act) {
     case 'view':
@@ -736,10 +1049,15 @@ document.addEventListener('click', (e) => {
         name: draft.name.trim(), date: draft.date, playerNames: draftNames(), groupCount: draft.groupCount,
         formats: draft.formats, consolation: { enabled: draft.consolation.enabled, name: draft.consolation.name.trim() || 'بطولة الترضية' },
       });
+      if (online() && draft.selfReg) {
+        const max = Number(draft.maxPlayers);
+        nt.registration = { open: true, autoAccept: draft.autoAccept, maxPlayers: max >= 2 ? max : null };
+      }
+      if (session.profile) nt.organizerId = session.profile.id;
       data.tournaments.unshift(nt);
       persist();
       draft = newDraft();
-      location.hash = `#/t/${nt.id}/groups`;
+      location.hash = `#/t/${nt.id}/${nt.registration?.open ? 'register' : 'groups'}`;
       return;
     }
 
@@ -841,6 +1159,7 @@ document.addEventListener('click', (e) => {
       if (!deleteArmed) { deleteArmed = true; route(); setTimeout(() => { deleteArmed = false; }, 4000); return; }
       deleteArmed = false;
       data.tournaments = data.tournaments.filter((x) => x.id !== tm.id);
+      if (online()) remote.deleteTournament(tm.id).catch(() => toast(t('auth.err.forbidden')));
       persist();
       toast(t('settings.deleted'));
       location.hash = '#/';
@@ -922,8 +1241,44 @@ document.addEventListener('input', (e) => {
   }
 });
 
+document.addEventListener('submit', async (e) => {
+  const form = e.target as HTMLFormElement;
+  const kind = form.dataset.form;
+  if (!kind) return;
+  e.preventDefault();
+  if (kind === 'login' || kind === 'signup') { await submitAuth(kind); return; }
+  if (kind === 'me' && session.profile) {
+    const year = Number(val('mYear').replace(/[^\d]/g, ''));
+    try {
+      await remote.updateProfile(session.profile.id, {
+        full_name: val('mName') || session.profile.full_name, phone: val('mPhone') || null,
+        birth_year: year >= 1920 ? year : null, club: val('mClub') || null,
+      });
+      session.profile = await remote.myProfile();
+      toast(t('settings.saved'));
+    } catch (err) { toast(authErr(err)); }
+    route();
+  }
+});
+
 document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
+  const { tm } = current();
+  if (el.dataset.act === 'role') {
+    try {
+      await remote.setRole(el.dataset.id!, el.value as remote.Role);
+      toast(t('admin.saved'));
+    } catch (err) { toast(authErr(err)); }
+    people = null; route();
+    return;
+  }
+  if ((el.dataset.act === 'reg-auto' || el.dataset.act === 'reg-max') && tm) {
+    const max = Number(val('rMax').replace(/[^\d]/g, ''));
+    tm.registration = { ...registrationOf(tm), autoAccept: (document.querySelector('[data-act="reg-auto"]') as HTMLInputElement).checked, maxPlayers: max >= 2 ? max : null };
+    persist();
+    toast(t('settings.saved'));
+    return;
+  }
   if (el.dataset.act === 'import' && el.files?.[0]) {
     try {
       const incoming = parseBackup(await el.files[0].text());
@@ -1010,6 +1365,12 @@ function endDrag(commit: boolean): void {
 
 document.addEventListener('pointerup', () => endDrag(true));
 document.addEventListener('pointercancel', () => endDrag(false));
+
+if (online()) {
+  remote.onAuthChange(() => {
+    refreshFromServer().then(route);
+  });
+}
 
 window.addEventListener('hashchange', () => {
   window.scrollTo(0, 0);

@@ -1,6 +1,6 @@
 # بينجو (Pingo)
 
-Mobile-first table tennis tournament app. Phase 1 is **Arabic only**, right-to-left, and stores data in the browser (no server yet).
+Mobile-first table tennis tournament app. Arabic only, right-to-left. Runs offline with browser storage, or online with Supabase (accounts, saved tournaments, player registration).
 
 ## Run it
 
@@ -13,9 +13,36 @@ npm run build    # static site in dist/
 
 Pushing to `main` runs the tests and publishes `dist/` to GitHub Pages (enable Pages with "GitHub Actions" as the source in the repository settings).
 
-## What phase 1 does
+## Connect Supabase
 
-- **Organizer / player switch** in the header. Player view is read-only. This is a display switch only; real permissions come with Supabase in phase 2.
+1. Create a project at supabase.com (region: Frankfurt, closest to Cairo).
+2. In **SQL Editor**, paste `supabase/migrations/0001_init.sql` and click **Run**.
+3. In **Authentication → URL Configuration**, set the Site URL to where the app is hosted (for example the GitHub Pages URL) so confirmation emails link back to it.
+4. Copy **Project URL** and the **anon public** key from **Project Settings → API**:
+   - locally: put them in `.env.local` (see `.env.example`);
+   - on GitHub: add them as repository **variables** `SUPABASE_URL` and `SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions → Variables).
+5. Sign up in the app, then make yourself admin once in the SQL Editor:
+   `update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');`
+
+Never put the `service_role` key in the app or the repository.
+
+### Who can do what (enforced in the database by row-level security)
+
+| | Guest | Player | Organizer | Admin |
+| --- | --- | --- | --- | --- |
+| See published tournaments and approved entrants | ✓ | ✓ | ✓ | ✓ |
+| Join / withdraw (while registration is open) | | ✓ | ✓ | ✓ |
+| Create tournaments, approve entries, enter scores | | | own tournaments | all |
+| Change roles | | | | ✓ |
+
+Players join through the `join_tournament` database function, which checks that registration is open and the tournament is not full. `supabase/tests/` has a manual check of these rules for plain Postgres.
+
+## What the app does
+
+- **Accounts** (online): sign up with email and password, profile with name, phone, birth year and club; "my tournaments" with registration status.
+- **Online registration**: the organizer opens registration (optional auto-accept and player limit), shares the link, approves or rejects requests, then closes registration to put approved players into the group draw.
+- **Admin page** to make users organizers or admins.
+- **Organizer / player switch** in the header (shown to organizers). Player view is read-only.
 - **Help hints** (💡) beside each feature; the **؟** button hides or shows them.
 - **Tournament wizard** in 4 steps: name and date, players (one per line, strongest first), number of groups with a live preview, match format per stage and the consolation tournament.
 - **Groups board** with drag and drop (mouse and touch), or tap a player then tap a group. Snake seeding spreads the strongest players.

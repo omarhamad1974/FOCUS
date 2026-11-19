@@ -78,3 +78,26 @@ describe('arabic dictionary', () => {
     for (const [k, v] of Object.entries(ar)) expect(v.trim(), k).not.toBe('');
   });
 });
+
+import { closeRegistration, remoteStatus } from '../src/domain/tournament';
+
+describe('online registration', () => {
+  it('adds approved registrants once and drops withdrawn ones', () => {
+    const t = createTournament({ ...base, playerNames: ['Typed'] });
+    t.registration = { open: true, autoAccept: false, maxPlayers: null };
+    expect(remoteStatus(t)).toBe('registration');
+    closeRegistration(t, [{ profileId: 'u1', name: 'لينا' }, { profileId: 'u2', name: 'Sam' }]);
+    expect(t.players.map((p) => p.name)).toEqual(['Typed', 'لينا', 'Sam']);
+    expect(t.registration!.open).toBe(false);
+    expect(remoteStatus(t)).toBe('draft');
+    expect(t.groups.flatMap((g) => g.playerIds)).toHaveLength(3);
+    closeRegistration(t, [{ profileId: 'u2', name: 'Sam' }]);
+    expect(t.players.map((p) => p.name)).toEqual(['Typed', 'Sam']);
+  });
+
+  it('reports running and finished', () => {
+    const t = sampleTournament('groupsHalf', 3);
+    expect(remoteStatus(t)).toBe('running');
+    expect(remoteStatus(sampleTournament('finished', 3))).toBe('finished');
+  });
+});

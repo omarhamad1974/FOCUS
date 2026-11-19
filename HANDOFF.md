@@ -21,14 +21,20 @@ Also confirmed:
 - Knockout seeding: group winners first (group order), then runners-up; first round avoids same-group pairings when possible; byes go to the top seeds when the draw is not a power of two.
 - Consolation draw uses the same per-stage formats as the main draw.
 
+## Phase 2 (Supabase), 2026-11-19
+- Omar's scope: Supabase for authentication and saving everything; GitHub for versioning and Actions; Edge Functions only when needed (none needed yet).
+- Tables: `profiles`, `tournaments` (full app state in `state` jsonb plus indexed columns), `registrations`. RLS on all three; joins go through `join_tournament()`.
+- Per tournament the organizer chooses approval vs auto-accept and an optional player limit (Omar's answer still pending; both supported).
+- Without Supabase settings the app still runs offline with browser storage.
+
 ## Known limits
-- Data lives in one browser. Use backup download/restore to move it.
-- Player/organizer switch is not security; anyone can switch. Real roles need Supabase auth and RLS.
+- Offline mode: data lives in one browser (backup download/restore to move it).
+- Online mode: two organizers editing the same tournament at the same moment overwrite each other (last save wins). No live updates yet; pages refresh on navigation.
 - A knockout result can be corrected only while the next match has no result (correct later matches first).
 - No player profiles across tournaments, training schedules or shop yet.
 
 ## Suggested next steps
-1. Supabase: auth, tables, RLS per role, move storage behind the same domain functions.
+1. Live updates (Supabase Realtime) for scores, and per-match scorekeeper accounts.
 2. Player directory and profiles with history across tournaments.
 3. Training schedules, then the shop.
 4. English dictionary and switcher if wanted.

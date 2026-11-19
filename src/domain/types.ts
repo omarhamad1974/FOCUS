@@ -4,6 +4,16 @@ export interface Player {
   id: string;
   /** Shown exactly as entered (Arabic or Latin). */
   name: string;
+  /** Account of a player who registered through the website. */
+  profileId?: string;
+}
+
+export interface RegistrationSettings {
+  /** Players can join from the website. */
+  open: boolean;
+  /** Accept joiners immediately instead of waiting for the organizer. */
+  autoAccept: boolean;
+  maxPlayers: number | null;
 }
 
 export interface Game {
@@ -74,6 +84,10 @@ export interface Tournament {
   players: Player[];
   formats: StageFormats;
   consolation: { enabled: boolean; name: string };
+  /** Missing on tournaments created before online registration existed. */
+  registration?: RegistrationSettings;
+  /** Supabase account that owns the tournament (online mode). */
+  organizerId?: string;
   groups: Group[];
   matches: Record<string, Match>;
   brackets: Bracket[];

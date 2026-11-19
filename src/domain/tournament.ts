@@ -174,3 +174,44 @@ export function progress(t: Tournament): { done: number; total: number } {
 export function formatsSummary(f: StageFormats): BestOf[] {
   return [f.group, f.early, f.semi, f.final];
 }
+
+export const DEFAULT_REGISTRATION = { open: false, autoAccept: false, maxPlayers: null } as const;
+
+export function registrationOf(t: Tournament): NonNullable<Tournament['registration']> {
+  return t.registration ?? { ...DEFAULT_REGISTRATION };
+}
+
+export interface Registrant {
+  profileId: string;
+  name: string;
+}
+
+/**
+ * Close online registration: add approved registrants who are not in the
+ * tournament yet, drop website players who are no longer approved, and
+ * redistribute everyone into groups. Only allowed before the groups start.
+ */
+export function closeRegistration(t: Tournament, approved: Registrant[]): void {
+  if (t.stage !== 'setup') throw new Error('locked');
+  const keep = new Set(approved.map((r) => r.profileId));
+  t.players = t.players.filter((p) => !p.profileId || keep.has(p.profileId));
+  for (const r of approved) {
+    if (!t.players.some((p) => p.profileId === r.profileId)) t.players.push({ id: uid(), name: r.name, profileId: r.profileId });
+  }
+  t.registration = { ...registrationOf(t), open: false };
+  snakeGroups(t.players.map((p) => p.id), t.groups.length).forEach((ids, i) => {
+    t.groups[i].playerIds = ids;
+    t.groups[i].manualOrder = [];
+  });
+}
+
+/** Status column stored in Supabase (drives who can see and join). */
+export function remoteStatus(t: Tournament): 'draft' | 'registration' | 'running' | 'finished' {
+  if (t.stage === 'setup') return registrationOf(t).open ? 'registration' : 'draft';
+  const main = t.brackets.find((b) => b.kind === 'main');
+  if (main) {
+    const final = t.matches[main.rounds[main.rounds.length - 1][0]];
+    if (final && (final.games.length || final.walkover)) return 'finished';
+  }
+  return 'running';
+}

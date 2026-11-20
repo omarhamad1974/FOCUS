@@ -5,7 +5,7 @@ import type { Post, PostCategory } from '../data/content';
 import { authErr, canWriteNews, checked, hint, isAdmin, loading, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
-import { avatar, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast } from '../ui/util';
 
 export const CAT_ICON: Record<PostCategory, string> = {
   news: 'news', learn: 'book', tips: 'bolt', events: 'calendar', gear: 'racket', other: 'spark',
@@ -82,7 +82,7 @@ function postPage(id: string): string {
     ${cover(p.cover_url, p.id, CAT_ICON[p.category], esc(p.title))}
     <div class="row small" style="margin-block:12px 4px"><span class="badge blue">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span><span class="muted">${when(p.created_at)}</span></div>
     <h1 dir="auto">${esc(p.title)}</h1>
-    ${author ? `<div class="row author">${avatar(author.full_name)}<b dir="auto">${esc(author.full_name)}</b></div>` : ''}
+    ${author ? `<div class="row author">${avatarOf(author)}<b dir="auto">${esc(author.full_name)}</b></div>` : ''}
     ${p.summary ? `<p class="lead" dir="auto">${esc(p.summary)}</p>` : ''}
     <div class="prose">${richText(p.body)}</div>
     ${canEdit(p) ? `<div class="row" style="margin-block-start:16px">

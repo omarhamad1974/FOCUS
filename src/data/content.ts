@@ -15,6 +15,7 @@ export interface PublicProfile {
   is_seller: boolean;
   is_trainer: boolean;
   avatar_url: string | null;
+  gender?: 'male' | 'female' | null;
 }
 
 const peopleCache = new Map<string, PublicProfile>();
@@ -34,6 +35,7 @@ export const person = (id: string) => peopleCache.get(id);
 export const forgetPeople = () => peopleCache.clear();
 
 export const photoOf = (id: string | undefined) => (id ? peopleCache.get(id)?.avatar_url ?? null : null);
+export const genderOf = (id: string | undefined) => (id ? peopleCache.get(id)?.gender ?? null : null);
 
 /** Everyone with an account whose name matches (for picking assistants). */
 export async function searchPeople(q: string): Promise<PublicProfile[]> {

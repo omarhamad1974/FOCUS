@@ -221,7 +221,7 @@ function shell(body: string): void {
   const nav = navItems();
   app.innerHTML = `
   <header class="top">
-    <a class="brand" href="#/"><span class="ball"></span>${t('app.name')}</a>
+    <a class="brand" href="#/" aria-label="${esc(t('app.name'))}"><img src="${import.meta.env.BASE_URL}brand/logo.png" alt="${esc(t('app.name'))}" width="69" height="46"></a>
     <nav class="topnav" aria-label="${esc(t('nav.label'))}">${nav.filter(([k]) => k !== 'me').map(([k, href, ic, label]) =>
       `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>
     <span class="spacer"></span>
@@ -231,7 +231,7 @@ function shell(body: string): void {
     </div>` : ''}
     ${online() ? (session.profile
       ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatar(session.profile.full_name, session.profile.avatar_url)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
-      : `<a class="btn gold small" href="#/login">${t('auth.login')}</a>`) : ''}
+      : `<a class="btn small" href="#/login">${t('auth.login')}</a>`) : ''}
     ${isAdmin() ? `<a class="helpbtn adminbtn" href="#/admin" title="${esc(t('adm.title'))}" aria-label="${esc(t('adm.title'))}">${icon('shield', 18)}</a>` : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
@@ -290,12 +290,12 @@ function cardAction(tm: Tournament, st: PublicStatus): string {
   if (st === 'finished') return `<a class="btn soft small" href="#/t/${tm.id}/knockout">${icon('trophy', 16)} ${t('tl.results')}</a>`;
   if (st !== 'open') return `<a class="btn soft small" href="#/t/${tm.id}">${icon('eye', 16)} ${t('tl.follow')}</a>`;
   if (!online()) return '';
-  if (!session.profile) return `<a class="btn gold small tc-join" href="#/t/${tm.id}/register">${icon('ball', 16)} ${t('reg.join')}</a>`;
+  if (!session.profile) return `<a class="btn small tc-join" href="#/t/${tm.id}/register">${icon('ball', 16)} ${t('reg.join')}</a>`;
   const mine = myRegs.find((r) => r.tournament_id === tm.id && (r.status === 'pending' || r.status === 'approved'));
   if (mine) return `<span class="badge ${mine.status === 'approved' ? 'green' : 'gold'} tc-mine">${mine.status === 'approved' ? `${icon('check', 14)} ${t('tl.joined')}` : `⏳ ${t('tl.waiting')}`}</span>`;
   const reg = registrationOf(tm);
   if (reg.maxPlayers && tm.players.length >= reg.maxPlayers) return `<span class="badge">${t('tl.full')}</span>`;
-  return `<button class="btn gold small tc-join" data-act="join" data-tid="${tm.id}" ${busy ? 'disabled' : ''}>${icon('ball', 16)} ${t('reg.join')}</button>`;
+  return `<button class="btn small tc-join" data-act="join" data-tid="${tm.id}" ${busy ? 'disabled' : ''}>${icon('ball', 16)} ${t('reg.join')}</button>`;
 }
 
 /** Rich tournament card: main photo, status, title, organizer, time, players and the join button. */
@@ -1427,7 +1427,7 @@ function registerView(tm: Tournament): string {
     let action = '';
     if (!session.profile) action = reg.open ? `<a class="btn gold block" href="#/login">👤 ${t('auth.needLogin')}</a>` : '';
     else if (mine && (mine.status === 'pending' || mine.status === 'approved')) {
-      action = `<div class="hint" style="background:${mine.status === 'approved' ? '#e2f7ef' : ''}">${t(`reg.status.${mine.status}` as MessageKey)}</div>
+      action = `<div class="hint" style="background:${mine.status === 'approved' ? '#eafbe3' : ''}">${t(`reg.status.${mine.status}` as MessageKey)}</div>
         ${reg.open ? `<button class="btn ghost small" data-act="withdraw">${t('reg.withdraw')}</button>` : ''}`;
     } else if (mine?.status === 'rejected') action = `<div class="err">${t('reg.status.rejected')}</div>`;
     else if (reg.open) action = `<button class="btn green block" data-act="join" ${busy ? 'disabled' : ''}>🏓 ${t('reg.join')}</button>`;

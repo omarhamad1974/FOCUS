@@ -2,7 +2,7 @@ export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-const COLORS = ['#3b5bfd', '#e5484d', '#12a37f', '#f08c00', '#8e4ec6', '#0091ff', '#d6409f', '#2b9a66', '#c2410c', '#5b5bd6'];
+const COLORS = ['#0b55a8', '#e01b2a', '#36a52a', '#f08c00', '#1b8fd6', '#1b8fd6', '#7ed957', '#4cb83a', '#c2410c', '#1b8fd6'];
 
 function hash(s: string): number {
   let h = 0;
@@ -42,7 +42,7 @@ export function toast(msg: string): void {
 
 export function confetti(): void {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const colors = ['#f5b301', '#e5484d', '#3b5bfd', '#12a37f', '#fff'];
+  const colors = ['#f5b301', '#e01b2a', '#0b55a8', '#36a52a', '#fff'];
   for (let i = 0; i < 80; i++) {
     const c = document.createElement('i');
     c.className = 'confetti';

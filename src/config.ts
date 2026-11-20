@@ -12,3 +12,11 @@ export const SUPABASE_URL: string = offline ? '' : env.VITE_SUPABASE_URL || 'htt
 export const SUPABASE_ANON_KEY: string = offline ? '' : env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_7y0pH6Ca398DkJW78VoTXg_HK60CCpB';
 
 export const online = (): boolean => Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+/**
+ * Pingo support on WhatsApp: the number in international form, digits only,
+ * without + or leading zeros (for example 201001234567 for an Egyptian mobile).
+ * Leave it empty to hide the floating support button.
+ */
+const SUPPORT_NUMBER = ''; // TODO: Pingo support number from Omar
+export const SUPPORT_WHATSAPP: string = (env.VITE_SUPPORT_WHATSAPP || SUPPORT_NUMBER).replace(/\D/g, '');

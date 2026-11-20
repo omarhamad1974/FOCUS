@@ -21,7 +21,7 @@ let counts: AdminCounts | null = null;
 let requests: RoleRequest[] | null = null;
 let posts: Post[] | null = null;
 let products: Product[] | null = null;
-let tournaments: { id: string; name: string; status: string; organizer_id: string; players: number; date: string | null }[] | null = null;
+let tournaments: { id: string; name: string; status: string; organizer_id: string; players: number; date: string | null; cover: string | null }[] | null = null;
 let busy = false;
 
 /** The accounts page (unconfirmed sign-ups, create account, roles) lives in main. */
@@ -44,7 +44,7 @@ function loadAll(): void {
 
 async function listTournamentRows() {
   const rows = (await remote.listTournaments());
-  return rows.map((x) => ({ id: x.id, name: x.name, status: remoteStatus(x), organizer_id: x.organizerId ?? '', players: x.players.length, date: x.date || null }));
+  return rows.map((x) => ({ id: x.id, name: x.name, status: remoteStatus(x), organizer_id: x.organizerId ?? '', players: x.players.length, date: x.date || null, cover: x.cover ?? null }));
 }
 
 export function page(parts: string[]): string {
@@ -141,13 +141,20 @@ function newsView(): string {
 
 function tournamentsView(): string {
   const label: Record<string, MessageKey> = { draft: 'adm.st.draft', registration: 'reg.badge', running: 'home.liveNow', finished: 'stage.champion' };
+  const missing = tournaments!.filter((x) => !x.cover).length;
   return `<div class="card"><div class="row between"><h2>${icon('trophy', 22)} ${t('adm.tab.tournaments')}</h2>
     <a class="btn gold small" href="#/new">${icon('plus', 16)} ${t('home.create')}</a></div>
-    ${tournaments!.length ? tournaments!.map((x) => `<a class="adm-row link" href="#/t/${x.id}">
-      <span class="role-ic">${icon('trophy', 22)}</span>
-      <div class="adm-row-main"><b dir="auto">${esc(x.name)}</b>
-        <span class="muted small" dir="auto">${icon('user', 12)} ${esc(content.personName(x.organizer_id) || '—')} · ${n(x.players)} ${t('t.players')}${x.date ? ` · ${dateFmt.format(new Date(x.date))}` : ''}</span></div>
-      <span class="badge ${x.status === 'running' ? 'green' : x.status === 'registration' ? 'gold' : ''}">${t(label[x.status] ?? 'adm.st.draft')}</span></a>`).join('')
+    ${hint('tl.adminCoverHint')}
+    ${missing ? `<p class="small"><span class="badge gold">${icon('image', 12)} ${t('tl.missingCovers', { n: missing })}</span></p>` : ''}
+    ${tournaments!.length ? tournaments!.map((x) => `<div class="adm-row">
+      ${cover(x.cover ? esc(x.cover) : null, x.id, 'trophy', esc(x.name))}
+      <div class="adm-row-main"><a href="#/t/${x.id}"><b dir="auto">${esc(x.name)}</b></a>
+        <span class="muted small" dir="auto">${icon('user', 12)} ${esc(content.personName(x.organizer_id) || '—')} · ${n(x.players)} ${t('t.players')}${x.date ? ` · ${dateFmt.format(new Date(x.date))}` : ''}</span>
+        <span><span class="badge ${x.status === 'running' ? 'green' : x.status === 'registration' ? 'gold' : ''}">${t(label[x.status] ?? 'adm.st.draft')}</span></span></div>
+      <div class="adm-row-actions">
+        <label class="btn ${x.cover ? 'soft' : 'gold'} small">${icon('image', 14)} ${t(x.cover ? 'media.change' : 'tl.coverUpload')}<input type="file" accept="image/*" class="hidden" data-act="t-cover" data-tid="${x.id}"></label>
+        ${x.cover ? `<button class="btn ghost small" data-act="t-cover-del" data-tid="${x.id}" aria-label="${esc(t('media.remove'))}">${icon('trash', 14)}</button>` : ''}
+      </div></div>`).join('')
       : `<p class="muted">${t('home.empty')}</p>`}</div>`;
 }
 

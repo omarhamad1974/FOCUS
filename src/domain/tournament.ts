@@ -307,3 +307,57 @@ export function homeTournaments(list: Tournament[], now = new Date(), days = 30)
   }
   return { live, recent };
 }
+
+/** Where a tournament stands, for cards and filters. */
+export type PublicStatus = 'open' | 'upcoming' | 'running' | 'finished';
+export const PUBLIC_STATUSES: PublicStatus[] = ['open', 'running', 'upcoming', 'finished'];
+
+export function publicStatus(t: Tournament): PublicStatus {
+  if (topTwo(t) || remoteStatus(t) === 'finished') return 'finished';
+  if (t.stage !== 'setup') return 'running';
+  return registrationOf(t).open ? 'open' : 'upcoming';
+}
+
+/** Every tournament for the "all tournaments" page: open first, then running, upcoming, finished; newest first inside each. */
+export function sortForListing(list: Tournament[]): Tournament[] {
+  const rank = (t: Tournament) => PUBLIC_STATUSES.indexOf(publicStatus(t));
+  const when = (t: Tournament) => new Date(t.date || t.createdAt).getTime() || 0;
+  return [...list].sort((a, b) => rank(a) - rank(b) || (publicStatus(a) === 'finished' ? when(b) - when(a) : when(a) - when(b)));
+}
+
+/** Whole days from `now` to the tournament date (negative = in the past), or null without a date. */
+export function daysUntil(t: Tournament, now = new Date()): number | null {
+  if (!t.date) return null;
+  const [y, m, d] = t.date.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const day = Date.UTC(y, m - 1, d);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((day - today) / 86_400_000);
+}
+
+/** Time filter on the "all tournaments" page. */
+export type TimeFilter = 'any' | 'week' | 'month' | 'upcoming' | 'past';
+export const TIME_FILTERS: TimeFilter[] = ['any', 'week', 'month', 'upcoming', 'past'];
+
+export function matchesTime(t: Tournament, f: TimeFilter, now = new Date()): boolean {
+  if (f === 'any') return true;
+  const d = daysUntil(t, now);
+  if (d === null) return false;
+  if (f === 'week') return d >= 0 && d <= 7;
+  if (f === 'month') return d >= 0 && d <= 30;
+  if (f === 'upcoming') return d >= 0;
+  return d < 0;
+}
+
+const placeKey = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Distinct places used by tournaments, for the location filter. */
+export function tournamentLocations(list: Tournament[]): string[] {
+  const seen = new Map<string, string>();
+  for (const t of list) if (t.location?.trim() && !seen.has(placeKey(t.location))) seen.set(placeKey(t.location), t.location.trim());
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, 'ar'));
+}
+
+export function matchesLocation(t: Tournament, place: string): boolean {
+  return !place || placeKey(t.location ?? '') === placeKey(place);
+}

@@ -5,7 +5,7 @@ import type { Order, OrderStatus, Product, ProductCategory } from '../data/conte
 import { authErr, checked, hint, isAdmin, isSeller, loading, money, n, needLogin, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
-import { avatar, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast } from '../ui/util';
 import { nameKey } from '../domain/tournament';
 import { imagePicker } from './news';
 
@@ -106,7 +106,7 @@ function productPage(id: string): string {
       <p class="muted small">${p.stock > 0 ? t('shop.inStock', { n: p.stock }) : t('shop.soldOut')}</p>
       ${p.approved ? '' : `<div class="hint">${t('shop.waitingApproval')}</div>`}
       ${p.description ? `<div class="prose"><p dir="auto">${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
-      ${seller ? `<div class="seller">${avatar(seller.full_name)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}</div></div>` : ''}
+      ${seller ? `<div class="seller">${avatarOf(seller)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}</div></div>` : ''}
       ${order}
       ${own || isAdmin() ? `<a class="btn soft small" href="#/shop/p/${p.id}/edit" style="margin-block-start:10px">${icon('edit', 16)} ${t('shop.editProduct')}</a>` : ''}
     </div>

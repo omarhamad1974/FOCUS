@@ -34,10 +34,17 @@ export interface Game {
 
 export type Side = 'a' | 'b';
 
+/** Match result in games only (e.g. 3-1), used when points per game are not recorded. */
+export interface GamesResult {
+  a: number;
+  b: number;
+}
+
 export interface ScoreChange {
   at: string;
   games: Game[];
   walkover: Side | null;
+  result?: GamesResult | null;
 }
 
 export interface Match {
@@ -54,6 +61,8 @@ export interface Match {
   games: Game[];
   /** Winner of a walkover, or null. */
   walkover: Side | null;
+  /** Result in games only (no points per game). Missing or null when not used. */
+  result?: GamesResult | null;
   /** Previous saved results, oldest first (score correction audit trail). */
   history: ScoreChange[];
 }
@@ -105,6 +114,12 @@ export interface Tournament {
   matches: Record<string, Match>;
   brackets: Bracket[];
   stage: TournamentStage;
+  /**
+   * Record the points of every game (detailed scoring). Off by default: only the
+   * match result in games is entered (e.g. 3-1). Missing on older tournaments
+   * (see `recordsPoints`).
+   */
+  pointsPerGame?: boolean;
   /** Photos and video links added by the organizer. */
   media?: TournamentMedia[];
   /** Main photo shown on tournament cards and the tournament page (uploaded by the admin or organizer). */

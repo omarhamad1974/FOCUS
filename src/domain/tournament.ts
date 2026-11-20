@@ -1,7 +1,7 @@
 import { bracketMatches, canEditKo, createBracket, type Seed, syncBracket } from './bracket';
-import { checkMatch, isDone } from './scoring';
+import { checkMatch, checkResult, hasResult, isDone, summarize } from './scoring';
 import { computeStandings, type Standings } from './standings';
-import type { BestOf, Game, Group, Match, Player, Side, StageFormats, Tournament } from './types';
+import type { BestOf, Game, GamesResult, Group, Match, Player, Side, StageFormats, Tournament } from './types';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -40,6 +40,8 @@ export interface NewTournament {
   groupCount: number;
   formats: StageFormats;
   consolation: { enabled: boolean; name: string };
+  /** Record points of every game (default: match result in games only). */
+  pointsPerGame?: boolean;
 }
 
 /** Snake distribution so the strongest entries (listed first) spread across groups. */
@@ -66,6 +68,7 @@ export function createTournament(input: NewTournament): Tournament {
     players,
     formats: { ...input.formats },
     consolation: { ...input.consolation },
+    pointsPerGame: input.pointsPerGame ?? false,
     groups,
     matches: {},
     brackets: [],
@@ -84,6 +87,7 @@ export function duplicateTournament(t: Tournament, name: string): Tournament {
     players: t.players.map((p) => ({ id: idMap.get(p.id)!, name: p.name })),
     formats: { ...t.formats },
     consolation: { ...t.consolation },
+    pointsPerGame: recordsPoints(t),
     groups: t.groups.map((g) => ({
       id: uid(), name: g.name, playerIds: g.playerIds.map((id) => idMap.get(id)!), manualOrder: [], ...(g.table ? { table: g.table } : {}),
     })),
@@ -143,8 +147,11 @@ export function groupsComplete(t: Tournament): boolean {
 
 export type SaveError = ReturnType<typeof checkMatch> | { ok: false; error: 'locked' };
 
-/** Save (or correct) a match result. Earlier results are kept in history. */
-export function saveResult(t: Tournament, matchId: string, games: Game[], walkover: Side | null): SaveError {
+/**
+ * Save (or correct) a match result. Earlier results are kept in history.
+ * Pass `result` (games only, e.g. 3-1) instead of `games` when points per game are not recorded.
+ */
+export function saveResult(t: Tournament, matchId: string, games: Game[], walkover: Side | null, result: GamesResult | null = null): SaveError {
   const m = t.matches[matchId];
   if (m.stage === 'group' && t.stage !== 'groups') return { ok: false, error: 'locked' };
   if (m.stage === 'ko') {
@@ -152,14 +159,15 @@ export function saveResult(t: Tournament, matchId: string, games: Game[], walkov
     if (!canEditKo(m, b, t.matches) || !m.aId || !m.bId) return { ok: false, error: 'locked' };
   }
   if (!walkover) {
-    const check = checkMatch(games, m.bestOf);
+    const check = result ? checkResult(result, m.bestOf) : checkMatch(games, m.bestOf);
     if (!check.ok) return check;
   }
-  if (m.games.length || m.walkover) {
-    m.history.push({ at: new Date().toISOString(), games: m.games, walkover: m.walkover });
+  if (hasResult(m)) {
+    m.history.push({ at: new Date().toISOString(), games: m.games, walkover: m.walkover, result: m.result ?? null });
   }
-  m.games = walkover ? [] : games.map((g) => ({ a: g.a, b: g.b }));
+  m.games = walkover || result ? [] : games.map((g) => ({ a: g.a, b: g.b }));
   m.walkover = walkover;
+  m.result = walkover || !result ? null : { a: result.a, b: result.b };
   if (m.stage === 'group') {
     // A changed result may change which ties exist: clear manual decisions.
     const g = t.groups.find((x) => x.id === m.groupId)!;
@@ -238,7 +246,7 @@ export function remoteStatus(t: Tournament): 'draft' | 'registration' | 'running
   const main = t.brackets.find((b) => b.kind === 'main');
   if (main) {
     const final = t.matches[main.rounds[main.rounds.length - 1][0]];
-    if (final && (final.games.length || final.walkover)) return 'finished';
+    if (final && hasResult(final)) return 'finished';
   }
   return 'running';
 }
@@ -312,11 +320,15 @@ export function topTwo(t: Tournament): { first: string; second: string } | null 
 }
 
 function summarizeMatch(m: Match): Side | null {
-  if (m.walkover) return m.walkover;
-  const need = Math.ceil(m.bestOf / 2);
-  let a = 0, b = 0;
-  for (const g of m.games) { if (g.a > g.b) a++; else if (g.b > g.a) b++; }
-  return a >= need ? 'a' : b >= need ? 'b' : null;
+  return summarize(m).winner;
+}
+
+/**
+ * Whether the organizer records the points of every game. Older tournaments
+ * without the setting keep detailed scoring if they already have game points.
+ */
+export function recordsPoints(t: Tournament): boolean {
+  return t.pointsPerGame ?? Object.values(t.matches).some((m) => m.games.length > 0);
 }
 
 /** Tournaments for the home slider: open or running ones, and ones that ended in the last `days` days. */

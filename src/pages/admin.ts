@@ -7,7 +7,7 @@ import { remoteStatus } from '../domain/tournament';
 import { authErr, hint, money, n, preview, PREVIEWS, render, type Preview } from '../app/ctx';
 import { cover } from '../ui/art';
 import { icon } from '../ui/icons';
-import { avatar, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast } from '../ui/util';
 import { CAT_ICON as NEWS_ICON } from './news';
 import { CAT_ICON as SHOP_ICON } from './shop';
 
@@ -96,7 +96,7 @@ function approvalsView(): string {
   const pendingProducts = products!.filter((p) => !p.approved);
   const roleIcon: Record<string, string> = { organizer: 'trophy', seller: 'shop', trainer: 'coach' };
   return `<div class="card"><h2>${icon('star', 22)} ${t('roles.requests')}</h2>${hint('roles.requestsHint')}
-    ${requests!.length ? requests!.map((r) => `<div class="chip ro">${avatar(content.personName(r.user_id) || '?', content.photoOf(r.user_id))}
+    ${requests!.length ? requests!.map((r) => `<div class="chip ro">${avatarOf(content.person(r.user_id))}
       <span><b dir="auto">${esc(content.personName(r.user_id))}</b><br><span class="badge blue">${icon(roleIcon[r.role], 14)} ${t(`roles.${r.role}` as MessageKey)}</span>
       ${r.note ? ` <span class="muted small" dir="auto">${esc(r.note)}</span>` : ''}</span>
       <span class="row" style="margin-inline-start:auto;gap:6px"><button class="btn green small" data-act="adm-role" data-id="${r.id}" data-v="yes">${icon('check', 14)} ${t('roles.approve')}</button>

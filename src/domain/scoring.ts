@@ -1,4 +1,4 @@
-import type { BestOf, Game, Match, Side } from './types';
+import type { BestOf, Game, GamesResult, Match, Side } from './types';
 
 export const GAME_POINTS = 11;
 
@@ -30,7 +30,7 @@ export interface MatchSummary {
   winner: Side | null;
 }
 
-export function summarize(m: Pick<Match, 'games' | 'bestOf' | 'walkover'>): MatchSummary {
+export function summarize(m: Pick<Match, 'games' | 'bestOf' | 'walkover' | 'result'>): MatchSummary {
   if (m.walkover) {
     const need = gamesToWin(m.bestOf);
     const w = m.walkover === 'a';
@@ -41,6 +41,11 @@ export function summarize(m: Pick<Match, 'games' | 'bestOf' | 'walkover'>): Matc
       pointsB: w ? 0 : need * GAME_POINTS,
       winner: m.walkover,
     };
+  }
+  if (m.result && !m.games.length) {
+    const need = gamesToWin(m.bestOf);
+    const { a, b } = m.result;
+    return { gamesA: a, gamesB: b, pointsA: 0, pointsB: 0, winner: a >= need ? 'a' : b >= need ? 'b' : null };
   }
   let gamesA = 0, gamesB = 0, pointsA = 0, pointsB = 0;
   for (const g of m.games) {
@@ -73,6 +78,32 @@ export function checkMatch(games: Game[], bestOf: BestOf): MatchCheck {
   }
   if (a < need && b < need) return { ok: false, error: 'notDecided' };
   return { ok: true };
+}
+
+/** All possible final results in games for a format, e.g. best of 5 → 3-0, 3-1, 3-2. */
+export function possibleResults(bestOf: BestOf): number[] {
+  const need = gamesToWin(bestOf);
+  return Array.from({ length: need }, (_, i) => i);
+}
+
+/** Validate a result entered in games only (e.g. 3-1 in best of 5). */
+export function checkResult(r: GamesResult, bestOf: BestOf): MatchCheck {
+  const need = gamesToWin(bestOf);
+  if (![r.a, r.b].every((x) => Number.isInteger(x) && x >= 0)) return { ok: false, error: 'notDecided' };
+  const hi = Math.max(r.a, r.b), lo = Math.min(r.a, r.b);
+  if (hi < need) return { ok: false, error: 'notDecided' };
+  if (hi > need || lo >= need) return { ok: false, error: 'tooManyGames' };
+  return { ok: true };
+}
+
+/** A result (points per game, games only, or walkover) has been saved. */
+export function hasResult(m: Pick<Match, 'games' | 'walkover' | 'result'>): boolean {
+  return m.games.length > 0 || !!m.walkover || !!m.result;
+}
+
+/** The match has a result whose game points are not known (games only). */
+export function pointsUnknown(m: Pick<Match, 'games' | 'walkover' | 'result'>): boolean {
+  return !m.walkover && !m.games.length && !!m.result;
 }
 
 export function isDone(m: Match): boolean {

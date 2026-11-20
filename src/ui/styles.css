@@ -811,6 +811,31 @@ button.slot:not(:disabled):hover, a.slot:hover { border-color: var(--table); tra
 .adm-row-main a { text-decoration: none; }
 .adm-row-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 @media (max-width: 560px) { .adm-row { grid-template-columns: 56px 1fr; } .adm-row-actions { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; } }
+/* Admin bulk delete */
+.bulk-warn { border-top: 4px solid var(--red); }
+.bulk-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.bulk-kind { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 6px; border-radius: 16px; border: 2px solid var(--line); background: #fff; text-decoration: none; color: var(--ink); text-align: center; transition: transform .15s, border-color .15s; }
+.bulk-kind:hover { transform: translateY(-2px); border-color: #f6c1c3; }
+.bulk-kind .ic { color: var(--blue); }
+.bulk-kind b { font-size: 22px; }
+.bulk-kind small { font-weight: 700; font-size: 12px; }
+.bulk-kind.on { border-color: var(--red); background: #fde7e8; }
+.bulk-kind.on .ic { color: var(--red); }
+.bulk-actions { margin-block: 6px 12px; flex-wrap: wrap; }
+.bulk-all { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 8px 0; border-block-end: 1px solid var(--line); cursor: pointer; }
+.bulk-list { display: grid; gap: 2px; max-height: 60vh; overflow-y: auto; }
+.bulk-item { display: grid; grid-template-columns: auto 48px 1fr; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 12px; cursor: pointer; }
+.bulk-item:hover { background: #f4f7fd; }
+.bulk-item.on { background: #fde7e8; }
+.bulk-item .ph { aspect-ratio: 1; border-radius: 10px; width: 48px; }
+.bulk-item .ph-ic .ic { width: 20px; height: 20px; }
+.bulk-all input, .bulk-item input { width: 20px; height: 20px; accent-color: var(--red); }
+.bulk-av { display: grid; place-items: center; }
+.bulk-confirm { border: 2px solid var(--red); background: #fff6f6; border-radius: 16px; padding: 14px; margin-block: 8px 12px; animation: bulkIn .2s ease-out; }
+@keyframes bulkIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.bulk-confirm h3 { color: var(--red); margin-block-start: 0; }
+.bulk-plan { margin: 0 0 8px; padding-inline-start: 20px; display: grid; gap: 4px; }
+
 .sim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
 .sim-card { border: 2px solid var(--line); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
 .sim-card.on { border-color: var(--gold); background: #fffbea; }

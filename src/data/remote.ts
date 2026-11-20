@@ -165,6 +165,10 @@ export async function deleteTournament(id: string): Promise<void> {
   check(await db().from('tournaments').delete().eq('id', id));
 }
 
+export async function deleteTournaments(ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += 100) check(await db().from('tournaments').delete().in('id', ids.slice(i, i + 100)));
+}
+
 /* ---------------------------------------------------------- registrations */
 
 async function withNames(regs: Registration[]): Promise<Registration[]> {
@@ -297,6 +301,9 @@ export const unconfirmedUsers = () => adminUsers<{ users: PendingUser[] }>({ act
 export const confirmUser = (userId: string) => adminUsers<{ ok: true }>({ action: 'confirm', user_id: userId });
 export const createAccount = (a: { email: string; password: string; full_name: string; phone: string; club: string; birth_year: string; roles?: string[] }) =>
   adminUsers<{ id: string }>({ action: 'create', ...a });
+/** Admins only: deletes the accounts (never admins or yourself). Their tournaments and articles move to you. */
+export const deleteAccounts = (userIds: string[]) =>
+  adminUsers<{ deleted: number; skipped: number; failed: string[] }>({ action: 'delete_users', user_ids: userIds });
 
 /** Make an account for the player behind a claim code (no sign-in needed), then sign in. */
 export async function claimAccount(a: { code: string; email: string; password: string; gender: string }): Promise<void> {

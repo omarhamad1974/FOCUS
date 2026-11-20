@@ -85,6 +85,18 @@ export async function setRoles(id: string, roles: { is_organizer?: boolean; is_s
   check(await db().from('profiles').update(roles).eq('id', id));
 }
 
+/** Same profile change for many accounts (admin only). */
+export async function setRolesMany(ids: string[], roles: Record<string, unknown>): Promise<void> {
+  for (const part of chunks(ids)) check(await db().from('profiles').update(roles).in('id', part));
+}
+
+/** Split long id lists so each request stays short. */
+export function chunks<T>(ids: T[], size = 100): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
 /* -------------------------------------------------------------- news */
 
 export type PostCategory = 'news' | 'learn' | 'tips' | 'events' | 'gear' | 'other';
@@ -114,6 +126,10 @@ export async function savePost(p: Partial<Post> & { title: string }): Promise<Po
 
 export async function deletePost(id: string): Promise<void> {
   check(await db().from('posts').delete().eq('id', id));
+}
+
+export async function deletePosts(ids: string[]): Promise<void> {
+  for (const part of chunks(ids)) check(await db().from('posts').delete().in('id', part));
 }
 
 /* -------------------------------------------------------------- shop */
@@ -169,6 +185,10 @@ export async function setProductFlags(id: string, f: { approved?: boolean; featu
 
 export async function deleteProduct(id: string): Promise<void> {
   check(await db().from('products').delete().eq('id', id));
+}
+
+export async function deleteProducts(ids: string[]): Promise<void> {
+  for (const part of chunks(ids)) check(await db().from('products').delete().in('id', part));
 }
 
 export async function placeOrder(productId: string, qty: number, phone: string, note: string): Promise<string> {

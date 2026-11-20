@@ -24,6 +24,7 @@ import * as faq from './pages/faq';
 import * as claim from './pages/claim';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
+import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
 
 /* ------------------------------------------------------------------ state */
 
@@ -288,12 +289,13 @@ function newsCarousel(posts: content.Post[]): string {
       <div class="row">${session.profile ? `<a class="btn gold" href="#/training">${icon('calendar')} ${t('home.ctaBook')}</a>`
         : `<a class="btn gold" href="#/login">${icon('user')} ${t('auth.signup')}</a>`}</div></div>${heroArt()}</section>`;
   }
-  return `<section class="carousel rise" data-carousel aria-roledescription="carousel" aria-label="${esc(t('nav.news'))}">
-    <div class="car-track">${posts.map((p, i) => `<a class="car-slide" href="#/news/${p.id}" aria-label="${esc(p.title)}" data-i="${i}">
+  return `<section class="carousel rise" data-carousel data-fade aria-roledescription="carousel" aria-label="${esc(t('nav.news'))}">
+    <div class="car-track">${posts.map((p, i) => `<a class="car-slide${i ? '' : ' on'}" href="#/news/${p.id}" aria-label="${esc(p.title)}" data-i="${i}" draggable="false"${i ? ' inert' : ''}>
       ${cover(p.cover_url, p.id, news.CAT_ICON[p.category], esc(p.title))}
       <div class="car-text"><span class="badge gold">${icon(news.CAT_ICON[p.category], 14)} ${t(`news.cat.${p.category}` as MessageKey)}</span>
         <h2 dir="auto">${esc(p.title)}</h2>${p.summary ? `<p dir="auto">${esc(p.summary)}</p>` : ''}
         <span class="car-more">${t('home.readMore')} ${icon('chevron', 16)}</span></div></a>`).join('')}</div>
+    ${posts.length > 1 ? carLogo(import.meta.env.BASE_URL) : ''}
     ${carControls(posts.length)}
   </section>`;
 }
@@ -448,7 +450,9 @@ function carGo(c: HTMLElement, i: number): void {
   if (!track || !track.children.length) return;
   const slides = track.children.length;
   const k = ((i % slides) + slides) % slides;
-  track.scrollBy({ left: carOffset(track, track.children[k] as HTMLElement), behavior: 'smooth' });
+  if (c.hasAttribute('data-fade')) {
+    if (!fadeTo(c, k)) return;
+  } else track.scrollBy({ left: carOffset(track, track.children[k] as HTMLElement), behavior: 'smooth' });
   c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
   c.dataset.at = String(k);
 }
@@ -458,7 +462,9 @@ function startCarousels(): void {
   document.querySelectorAll<HTMLElement>('[data-carousel]').forEach((c) => {
     const track = c.querySelector<HTMLElement>('.car-track');
     if (!track) return;
-    track.addEventListener('scroll', () => {
+    const fade = c.hasAttribute('data-fade');
+    if (fade) fadeSwipe(c, (d) => carGo(c, Number(c.dataset.at ?? 0) + d));
+    else track.addEventListener('scroll', () => {
       const k = carIndex(track);
       c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
       c.dataset.at = String(k);
@@ -471,7 +477,7 @@ function startCarousels(): void {
     c.addEventListener('focusout', () => (paused = false));
     carTimers.push(window.setInterval(() => {
       if (paused || !document.contains(c) || document.hidden) return;
-      carGo(c, carAtEnd(track) ? 0 : Number(c.dataset.at ?? 0) + 1);
+      carGo(c, !fade && carAtEnd(track) ? 0 : Number(c.dataset.at ?? 0) + 1);
     }, 6000));
   });
 }
@@ -1986,7 +1992,7 @@ document.addEventListener('click', (e) => {
     const track = c.querySelector<HTMLElement>('.car-track');
     const at = Number(c.dataset.at ?? 0), d = Number(el.dataset.d);
     if (act === 'car-go') carGo(c, Number(el.dataset.i));
-    else if (d > 0 && track && carAtEnd(track)) carGo(c, 0);
+    else if (d > 0 && track && !c.hasAttribute('data-fade') && carAtEnd(track)) carGo(c, 0);
     else carGo(c, at + d);
     return;
   }

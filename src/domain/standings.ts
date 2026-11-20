@@ -1,4 +1,4 @@
-import { summarize } from './scoring';
+import { pointsUnknown, summarize } from './scoring';
 import type { Match } from './types';
 
 export interface StandingRow {
@@ -81,6 +81,9 @@ function headToHead(pair: string[], matches: Match[]): string[] | null {
  *  - three or more: game difference, then points difference, counted in the
  *    matches played among the tied players. If two remain level after that,
  *    their head-to-head decides; three or more still level go to the organizer.
+ *  - points difference is used only when the points of every game among the
+ *    tied players are known; with results entered in games only (e.g. 3-1)
+ *    players still level on games go straight to the organizer.
  */
 function resolveTie(ids: string[], matches: Match[]): Resolved {
   if (ids.length === 1) return { order: ids, how: 'none', unresolved: [] };
@@ -91,6 +94,7 @@ function resolveTie(ids: string[], matches: Match[]): Resolved {
   const t = tally(ids, among(ids, matches));
   const gd = (id: string) => t.get(id)!.gamesWon - t.get(id)!.gamesLost;
   const pd = (id: string) => t.get(id)!.pointsWon - t.get(id)!.pointsLost;
+  const pointsKnown = (group: string[]) => !among(group, matches).some(pointsUnknown);
   const order: string[] = [];
   const unresolved: string[][] = [];
   let how: StandingRow['tiebreak'] = 'gameDiff';
@@ -99,6 +103,11 @@ function resolveTie(ids: string[], matches: Match[]): Resolved {
     if (byGames.length === 2) {
       const r = resolveTie(byGames, matches);
       order.push(...r.order); unresolved.push(...r.unresolved);
+      continue;
+    }
+    if (!pointsKnown(byGames)) {
+      order.push(...byGames);
+      unresolved.push(byGames);
       continue;
     }
     how = 'pointsDiff';

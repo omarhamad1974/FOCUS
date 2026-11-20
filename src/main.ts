@@ -6,13 +6,13 @@ import {
   playerName, progress, saveResult, snakeGroups, startGroups, startKnockout, uid,
 } from './domain/tournament';
 import { canEditKo, isBye, placements, roundName } from './domain/bracket';
-import { checkGame, gamesToWin, summarize, type MatchCheck } from './domain/scoring';
+import { GAME_POINTS, gamesToWin, possibleResults, summarize, type MatchCheck } from './domain/scoring';
 import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample';
-import type { BestOf, Bracket, Game, Match, StageFormats, Tournament } from './domain/types';
+import type { BestOf, Bracket, Game, GamesResult, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
-import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
+import { addPlayerToSetup, closeRegistration, recordsPoints, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
 import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PUBLIC_STATUSES, publicStatus, sortForListing, TIME_FILTERS, topTwo, tournamentLocations, type PublicStatus, type TimeFilter } from './domain/tournament';
 import * as admin from './pages/admin';
@@ -523,6 +523,7 @@ function samplePanel(): string {
       <label class="field" style="flex:1"><span>${t('home.sample.groups')}</span>
         <select class="input" id="sGroups">${[2, 3, 4, 6, 8].map((x) => `<option ${x === 4 ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     </div>
+    <label class="row" style="margin-block:8px"><input type="checkbox" id="sPoints"> ${t('home.sample.points')}</label>
     <div class="stack">${levels.map((l) => `<button class="btn soft block" data-act="sample" data-level="${l}">${t(`home.sample.${l}` as MessageKey)}</button>`).join('')}</div>
   </div>`;
 }
@@ -539,6 +540,7 @@ interface Draft {
   groupCount: number;
   formats: StageFormats;
   consolation: { enabled: boolean; name: string };
+  pointsPerGame: boolean;
   selfReg: boolean;
   autoAccept: boolean;
   maxPlayers: string;
@@ -557,6 +559,7 @@ const newDraft = (): Draft => ({
   groupCount: 4,
   formats: { group: 3, early: 3, semi: 5, final: 5 },
   consolation: { enabled: true, name: 'بطولة الترضية' },
+  pointsPerGame: false,
   selfReg: online(),
   autoAccept: false,
   maxPlayers: '',
@@ -617,6 +620,10 @@ function wizardPage(): string {
       <h3>🎯 ${t('wizard.formats')}</h3>
       ${hint('wizard.formatsHint')}
       ${(['group', 'early', 'semi', 'final'] as const).map(row).join('')}
+      <hr style="border:0;border-top:1px solid var(--line);margin-block:14px">
+      <h3>✍️ ${t('scoring.title')}</h3>
+      ${hint('scoring.hint')}
+      ${scoringChoice(draft.pointsPerGame, 'w-scoring')}
       <hr style="border:0;border-top:1px solid var(--line);margin-block:14px">
       <h3>🥈 ${t('wizard.consolation')}</h3>
       ${hint('wizard.consolationHint')}
@@ -732,6 +739,7 @@ function setupBoard(tm: Tournament): string {
 function standingsTable(tm: Tournament, gi: number): string {
   const g = tm.groups[gi];
   const s = groupStandings(tm, g);
+  const pts = recordsPoints(tm);
   const rows = s.rows.map((r) => {
     const cls = r.rank <= 2 ? 'q' : r.rank <= 4 && tm.consolation.enabled ? 'c' : '';
     const pct = r.played ? Math.round((r.wins / r.played) * 100) : 0;
@@ -742,7 +750,7 @@ function standingsTable(tm: Tournament, gi: number): string {
         <div class="winbar" title="${t('stats.winRate')} ${pct}%"><span style="width:${pct}%"></span></div></td>
       <td>${n(r.played)}</td><td>${n(r.wins)}</td><td>${n(r.losses)}</td>
       <td class="hide-sm">${pair(n(r.gamesWon), n(r.gamesLost), ':')}</td>
-      <td class="hide-sm">${pair(n(r.pointsWon), n(r.pointsLost), ':')}</td>
+      ${pts ? `<td class="hide-sm">${pair(n(r.pointsWon), n(r.pointsLost), ':')}</td>` : ''}
       <td><b>${n(r.points)}</b></td>
     </tr>`;
   }).join('');
@@ -752,7 +760,7 @@ function standingsTable(tm: Tournament, gi: number): string {
     <h3><span class="gletter" style="background:${groupColor(gi)};display:inline-grid;margin-inline-end:6px">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)}</h3>
     <div class="table-wrap"><table class="standings">
       <thead><tr><th>${t('standings.rank')}</th><th class="name">${t('standings.player')}</th><th>${t('standings.played')}</th><th>${t('standings.won')}</th><th>${t('standings.lost')}</th>
-      <th class="hide-sm">${t('standings.games')}</th><th class="hide-sm">${t('standings.points')}</th><th>${t('standings.pts')}</th></tr></thead>
+      <th class="hide-sm">${t('standings.games')}</th>${pts ? `<th class="hide-sm">${t('standings.points')}</th>` : ''}<th>${t('standings.pts')}</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     ${ties}
@@ -791,7 +799,7 @@ function groupsView(tm: Tournament): string {
     <button class="btn green block" data-act="start-ko" ${ready ? '' : 'disabled'}>⚔️ ${t('ko.start')}</button>
     ${ready ? '' : `<p class="muted small center">${t('ko.notReady')}</p>`}
   </div>` : '';
-  return `${hint('standings.hint')}${legend}
+  return `${hint(recordsPoints(tm) ? 'standings.hint' : 'standings.hintGames')}${legend}
     ${tm.groups.map((_, i) => standingsTable(tm, i)).join('')}
     ${startKo}
     ${statsCard(tm)}`;
@@ -907,6 +915,14 @@ function coverCard(tm: Tournament): string {
     </div></div>`;
 }
 
+/** Organizer's choice: match result only (default) or points of every game. */
+function scoringChoice(points: boolean, act: string): string {
+  const opt = (v: boolean, icon: string, title: MessageKey, sub: MessageKey) =>
+    `<button class="modeopt" data-act="${act}" data-v="${v ? 1 : 0}" aria-pressed="${points === v}">
+      <span class="ic">${icon}</span><span><b>${t(title)}</b><small>${t(sub)}</small></span></button>`;
+  return `<div class="modes">${opt(false, '⚡', 'scoring.result', 'scoring.resultSub')}${opt(true, '🔢', 'scoring.points', 'scoring.pointsSub')}</div>`;
+}
+
 function settingsView(tm: Tournament): string {
   if (!isOrg()) return '';
   const locked = tm.stage !== 'setup';
@@ -931,6 +947,11 @@ function settingsView(tm: Tournament): string {
     <h3>🎯 ${t('wizard.formats')}</h3>
     ${locked ? `<p class="muted small">🔒 ${t('settings.formatsLocked')}</p>` : hint('wizard.formatsHint')}
     ${(['group', 'early', 'semi', 'final'] as const).map(row).join('')}
+  </div>
+  <div class="card">
+    <h3>✍️ ${t('scoring.title')}</h3>
+    ${hint('scoring.hint')}
+    ${scoringChoice(recordsPoints(tm), 'set-scoring')}
   </div>
   ${online() ? assistantsCard(tm) : ''}
   <div class="card">
@@ -1014,11 +1035,44 @@ async function mediaAction(act: string, el: HTMLElement, tm: Tournament): Promis
 
 /* ------------------------------------------------------------ score entry */
 
-interface ScoreDraft { matchId: string; games: { a: string; b: string }[]; error: string }
+/**
+ * Two ways to enter a result, chosen per tournament by the organizer:
+ *  - default: the match result in games only, one tap (e.g. 3-1);
+ *  - optional: points of every game. Tap who won the game and type the
+ *    loser's points; the winner's points are filled in (11, or +2 after 10-10).
+ */
+interface GameDraft { w: '' | 'a' | 'b'; lose: string }
+interface ScoreDraft { matchId: string; result: GamesResult | null; games: GameDraft[]; error: string }
 let sd: ScoreDraft | null = null;
 
-function parseGames(d: ScoreDraft): Game[] {
-  return d.games.map((g) => ({ a: g.a === '' ? NaN : Number(g.a), b: g.b === '' ? NaN : Number(g.b) }));
+/** Winner's points from the loser's points. */
+const winPoints = (lose: number) => (lose >= 10 ? lose + 2 : GAME_POINTS);
+
+function draftGame(g: GameDraft): Game | null {
+  if (!g.w || g.lose === '') return null;
+  const lose = Number(g.lose);
+  const win = winPoints(lose);
+  return g.w === 'a' ? { a: win, b: lose } : { a: lose, b: win };
+}
+
+/** Game rows to show: until the match is decided, at least the games needed to win. */
+function shownGames(d: ScoreDraft, bestOf: BestOf): number {
+  const need = gamesToWin(bestOf);
+  let a = 0, b = 0, shown = 0;
+  for (let i = 0; i < bestOf; i++) {
+    if (a >= need || b >= need) break;
+    shown = i + 1;
+    const w = d.games[i].w;
+    if (w === 'a') a++;
+    else if (w === 'b') b++;
+    else if (shown >= need) break;
+  }
+  return shown;
+}
+
+function liveGames(d: ScoreDraft, bestOf: BestOf): { a: number; b: number } {
+  const rows = d.games.slice(0, shownGames(d, bestOf));
+  return { a: rows.filter((g) => g.w === 'a').length, b: rows.filter((g) => g.w === 'b').length };
 }
 
 function errorText(c: MatchCheck): string {
@@ -1027,8 +1081,14 @@ function errorText(c: MatchCheck): string {
   return t(`score.err.${c.error}` as MessageKey);
 }
 
+function savedText(m: Match): string {
+  if (m.walkover) return `🚩 ${t('matches.walkover')}`;
+  return m.games.length ? gamesList(m.games) : '';
+}
+
 function scorePage(tm: Tournament, m: Match): string {
   const org = canScore(tm);
+  const detailed = recordsPoints(tm);
   const a = playerName(tm, m.aId), b = playerName(tm, m.bId);
   const bracket = m.bracketId ? tm.brackets.find((x) => x.id === m.bracketId) : undefined;
   const locked = (m.stage === 'group' && tm.stage !== 'groups') || (bracket && !canEditKo(m, bracket, tm.matches));
@@ -1036,62 +1096,77 @@ function scorePage(tm: Tournament, m: Match): string {
     ? `${t('setup.group')} ${tm.groups.find((g) => g.id === m.groupId)?.name ?? ''}`
     : `${bracket?.kind === 'main' ? t('ko.main') : bracket?.name} · ${t(`ko.round.${roundName(m.round!, bracket!.rounds.length)}` as MessageKey)}`;
   const back = `<a class="btn soft small" href="#/t/${tm.id}/${m.stage === 'group' ? 'matches' : 'knockout'}">→ ${esc(tm.name)}</a>`;
+  const saved = summarize(m);
 
   if (!sd || sd.matchId !== m.id) {
-    const start = m.games.length ? m.games.map((g) => ({ a: String(g.a), b: String(g.b) })) : Array.from({ length: gamesToWin(m.bestOf) }, () => ({ a: '', b: '' }));
-    sd = { matchId: m.id, games: start, error: '' };
+    const games: GameDraft[] = Array.from({ length: m.bestOf }, (_, i) => {
+      const g = m.games[i];
+      return g ? { w: g.a > g.b ? 'a' : 'b', lose: String(Math.min(g.a, g.b)) } : { w: '', lose: '' };
+    });
+    sd = { matchId: m.id, result: saved.winner && !m.walkover ? { a: saved.gamesA, b: saved.gamesB } : null, games, error: '' };
   }
-  const games = parseGames(sd);
-  const live = summarize({ games: games.filter((g) => checkGame(g) === 'ok'), bestOf: m.bestOf, walkover: null });
-  const saved = summarize(m);
-  const board = `<div class="scoreboard">
+  const live = detailed ? liveGames(sd, m.bestOf) : (sd.result ?? { a: 0, b: 0 });
+  const board = (x: number, y: number) => `<div class="scoreboard">
     <div class="nm" dir="auto"><span class="paddle" style="background:var(--red)"></span>${esc(a)}</div>
-    <div class="big">${org && !locked ? pair(live.gamesA, live.gamesB) : pair(saved.gamesA, saved.gamesB)}</div>
+    <div class="big">${pair(x, y)}</div>
     <div class="nm" dir="auto"><span class="paddle" style="background:var(--blue)"></span>${esc(b)}</div>
   </div>`;
 
   const history = m.history.length ? `<div class="card"><h3>🕓 ${t('score.history')}</h3>${hint('score.historyHint')}
     ${m.history.map((h) => `<div class="row small"><span class="muted">${dateTimeFmt.format(new Date(h.at))}</span>
-      <span>${h.walkover ? `${t('matches.walkover')} (${h.walkover === 'a' ? esc(a) : esc(b)})` : gamesList(h.games)}</span></div>`).join('')}
+      <span>${h.walkover ? `${t('matches.walkover')} (${h.walkover === 'a' ? esc(a) : esc(b)})` : h.games.length ? gamesList(h.games) : h.result ? pair(h.result.a, h.result.b) : ''}</span></div>`).join('')}
   </div>` : '';
 
   if (!org || locked) {
     return `<div class="row" style="margin-block-end:10px">${back}</div>
-      <div class="card"><div class="muted small" style="margin-block-end:8px">${esc(where)} · ${bo(m.bestOf)}</div>${board}
-      ${m.games.length ? `<p class="center">${gamesList(m.games)}</p>` : ''}
-      ${m.walkover ? `<p class="center">🚩 ${t('matches.walkover')}</p>` : ''}
+      <div class="card"><div class="muted small" style="margin-block-end:8px">${esc(where)} · ${bo(m.bestOf)}</div>${board(saved.gamesA, saved.gamesB)}
+      ${savedText(m) ? `<p class="center">${savedText(m)}</p>` : ''}
       ${!org ? `<p class="muted small center">👀 ${t('score.readonly')}</p>` : `<div class="err">🔒 ${t(m.stage === 'ko' ? 'score.locked' : 'score.err.locked')}</div>`}
       </div>${history}`;
   }
 
-  const rows = sd.games.map((g, i) => {
-    const st = checkGame(games[i]);
-    const cls = g.a === '' && g.b === '' ? '' : st === 'ok' ? 'ok' : 'bad';
-    const pts = (side: 'a' | 'b') => `<span class="pts">
-      <button data-act="pt" data-i="${i}" data-s="${side}" data-d="-1" aria-label="-1">−</button>
-      <input inputmode="numeric" pattern="[0-9]*" data-act="gin" data-i="${i}" data-s="${side}" value="${esc(g[side])}" aria-label="${t('score.game')} ${i + 1} ${side === 'a' ? esc(a) : esc(b)}">
-      <button data-act="pt" data-i="${i}" data-s="${side}" data-d="1" aria-label="+1">+</button></span>`;
-    return `<div class="gamerow ${cls}"><span class="n">${t('score.game')} ${n(i + 1)}</span>${pts('a')}<span class="dash">:</span>${pts('b')}
-      <span class="st">${cls === 'ok' ? '✅' : cls === 'bad' ? '⚠️' : ''}</span></div>
-      <div class="quick">
-        <button class="btn soft small" data-act="quick" data-i="${i}" data-s="a">🔴 11 ${t('score.wins')}</button>
-        <button class="btn soft small" data-act="quick" data-i="${i}" data-s="b">🔵 11 ${t('score.wins')}</button>
+  const need = gamesToWin(m.bestOf);
+  let entry: string;
+  if (!detailed) {
+    // One tap per result: each player's column lists the ways they can win.
+    const col = (side: 'a' | 'b', name: string, color: string) => `<div class="rescol">
+      <div class="who" dir="auto"><span class="paddle" style="background:var(--${color})"></span>${esc(name)} ${t('score.wins')}</div>
+      ${possibleResults(m.bestOf).map((lo) => {
+        const r = side === 'a' ? { a: need, b: lo } : { a: lo, b: need };
+        const on = sd!.result?.a === r.a && sd!.result?.b === r.b;
+        return `<button class="resbtn ${color}" data-act="pick-result" data-a="${r.a}" data-b="${r.b}" aria-pressed="${on}">
+          <b>${n(need)}</b><i>-</i><b>${n(lo)}</b></button>`;
+      }).join('')}
+    </div>`;
+    entry = `${hint('score.resultHint')}
+      <div class="results">${col('a', a, 'red')}${col('b', b, 'blue')}</div>`;
+  } else {
+    const shown = shownGames(sd, m.bestOf);
+    const oldResult = !m.games.length && m.result ? `<p class="muted small center">${t('score.savedResult')} ${pair(m.result.a, m.result.b)}</p>` : '';
+    const rows = sd.games.slice(0, shown).map((g, i) => {
+      const game = draftGame(g);
+      const cls = !g.w || g.lose === '' ? '' : game ? 'ok' : 'bad';
+      const who = (side: 'a' | 'b', name: string, color: string) =>
+        `<button class="gw ${color}" data-act="game-winner" data-i="${i}" data-s="${side}" aria-pressed="${g.w === side}" dir="auto">${esc(name)}</button>`;
+      return `<div class="gamerow2 ${cls}">
+        <span class="n">${t('score.game')} ${n(i + 1)}</span>
+        <div class="gws">${who('a', a, 'red')}${who('b', b, 'blue')}</div>
+        <label class="lose ${g.w ? '' : 'off'}"><span>${t('score.loserPts')}</span>
+          <input inputmode="numeric" pattern="[0-9]*" maxlength="2" data-act="lose" data-i="${i}" value="${esc(g.lose)}" ${g.w ? '' : 'disabled'} placeholder="–"></label>
+        <span class="gs">${game ? pair(game.a, game.b, ':') : ''}</span>
       </div>`;
-  }).join('');
+    }).join('');
+    entry = `${hint('score.pointsHint')}${oldResult}${rows}`;
+  }
 
   return `<div class="row" style="margin-block-end:10px">${back}</div>
   <div class="card">
     <div class="row between"><h2>🎯 ${t('score.title')}</h2><span class="badge blue">${bo(m.bestOf)}</span></div>
     <div class="muted small" style="margin-block:4px 10px">${esc(where)}</div>
-    ${board}
-    ${hint('score.hint')}
-    ${rows}
-    <div class="row">
-      ${sd.games.length < m.bestOf ? `<button class="btn soft small" data-act="add-game">➕ ${t('score.addGame')}</button>` : ''}
-      ${sd.games.length > 1 ? `<button class="btn ghost small" data-act="rm-game">➖ ${t('score.removeGame')}</button>` : ''}
-    </div>
+    ${board(live.a, live.b)}
+    ${entry}
     ${sd.error ? `<div class="err" role="alert">${esc(sd.error)}</div>` : ''}
-    <button class="btn green block" data-act="save-score" style="margin-block-start:12px">💾 ${t('score.save')}</button>
+    <button class="btn green block" data-act="save-score" style="margin-block-start:12px" ${!detailed && !sd.result ? 'disabled' : ''}>💾 ${t('score.save')}</button>
   </div>
   <div class="card">
     <h3>🚩 ${t('score.walkover')}</h3>
@@ -1101,6 +1176,7 @@ function scorePage(tm: Tournament, m: Match): string {
       <button class="btn soft" data-act="walkover" data-s="b" dir="auto">${esc(b)}</button>
     </div>
   </div>
+  ${isOrg() ? `<p class="muted small center">⚙️ ${t(detailed ? 'score.modePoints' : 'score.modeResult')} · <a href="#/t/${tm.id}/settings">${t('score.changeMode')}</a></p>` : ''}
   ${history}`;
 }
 
@@ -1717,7 +1793,8 @@ document.addEventListener('click', (e) => {
     case 'sample': {
       const players = Number((document.getElementById('sPlayers') as HTMLSelectElement).value);
       const groups = Number((document.getElementById('sGroups') as HTMLSelectElement).value);
-      const st = sampleTournament(el.dataset.level as SampleLevel, Date.now(), players, Math.min(groups, Math.floor(players / 2)));
+      const withPoints = (document.getElementById('sPoints') as HTMLInputElement).checked;
+      const st = sampleTournament(el.dataset.level as SampleLevel, Date.now(), players, Math.min(groups, Math.floor(players / 2)), withPoints);
       data.tournaments.unshift(st);
       persist();
       sampleOpen = false;
@@ -1772,6 +1849,7 @@ document.addEventListener('click', (e) => {
       const nt = createTournament({
         name: draft.name.trim(), date: draft.date, playerNames: draftNames(), groupCount: draft.groupCount,
         formats: draft.formats, consolation: { enabled: draft.consolation.enabled, name: draft.consolation.name.trim() || 'بطولة الترضية' },
+        pointsPerGame: draft.pointsPerGame,
       });
       if (draft.time) nt.time = draft.time;
       if (draft.location.trim()) nt.location = draft.location.trim();
@@ -1862,6 +1940,18 @@ document.addEventListener('click', (e) => {
       route();
       return;
     }
+    case 'set-scoring':
+      if (!tm) return;
+      tm.pointsPerGame = el.dataset.v === '1';
+      persist();
+      toast(t('settings.saved'));
+      route();
+      return;
+    case 'w-scoring':
+      readDraft();
+      draft.pointsPerGame = el.dataset.v === '1';
+      route();
+      return;
     case 'set-format':
       if (!tm || tm.stage !== 'setup') return;
       tm.formats[el.dataset.k as keyof StageFormats] = Number(el.dataset.v) as BestOf;
@@ -1889,34 +1979,44 @@ document.addEventListener('click', (e) => {
       return;
 
     /* score entry */
-    case 'pt': case 'quick': case 'add-game': case 'rm-game': {
+    case 'pick-result': {
+      if (!sd || !m) return;
+      sd.result = { a: Number(el.dataset.a), b: Number(el.dataset.b) };
+      sd.error = '';
+      route();
+      return;
+    }
+    case 'game-winner': {
       if (!sd || !m) return;
       syncInputs();
       const i = Number(el.dataset.i);
-      const s = el.dataset.s as 'a' | 'b';
-      if (act === 'pt') {
-        const cur = Number(sd.games[i][s] || 0);
-        sd.games[i][s] = String(Math.max(0, cur + Number(el.dataset.d)));
-      } else if (act === 'quick') {
-        const other = s === 'a' ? 'b' : 'a';
-        const o = Number(sd.games[i][other] || 0);
-        // 11 to the chosen side, keeping a deuce margin if the other score is 10+.
-        sd.games[i][s] = String(o >= 10 ? o + 2 : 11);
-      } else if (act === 'add-game') {
-        if (sd.games.length < m.bestOf) sd.games.push({ a: '', b: '' });
-      } else {
-        sd.games.pop();
-      }
+      sd.games[i].w = el.dataset.s as 'a' | 'b';
       sd.error = '';
       route();
+      // Next step is the loser's points: put the cursor there.
+      const inp = document.querySelector<HTMLInputElement>(`input[data-act="lose"][data-i="${i}"]`);
+      if (inp && inp.value === '') inp.focus();
       return;
     }
     case 'save-score':
     case 'walkover': {
       if (!sd || !m || !tm) return;
       syncInputs();
-      const games = parseGames(sd).filter((_, i) => !(sd!.games[i].a === '' && sd!.games[i].b === '') || i === 0);
-      const res = act === 'walkover' ? saveResult(tm, m.id, [], el.dataset.s as 'a' | 'b') : saveResult(tm, m.id, games, null);
+      let res: ReturnType<typeof saveResult>;
+      if (act === 'walkover') res = saveResult(tm, m.id, [], el.dataset.s as 'a' | 'b');
+      else if (!recordsPoints(tm)) {
+        if (!sd.result) { sd.error = t('score.err.pick'); route(); return; }
+        res = saveResult(tm, m.id, [], null, sd.result);
+      } else {
+        const rows = sd.games.slice(0, shownGames(sd, m.bestOf));
+        const bad = rows.findIndex((g) => !draftGame(g));
+        if (bad !== -1) {
+          sd.error = t(rows[bad].w ? 'score.err.loser' : 'score.err.noWinner', { n: bad + 1 });
+          route();
+          return;
+        }
+        res = saveResult(tm, m.id, rows.map((g) => draftGame(g)!), null);
+      }
       if (!res.ok) {
         sd.error = res.error === 'locked' ? t('score.err.locked') : errorText(res as MatchCheck);
         route();
@@ -1935,8 +2035,8 @@ document.addEventListener('click', (e) => {
 
 function syncInputs(): void {
   if (!sd) return;
-  document.querySelectorAll<HTMLInputElement>('input[data-act="gin"]').forEach((inp) => {
-    sd!.games[Number(inp.dataset.i)][inp.dataset.s as 'a' | 'b'] = inp.value.replace(/[^\d]/g, '');
+  document.querySelectorAll<HTMLInputElement>('input[data-act="lose"]').forEach((inp) => {
+    sd!.games[Number(inp.dataset.i)].lose = inp.value.replace(/[^\d]/g, '').slice(0, 2);
   });
 }
 
@@ -1980,21 +2080,18 @@ document.addEventListener('input', (e) => {
     draft.players = (el as HTMLTextAreaElement).value;
     if (c) c.textContent = `${n(draftNames().length)} ${t('wizard.count')}`;
   }
-  if (el.dataset.act === 'gin' && sd) {
+  if (el.dataset.act === 'lose' && sd) {
     syncInputs();
-    // Update the row status without a full re-render to keep focus.
+    // Update the row without a full re-render to keep focus.
     const i = Number(el.dataset.i);
-    const g = parseGames(sd)[i];
-    const row = el.closest('.gamerow')!;
-    const empty = sd.games[i].a === '' && sd.games[i].b === '';
-    const ok = checkGame(g) === 'ok';
-    row.classList.toggle('ok', !empty && ok);
-    row.classList.toggle('bad', !empty && !ok);
-    row.querySelector('.st')!.textContent = empty ? '' : ok ? '✅' : '⚠️';
-    const live = summarize({ games: parseGames(sd).filter((x) => checkGame(x) === 'ok'), bestOf: current().m!.bestOf, walkover: null });
-    const big = document.querySelector('.scoreboard .big');
-    if (big) big.innerHTML = pair(live.gamesA, live.gamesB);
+    const game = draftGame(sd.games[i]);
+    const row = el.closest('.gamerow2')!;
+    row.classList.toggle('ok', !!game);
+    row.classList.toggle('bad', !game && sd.games[i].lose !== '');
+    row.querySelector('.gs')!.innerHTML = game ? pair(game.a, game.b, ':') : '';
+    if (sd.error) { sd.error = ''; document.querySelector('.err[role="alert"]')?.remove(); }
   }
+
 });
 
 document.addEventListener('submit', async (e) => {

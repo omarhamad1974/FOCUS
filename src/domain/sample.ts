@@ -1,7 +1,7 @@
 import { createTournament, saveResult, startGroups, startKnockout, groupsComplete, groupStandings } from './tournament';
 import { bracketMatches } from './bracket';
-import { gamesToWin } from './scoring';
-import type { Game, Side, Tournament } from './types';
+import { gamesToWin, hasResult, summarize } from './scoring';
+import type { Game, Match, Side, Tournament } from './types';
 
 const FIRST = ['أحمد', 'محمد', 'عمر', 'يوسف', 'كريم', 'مصطفى', 'خالد', 'حسن', 'علي', 'طارق', 'ياسين', 'مروان', 'سيف', 'زياد', 'آدم', 'مازن', 'نور', 'سارة', 'مريم', 'ليلى', 'هنا', 'جنى', 'فرح', 'سلمى', 'ملك', 'رنا', 'دينا', 'ندى', 'Adam', 'Lina', 'Omar K.', 'Sam'];
 const LAST = ['حمد', 'السيد', 'عبد الله', 'منصور', 'فاروق', 'الشريف', 'سالم', 'رمضان', 'النجار', 'حسني', 'زكي', 'بكر'];
@@ -54,8 +54,15 @@ export function randomResult(r: () => number, bestOf: 3 | 5, bias = 0.5): Game[]
 export type SampleLevel = 'setup' | 'groupsHalf' | 'groupsDone' | 'finished';
 
 /** Build a demo tournament at a chosen stage of progress. */
-export function sampleTournament(level: SampleLevel, seed = Date.now(), playerCount = 16, groupCount = 4): Tournament {
+export function sampleTournament(level: SampleLevel, seed = Date.now(), playerCount = 16, groupCount = 4, pointsPerGame = false): Tournament {
   const r = rng(seed);
+  // Points per game when the tournament records them, otherwise the result in games (e.g. 3-1).
+  const play = (m: Match) => {
+    const games = randomResult(r, m.bestOf);
+    if (pointsPerGame) return saveResult(t, m.id, games, null);
+    const s = summarize({ games, bestOf: m.bestOf, walkover: null });
+    return saveResult(t, m.id, [], null, { a: s.gamesA, b: s.gamesB });
+  };
   const t = createTournament({
     name: 'بطولة تجريبية',
     date: new Date().toISOString().slice(0, 10),
@@ -63,6 +70,7 @@ export function sampleTournament(level: SampleLevel, seed = Date.now(), playerCo
     groupCount,
     formats: { group: 3, early: 3, semi: 5, final: 5 },
     consolation: { enabled: true, name: 'بطولة الترضية' },
+    pointsPerGame,
   });
   if (level === 'setup') return t;
   startGroups(t);
@@ -70,7 +78,7 @@ export function sampleTournament(level: SampleLevel, seed = Date.now(), playerCo
   const toPlay = level === 'groupsHalf' ? groupMs.slice(0, Math.ceil(groupMs.length / 2)) : groupMs;
   for (const m of toPlay) {
     if (r() < 0.05) saveResult(t, m.id, [], r() < 0.5 ? 'a' : 'b');
-    else saveResult(t, m.id, randomResult(r, m.bestOf), null);
+    else play(m);
   }
   if (level === 'groupsHalf') return t;
   // Settle any tie the rules leave open, as an organizer would.
@@ -84,11 +92,11 @@ export function sampleTournament(level: SampleLevel, seed = Date.now(), playerCo
   for (const b of t.brackets) {
     for (let round = 0; round < b.rounds.length; round++) {
       for (const m of bracketMatches(b, t.matches)) {
-        if (m.round === round && m.aId && m.bId && !m.games.length) saveResult(t, m.id, randomResult(r, m.bestOf), null);
+        if (m.round === round && m.aId && m.bId && !hasResult(m)) play(m);
       }
       if (round === b.rounds.length - 2 && b.thirdPlaceId) {
         const third = t.matches[b.thirdPlaceId];
-        if (third.aId && third.bId) saveResult(t, third.id, randomResult(r, third.bestOf), null);
+        if (third.aId && third.bId) play(third);
       }
     }
   }

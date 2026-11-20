@@ -105,4 +105,10 @@ export interface Tournament {
   stage: TournamentStage;
   /** Photos and video links added by the organizer. */
   media?: TournamentMedia[];
+  /** Main photo shown on tournament cards and the tournament page (uploaded by the admin or organizer). */
+  cover?: string;
+  /** Start time on the tournament day, "HH:MM" (optional). */
+  time?: string;
+  /** Where it is played: club, hall or city (optional). */
+  location?: string;
 }

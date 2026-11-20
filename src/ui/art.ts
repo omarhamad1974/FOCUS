@@ -5,17 +5,17 @@ import { icon } from './icons';
 export function heroArt(): string {
   return `<svg class="hero-art" viewBox="0 0 320 200" aria-hidden="true">
     <defs>
-      <linearGradient id="tbl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1fb592"/><stop offset="1" stop-color="#0c6f5a"/></linearGradient>
+      <linearGradient id="tbl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ddf6a"/><stop offset="1" stop-color="#3c9a2e"/></linearGradient>
       <radialGradient id="ballg" cx=".35" cy=".35" r=".7"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#ffe0b8"/><stop offset="1" stop-color="#f59f45"/></radialGradient>
-      <linearGradient id="padR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff6b70"/><stop offset="1" stop-color="#c0262c"/></linearGradient>
-      <linearGradient id="padB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3d4a66"/><stop offset="1" stop-color="#121a2c"/></linearGradient>
+      <linearGradient id="padR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff4d5a"/><stop offset="1" stop-color="#b30c18"/></linearGradient>
+      <linearGradient id="padB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16336f"/><stop offset="1" stop-color="#0c1f4a"/></linearGradient>
     </defs>
     <ellipse cx="160" cy="182" rx="130" ry="10" fill="#0003"/>
     <path d="M40 150 L280 150 L250 92 L70 92 Z" fill="url(#tbl)" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
     <path d="M160 92 L160 150" stroke="#fff" stroke-width="2" opacity=".8"/>
-    <path d="M58 150 L58 178 M262 150 L262 178 M84 92 L84 112 M236 92 L236 112" stroke="#0b4c3e" stroke-width="5" stroke-linecap="round"/>
+    <path d="M58 150 L58 178 M262 150 L262 178 M84 92 L84 112 M236 92 L236 112" stroke="#23661a" stroke-width="5" stroke-linecap="round"/>
     <rect x="150" y="70" width="20" height="34" rx="2" fill="#ffffffcc" class="net"/>
-    <path d="M150 74 h20 M150 80 h20 M150 86 h20 M150 92 h20 M150 98 h20" stroke="#0f1b33" stroke-width=".8" opacity=".35"/>
+    <path d="M150 74 h20 M150 80 h20 M150 86 h20 M150 92 h20 M150 98 h20" stroke="#0c1f4a" stroke-width=".8" opacity=".35"/>
     <g class="pad pad-a"><ellipse cx="40" cy="96" rx="22" ry="25" fill="url(#padR)" stroke="#fff" stroke-width="2"/><rect x="34" y="118" width="12" height="28" rx="5" fill="#b07a45"/></g>
     <g class="pad pad-b"><ellipse cx="282" cy="86" rx="22" ry="25" fill="url(#padB)" stroke="#fff" stroke-width="2"/><rect x="276" y="108" width="12" height="28" rx="5" fill="#b07a45"/></g>
     <circle class="hero-ball" r="8" fill="url(#ballg)"/>
@@ -23,8 +23,8 @@ export function heroArt(): string {
 }
 
 const PALETTES: [string, string][] = [
-  ['#3b5bfd', '#7b8cff'], ['#0e7c66', '#2fd1a6'], ['#e5484d', '#ff9a8b'], ['#f08c00', '#ffd166'],
-  ['#8e4ec6', '#d6a4ff'], ['#0f1b33', '#3b5bfd'], ['#d6409f', '#ffa3d7'], ['#0091ff', '#7fd3ff'],
+  ['#0b55a8', '#4d8fe0'], ['#2f8a22', '#a6e88a'], ['#e01b2a', '#ff7a83'], ['#f08c00', '#ffd166'],
+  ['#1b8fd6', '#9fd0f5'], ['#0c1f4a', '#0b55a8'], ['#7ed957', '#c8f2b4'], ['#1b8fd6', '#a6e88a'],
 ];
 
 function hash(s: string): number {

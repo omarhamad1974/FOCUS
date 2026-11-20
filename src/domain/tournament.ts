@@ -1,6 +1,6 @@
 import { bracketMatches, canEditKo, createBracket, type Seed, syncBracket } from './bracket';
 import { checkMatch, checkResult, hasResult, isDone, summarize } from './scoring';
-import { computeStandings, type Standings } from './standings';
+import { computeStandings, type Standings, type StandingRow } from './standings';
 import type { BestOf, Game, GamesResult, Group, Match, Player, Side, StageFormats, Tournament } from './types';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -28,9 +28,63 @@ export function numberTables(t: Tournament): void {
   t.groups.forEach((g, i) => (g.table = String(i + 1)));
 }
 
-/** The group a player is in, if any. */
+/** Whether the player only fills this group (their home group is another one). */
+export function isExtra(g: Group, playerId: string): boolean {
+  return !!g.extraIds?.includes(playerId);
+}
+
+/** The player's own (home) group, if any. A player who also fills a second group still has one home group. */
 export function groupOf(t: Tournament, playerId: string): Group | undefined {
-  return t.groups.find((g) => g.playerIds.includes(playerId));
+  return t.groups.find((g) => g.playerIds.includes(playerId) && !isExtra(g, playerId));
+}
+
+/** Every group the player plays in: the home group first, then groups they fill. */
+export function groupsOf(t: Tournament, playerId: string): Group[] {
+  const home = groupOf(t, playerId);
+  const extra = t.groups.filter((g) => isExtra(g, playerId));
+  return home ? [home, ...extra] : extra;
+}
+
+/**
+ * Add a player who already has a group to a second group, to fill it (e.g. an
+ * odd group). They play that group's matches and their results there count in
+ * that group's table only. Setup stage only.
+ */
+export function addExtraPlayer(t: Tournament, playerId: string, groupId: string): void {
+  if (t.stage !== 'setup') throw new Error('locked');
+  const g = t.groups.find((x) => x.id === groupId);
+  const home = groupOf(t, playerId);
+  if (!g || !home) throw new Error('noGroup');
+  if (g.playerIds.includes(playerId)) throw new Error('duplicate');
+  g.playerIds.push(playerId);
+  g.extraIds = [...(g.extraIds ?? []), playerId];
+}
+
+/** Take a filling player out of a group they do not belong to. Setup stage only. */
+export function removeExtraPlayer(t: Tournament, playerId: string, groupId: string): void {
+  if (t.stage !== 'setup') throw new Error('locked');
+  const g = t.groups.find((x) => x.id === groupId);
+  if (!g || !isExtra(g, playerId)) return;
+  g.playerIds = g.playerIds.filter((id) => id !== playerId);
+  g.extraIds = g.extraIds!.filter((id) => id !== playerId);
+  if (!g.extraIds.length) delete g.extraIds;
+}
+
+/** Players who can be added to fill `groupId`: everyone with another home group who is not in it yet. */
+export function extraCandidates(t: Tournament, groupId: string): Player[] {
+  const g = t.groups.find((x) => x.id === groupId);
+  if (!g) return [];
+  return t.players.filter((p) => !g.playerIds.includes(p.id) && groupOf(t, p.id));
+}
+
+/** Snake redistribution of every player; filling players are cleared. Setup stage only. */
+export function reshuffleGroups(t: Tournament): void {
+  if (t.stage !== 'setup') throw new Error('locked');
+  snakeGroups(t.players.map((p) => p.id), t.groups.length).forEach((ids, i) => {
+    t.groups[i].playerIds = ids;
+    t.groups[i].manualOrder = [];
+    delete t.groups[i].extraIds;
+  });
 }
 
 export interface NewTournament {
@@ -90,6 +144,7 @@ export function duplicateTournament(t: Tournament, name: string): Tournament {
     pointsPerGame: recordsPoints(t),
     groups: t.groups.map((g) => ({
       id: uid(), name: g.name, playerIds: g.playerIds.map((id) => idMap.get(id)!), manualOrder: [], ...(g.table ? { table: g.table } : {}),
+      ...(g.extraIds?.length ? { extraIds: g.extraIds.map((id) => idMap.get(id)!) } : {}),
     })),
     matches: {},
     brackets: [],
@@ -99,7 +154,11 @@ export function duplicateTournament(t: Tournament, name: string): Tournament {
 
 export function movePlayer(t: Tournament, playerId: string, toGroupId: string, index?: number): void {
   if (t.stage !== 'setup') throw new Error('locked');
-  for (const g of t.groups) g.playerIds = g.playerIds.filter((id) => id !== playerId);
+  const target0 = t.groups.find((g) => g.id === toGroupId)!;
+  // Moving into a group the player only filled makes it their home group: drop the extra place.
+  if (isExtra(target0, playerId)) removeExtraPlayer(t, playerId, toGroupId);
+  const home = groupOf(t, playerId);
+  if (home) home.playerIds = home.playerIds.filter((id) => id !== playerId);
   const target = t.groups.find((g) => g.id === toGroupId)!;
   const i = index === undefined ? target.playerIds.length : Math.min(index, target.playerIds.length);
   target.playerIds.splice(i, 0, playerId);
@@ -141,6 +200,14 @@ export function groupStandings(t: Tournament, g: Group): Standings {
   return computeStandings(g.playerIds, groupMatches(t, g.id), g.manualOrder);
 }
 
+/**
+ * Standing rows that can qualify: filling players are left out, so the next
+ * player of the group takes their place. Ranks are renumbered 1, 2, 3…
+ */
+export function qualifyingRows(t: Tournament, g: Group): StandingRow[] {
+  return groupStandings(t, g).rows.filter((r) => !isExtra(g, r.playerId)).map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
 export function groupsComplete(t: Tournament): boolean {
   return t.groups.every((g) => groupStandings(t, g).complete);
 }
@@ -180,7 +247,7 @@ export function saveResult(t: Tournament, matchId: string, games: Game[], walkov
 
 export function startKnockout(t: Tournament): void {
   if (!groupsComplete(t)) throw new Error('groupsOpen');
-  const tables = t.groups.map((g) => ({ g, rows: groupStandings(t, g).rows }));
+  const tables = t.groups.map((g) => ({ g, rows: qualifyingRows(t, g) }));
   const at = (rank: number): Seed[] =>
     tables.filter(({ rows }) => rows[rank]).map(({ g, rows }) => ({ playerId: rows[rank].playerId, groupId: g.id }));
   t.brackets = [createBracket(uid(), 'main', '', [...at(0), ...at(1)], t.formats, t.matches)];
@@ -234,10 +301,7 @@ export function closeRegistration(t: Tournament, approved: Registrant[]): void {
     }
   }
   t.registration = { ...registrationOf(t), open: false };
-  snakeGroups(t.players.map((p) => p.id), t.groups.length).forEach((ids, i) => {
-    t.groups[i].playerIds = ids;
-    t.groups[i].manualOrder = [];
-  });
+  reshuffleGroups(t);
 }
 
 /** Status column stored in Supabase (drives who can see and join). */
@@ -265,7 +329,10 @@ export function addPlayerToSetup(t: Tournament, name: string, directoryId?: stri
 export function removePlayerFromSetup(t: Tournament, playerId: string): void {
   if (t.stage !== 'setup') throw new Error('locked');
   t.players = t.players.filter((p) => p.id !== playerId);
-  for (const g of t.groups) g.playerIds = g.playerIds.filter((id) => id !== playerId);
+  for (const g of t.groups) {
+    g.playerIds = g.playerIds.filter((id) => id !== playerId);
+    if (g.extraIds) { g.extraIds = g.extraIds.filter((id) => id !== playerId); if (!g.extraIds.length) delete g.extraIds; }
+  }
 }
 
 /** Compare names loosely: spacing, case and Arabic letter variants (أ/إ/آ → ا, ى → ي, ة → ه). */

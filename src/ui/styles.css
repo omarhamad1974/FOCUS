@@ -959,3 +959,13 @@ details.faq > :last-child { margin-block-end: 16px; }
 .dash-acts .badge { margin-inline-start: 4px; }
 .dash-req { display: flex; align-items: center; gap: 10px; width: 100%; margin-block: 6px; }
 @media (max-width: 480px) { .dash-t { grid-template-columns: 84px 1fr; } }
+
+/* Filling player: plays in a second group to complete it, cannot qualify from it */
+.chip.extra { border-style: dashed; border-color: #9fb3d6; background: #f5f8ff; }
+.extra-badge { background: #e7eefc; color: #2a4a8a; font-size: 11px; white-space: nowrap; flex: none; }
+.extra-who { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.extra-add { margin-block-start: 8px; }
+.extra-pick { margin-block-start: 8px; padding: 8px; border: 1px dashed var(--line); border-radius: 12px; background: #fafcff; }
+.extra-pick .chip { width: 100%; cursor: pointer; font: inherit; font-weight: 700; text-align: start; }
+.standings tr.x td { background: #f7f9fd; }
+.standings tr.x td:first-child { box-shadow: inset -4px 0 0 #9fb3d6; }

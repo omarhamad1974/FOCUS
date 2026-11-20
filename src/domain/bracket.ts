@@ -1,4 +1,4 @@
-import { isDone, loserId, summarize, winnerId } from './scoring';
+import { hasResult, isDone, loserId, summarize, winnerId } from './scoring';
 import type { BestOf, Bracket, Match, StageFormats } from './types';
 
 /** Standard seed positions, e.g. size 8 → [1,8,4,5,2,7,3,6]. */
@@ -150,7 +150,7 @@ export function dependents(m: Match, bracket: Bracket, matches: Record<string, M
 
 /** A knockout result may be changed only while no later match has a result. */
 export function canEditKo(m: Match, bracket: Bracket, matches: Record<string, Match>): boolean {
-  return dependents(m, bracket, matches).every((d) => d.games.length === 0 && !d.walkover);
+  return dependents(m, bracket, matches).every((d) => !hasResult(d));
 }
 
 export interface Placement {

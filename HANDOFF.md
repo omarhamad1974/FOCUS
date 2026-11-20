@@ -43,3 +43,9 @@ Also confirmed:
 2. Player directory and profiles with history across tournaments.
 3. Training schedules, then the shop.
 4. English dictionary and switcher if wanted.
+
+## Score entry, 2026-11-20
+- Default (Omar's choice): the organizer or assistant enters only the match result in games with one tap (3-0, 3-1, 3-2 / 2-0, 2-1), stored in `Match.result`.
+- Points of every game is an optional per-tournament setting (`Tournament.pointsPerGame`, in the wizard and the tournament settings). Entry: tap the game winner, type the loser's points; the winner's points are filled in (11, or +2 after 10-10).
+- Older tournaments without the setting keep detailed scoring if they already have game points (`recordsPoints`).
+- Tie-breaks: points difference is used only when every match among the tied players has game points; otherwise players still level on games go to the organizer.

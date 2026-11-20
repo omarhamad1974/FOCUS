@@ -4,17 +4,19 @@ import * as content from '../data/content';
 import type { AdminCounts, Post, Product, RoleRequest } from '../data/content';
 import * as remote from '../data/remote';
 import { remoteStatus } from '../domain/tournament';
-import { authErr, hint, money, n, preview, PREVIEWS, render, type Preview } from '../app/ctx';
+import { authErr, hint, money, n, preview, PREVIEWS, render, session, type Preview } from '../app/ctx';
+import { CONFIRM_WORD, confirmed, holdsRole, planRoleRemoval, roleOff, type BulkRole } from '../domain/bulk';
 import { cover } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc, toast } from '../ui/util';
 import { CAT_ICON as NEWS_ICON } from './news';
 import { CAT_ICON as SHOP_ICON } from './shop';
 
-type Tab = 'home' | 'approvals' | 'users' | 'news' | 'shop' | 'tournaments' | 'sim';
+type Tab = 'home' | 'approvals' | 'users' | 'news' | 'shop' | 'tournaments' | 'bulk' | 'sim';
 const TABS: [Tab, string, MessageKey][] = [
   ['home', 'grid', 'adm.tab.home'], ['approvals', 'check', 'adm.tab.approvals'], ['users', 'users', 'adm.tab.users'],
-  ['news', 'news', 'adm.tab.news'], ['shop', 'shop', 'adm.tab.shop'], ['tournaments', 'trophy', 'adm.tab.tournaments'], ['sim', 'eye', 'adm.tab.sim'],
+  ['news', 'news', 'adm.tab.news'], ['shop', 'shop', 'adm.tab.shop'], ['tournaments', 'trophy', 'adm.tab.tournaments'],
+  ['bulk', 'trash', 'adm.tab.bulk'], ['sim', 'eye', 'adm.tab.sim'],
 ];
 
 let counts: AdminCounts | null = null;
@@ -22,23 +24,27 @@ let requests: RoleRequest[] | null = null;
 let posts: Post[] | null = null;
 let products: Product[] | null = null;
 let tournaments: { id: string; name: string; status: string; organizer_id: string; players: number; date: string | null; cover: string | null }[] | null = null;
+let profiles: remote.Profile[] | null = null;
 let busy = false;
 
 /** The accounts page (unconfirmed sign-ups, create account, roles) lives in main. */
 let usersView: () => string = () => '';
 export const setUsersView = (fn: () => string) => { usersView = fn; };
+/** Reloads the app's own tournament list after a bulk delete (set by main). */
+let afterBulk: () => Promise<void> = async () => undefined;
+export const setAfterBulk = (fn: () => Promise<void>) => { afterBulk = fn; };
 
-export function reset(): void { counts = null; requests = null; posts = null; products = null; tournaments = null; }
+export function reset(): void { counts = null; requests = null; posts = null; products = null; tournaments = null; profiles = null; }
 
 function loadAll(): void {
   if (busy) return;
   busy = true;
   Promise.all([
-    content.adminCounts(), content.pendingRoleRequests(), content.listPosts(200), content.listProducts(), listTournamentRows(),
-  ]).then(async ([c, r, p, pr, tr]) => {
-    counts = c; requests = r; posts = p; products = pr; tournaments = tr;
+    content.adminCounts(), content.pendingRoleRequests(), content.listPosts(1000), content.listProducts(), listTournamentRows(), remote.listProfiles(),
+  ]).then(async ([c, r, p, pr, tr, pf]) => {
+    counts = c; requests = r; posts = p; products = pr; tournaments = tr; profiles = pf;
     await content.people([...r.map((x) => x.user_id), ...pr.map((x) => x.seller_id), ...tr.map((x) => x.organizer_id)]);
-  }).catch((e) => { toast(authErr(e)); counts = counts ?? ({} as AdminCounts); requests = requests ?? []; posts = posts ?? []; products = products ?? []; tournaments = tournaments ?? []; })
+  }).catch((e) => { toast(authErr(e)); counts = counts ?? ({} as AdminCounts); requests = requests ?? []; posts = posts ?? []; products = products ?? []; tournaments = tournaments ?? []; profiles = profiles ?? []; })
     .finally(() => { busy = false; render(); });
 }
 
@@ -63,6 +69,7 @@ export function page(parts: string[]): string {
   else if (tab === 'approvals') body = approvalsView();
   else if (tab === 'news') body = newsView();
   else if (tab === 'shop') body = shopView();
+  else if (tab === 'bulk') body = bulkView(parts[2]);
   else body = tournamentsView();
   return head + nav + body;
 }
@@ -87,6 +94,7 @@ function homeView(): string {
       <a class="qa" href="#/new">${icon('trophy', 22)}<span>${t('home.create')}</span></a>
       <a class="qa" href="#/admin/users">${icon('user', 22)}<span>${t('users.create')}</span></a>
       <a class="qa" href="#/admin/approvals">${icon('check', 22)}<span>${t('adm.tab.approvals')}</span></a>
+      <a class="qa" href="#/admin/bulk">${icon('trash', 22)}<span>${t('adm.tab.bulk')}</span></a>
       <a class="qa" href="#/admin/sim">${icon('eye', 22)}<span>${t('adm.tab.sim')}</span></a>
       <a class="qa" href="#/players">${icon('users', 22)}<span>${t('dir.link')}</span></a>
       <a class="qa" href="#/players/batch">${icon('plus', 22)}<span>${t('batch.title')}</span></a>
@@ -159,6 +167,112 @@ function tournamentsView(): string {
       : `<p class="muted">${t('home.empty')}</p>`}</div>`;
 }
 
+/* Bulk delete: pick a type, tick items (or all), then type the confirm word. */
+type BulkKind = 'tournaments' | 'products' | 'posts' | BulkRole;
+const KINDS: [BulkKind, string, MessageKey][] = [
+  ['tournaments', 'trophy', 'bulk.k.tournaments'], ['products', 'shop', 'bulk.k.products'], ['posts', 'news', 'bulk.k.posts'],
+  ['organizer', 'trophy', 'bulk.k.organizer'], ['seller', 'shop', 'bulk.k.seller'], ['trainer', 'coach', 'bulk.k.trainer'], ['player', 'user', 'bulk.k.player'],
+];
+const isRole = (k: BulkKind): k is BulkRole => k === 'organizer' || k === 'seller' || k === 'trainer' || k === 'player';
+
+const bulk: { kind: BulkKind | null; selected: Set<string>; confirm: string[] | null; running: boolean } = { kind: null, selected: new Set(), confirm: null, running: false };
+
+interface BulkItem { id: string; title: string; sub: string; pic: string }
+
+function bulkItems(kind: BulkKind): BulkItem[] {
+  if (kind === 'tournaments') return tournaments!.map((x) => ({ id: x.id, title: x.name, sub: `${esc(content.personName(x.organizer_id) || '—')} · ${n(x.players)} ${t('t.players')}`, pic: cover(x.cover ? esc(x.cover) : null, x.id, 'trophy', esc(x.name)) }));
+  if (kind === 'products') return products!.map((p) => ({ id: p.id, title: p.name, sub: `${esc(content.personName(p.seller_id))} · ${money(p.price)}`, pic: cover(p.image_url, p.id, SHOP_ICON[p.category], esc(p.name)) }));
+  if (kind === 'posts') return posts!.map((p) => ({ id: p.id, title: p.title, sub: `${t(`news.cat.${p.category}` as MessageKey)} · ${dateFmt.format(new Date(p.created_at))}`, pic: cover(p.cover_url, p.id, NEWS_ICON[p.category], esc(p.title)) }));
+  const me = session.profile?.id;
+  return (profiles ?? []).filter((p) => p.id !== me && holdsRole(p, kind)).map((p) => ({
+    id: p.id, title: p.full_name || '—',
+    sub: [p.club ? esc(p.club) : '', ...(['organizer', 'seller', 'trainer'] as const).filter((r) => holdsRole(p, r)).map((r) => `<span class="badge ${r === kind ? 'red' : ''}">${t(`roles.${r}` as MessageKey)}</span>`)].filter(Boolean).join(' '),
+    pic: `<span class="bulk-av">${avatarOf(p)}</span>`,
+  }));
+}
+
+function bulkView(kindPart: string | undefined): string {
+  const kind = KINDS.some(([k]) => k === kindPart) ? kindPart as BulkKind : null;
+  if (kind !== bulk.kind) { bulk.kind = kind; bulk.selected.clear(); bulk.confirm = null; }
+  const tiles = `<div class="bulk-kinds">${KINDS.map(([k, ic, label]) => `<a class="bulk-kind ${k === kind ? 'on' : ''}" href="#/admin/bulk/${k}" ${k === kind ? 'aria-current="page"' : ''}>
+    ${icon(ic, 22)}<b>${n(bulkItems(k).length)}</b><small>${t(label)}</small></a>`).join('')}</div>`;
+  const intro = `<div class="card bulk-warn"><h2>${icon('trash', 22)} ${t('adm.tab.bulk')}</h2>${hint('bulk.hint')}${tiles}</div>`;
+  if (!kind) return intro;
+  const items = bulkItems(kind);
+  const sel = items.filter((x) => bulk.selected.has(x.id));
+  const all = items.length > 0 && sel.length === items.length;
+  const list = items.length ? `<label class="bulk-all"><input type="checkbox" data-act="adm-sel-all" ${all ? 'checked' : ''}> ${t('bulk.selectAll')} <span class="muted">(${n(sel.length)} / ${n(items.length)})</span></label>
+    <div class="bulk-list">${items.map((x) => `<label class="bulk-item ${bulk.selected.has(x.id) ? 'on' : ''}"><input type="checkbox" data-act="adm-sel" data-id="${x.id}" ${bulk.selected.has(x.id) ? 'checked' : ''}>
+      ${x.pic}<span class="adm-row-main"><b dir="auto">${esc(x.title)}</b><span class="muted small" dir="auto">${x.sub}</span></span></label>`).join('')}</div>`
+    : `<p class="muted">${t('bulk.empty')}</p>`;
+  const actions = items.length && !bulk.confirm ? `<div class="row bulk-actions">
+    <button class="btn red" data-act="adm-bulk-ask" data-v="sel" ${sel.length ? '' : 'disabled'}>${icon('trash', 16)} ${t('bulk.deleteSelected', { n: sel.length })}</button>
+    <button class="btn ghost" data-act="adm-bulk-ask" data-v="all">${icon('trash', 16)} ${t('bulk.deleteAll', { n: items.length })}</button></div>` : '';
+  const label = t(KINDS.find(([k]) => k === kind)![2]);
+  return `${intro}<div class="card"><h2>${icon(KINDS.find(([k]) => k === kind)![1], 22)} ${label}</h2>${isRole(kind) ? hint(`bulk.roleHint.${kind}` as MessageKey) : ''}
+    ${bulk.confirm ? confirmBox(kind, label) : ''}${actions}${list}</div>`;
+}
+
+function confirmBox(kind: BulkKind, label: string): string {
+  const ids = bulk.confirm!;
+  let detail = `<p><b>${t('bulk.willDelete', { n: ids.length, what: label })}</b></p>`;
+  if (isRole(kind)) {
+    const plan = planRoleRemoval(profiles ?? [], kind, ids, session.profile?.id);
+    detail = `<ul class="bulk-plan">${plan.deleteAccounts.length ? `<li>${icon('trash', 14)} ${t('bulk.planDelete', { n: plan.deleteAccounts.length })}</li>` : ''}
+      ${plan.removeRole.length ? `<li>${icon('user', 14)} ${t('bulk.planRole', { n: plan.removeRole.length, role: t(`roles.${kind}` as MessageKey) })}</li>` : ''}
+      ${kind === 'organizer' && plan.deleteAccounts.length ? `<li>${icon('trophy', 14)} ${t('bulk.planKeepTournaments')}</li>` : ''}</ul>`;
+  } else if (kind === 'tournaments') detail += `<p class="small">${t('bulk.tournamentsNote')}</p>`;
+  return `<div class="bulk-confirm" role="alertdialog" aria-labelledby="bulkQ">
+    <h3 id="bulkQ">${icon('bell', 20)} ${t('bulk.sure')}</h3>${detail}
+    <p class="small">${t('bulk.noUndo')}</p>
+    <label class="field"><span>${t('bulk.typeWord', { word: CONFIRM_WORD })}</span><input class="input" id="bulkWord" dir="auto" autocomplete="off" data-act="adm-bulk-type" placeholder="${CONFIRM_WORD}"></label>
+    <div class="row"><button class="btn red" id="bulkGo" data-act="adm-bulk-go" disabled>${bulk.running ? '<span class="spin"></span>' : icon('trash', 16)} ${t('bulk.confirmBtn', { n: ids.length })}</button>
+    <button class="btn ghost" data-act="adm-bulk-cancel">${t('bulk.cancel')}</button></div></div>`;
+}
+
+/** Checkbox clicks (the main click handler skips inputs). */
+export function onChange(el: HTMLInputElement): boolean {
+  if (el.dataset.act === 'adm-sel') {
+    if (el.checked) bulk.selected.add(el.dataset.id!); else bulk.selected.delete(el.dataset.id!);
+  } else if (el.dataset.act === 'adm-sel-all') {
+    bulk.selected = new Set(el.checked && bulk.kind ? bulkItems(bulk.kind).map((x) => x.id) : []);
+  } else return false;
+  bulk.confirm = null;
+  render();
+  return true;
+}
+
+/** The confirm button wakes up only after the exact word is typed. */
+export function onInput(el: HTMLInputElement): boolean {
+  if (el.dataset.act !== 'adm-bulk-type') return false;
+  const go = document.getElementById('bulkGo') as HTMLButtonElement | null;
+  if (go) go.disabled = bulk.running || !confirmed(el.value);
+  return true;
+}
+
+async function runBulk(kind: BulkKind, ids: string[]): Promise<string> {
+  if (kind === 'tournaments') { await remote.deleteTournaments(ids); return t('bulk.done', { n: ids.length }); }
+  if (kind === 'products') { await content.deleteProducts(ids); return t('bulk.done', { n: ids.length }); }
+  if (kind === 'posts') { await content.deletePosts(ids); return t('bulk.done', { n: ids.length }); }
+  const plan = planRoleRemoval(profiles ?? [], kind, ids, session.profile?.id);
+  if (kind !== 'player' && plan.removeRole.length) {
+    const groups = new Map<string, { fields: Record<string, unknown>; ids: string[] }>();
+    for (const id of plan.removeRole) {
+      const fields = roleOff(kind, profiles!.find((p) => p.id === id)!);
+      const key = JSON.stringify(fields);
+      (groups.get(key) ?? groups.set(key, { fields, ids: [] }).get(key)!).ids.push(id);
+    }
+    for (const g of groups.values()) await content.setRolesMany(g.ids, g.fields);
+  }
+  let deleted = 0;
+  if (plan.deleteAccounts.length) {
+    const r = await remote.deleteAccounts(plan.deleteAccounts);
+    deleted = r.deleted;
+    if (r.failed?.length) toast(t('bulk.someFailed', { n: r.failed.length }));
+  }
+  return t('bulk.doneUsers', { n: deleted, m: plan.removeRole.length });
+}
+
 /* Journey simulator */
 const STEPS: Record<Exclude<Preview, 'off'>, [string, string][]> = {
   guest: [['#/', 'home'], ['#/news', 'news'], ['#/tournaments', 'trophy'], ['#/shop', 'shop'], ['#/training', 'coach'], ['#/login', 'user']],
@@ -202,6 +316,26 @@ export async function onClick(act: string, el: HTMLElement): Promise<void> {
       if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.innerHTML = `${icon('trash', 14)} ${t('news.deleteConfirm')}`; return; }
       try { await content.deleteProduct(el.dataset.id!); toast(t('shop.deleted')); } catch (e) { toast(authErr(e)); }
       reset(); render(); return;
+    case 'adm-bulk-ask':
+      if (!bulk.kind) return;
+      bulk.confirm = el.dataset.v === 'all' ? bulkItems(bulk.kind).map((x) => x.id) : [...bulk.selected];
+      render();
+      document.getElementById('bulkWord')?.focus();
+      return;
+    case 'adm-bulk-cancel':
+      bulk.confirm = null; render(); return;
+    case 'adm-bulk-go': {
+      const word = (document.getElementById('bulkWord') as HTMLInputElement | null)?.value ?? '';
+      if (!bulk.kind || !bulk.confirm?.length || bulk.running || !confirmed(word)) return;
+      bulk.running = true;
+      (el as HTMLButtonElement).disabled = true;
+      try { toast(await runBulk(bulk.kind, bulk.confirm)); } catch (e) {
+        toast(remote.errorCode(e) === 'noFunction' ? t('users.functionMissing') : authErr(e));
+      }
+      bulk.running = false; bulk.confirm = null; bulk.selected.clear();
+      await afterBulk().catch(() => undefined);
+      reset(); render(); return;
+    }
     case 'adm-post-pub': {
       const p = posts?.find((x) => x.id === el.dataset.id);
       if (!p) return;

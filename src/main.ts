@@ -2307,6 +2307,7 @@ let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
   if (shop.onInput(el as HTMLInputElement) || claim.onInput(el)) return;
+  if (admin.onInput(el as HTMLInputElement)) return;
   if (el.dataset.act === 'assist-q') {
     const q = (el as HTMLInputElement).value.trim();
     clearTimeout(assistTimer);
@@ -2408,7 +2409,7 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
-  if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el) || await claim.onChange(el)) return;
+  if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el) || await claim.onChange(el) || admin.onChange(el)) return;
   if (el.dataset.act === 'tl-time' || el.dataset.act === 'tl-place') {
     if (el.dataset.act === 'tl-time') listFilters.time = el.value as TimeFilter; else listFilters.place = el.value;
     route(); return;
@@ -2587,4 +2588,5 @@ setRender(route);
 claim.setOnAdded(() => { dir = null; route(); });
 claim.setAfterClaim(async () => { await refreshFromServer(); });
 admin.setUsersView(usersPage);
+admin.setAfterBulk(async () => { await refreshFromServer(); route(); });
 route();

@@ -8,6 +8,9 @@
 // POST JSON { action: 'claim', code, email, password, gender? } -> { ok: true }
 //   Anyone holding a player's claim code (made by batch entry, migration 0008): creates a
 //   ready-to-use account for that player and attaches their directory row and results.
+// POST JSON { action: 'delete_users', user_ids: [...] }   -> { deleted, skipped }   admins only.
+//   Admin accounts and the caller's own account are never deleted. Tournaments and
+//   articles of a deleted account move to the calling admin so they are not lost.
 //
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided
 // to every Edge Function automatically by Supabase.
@@ -92,6 +95,30 @@ Deno.serve(async (req) => {
       }).eq('id', data.user.id);
     }
     return json({ id: data.user?.id });
+  }
+
+  if (body.action === 'delete_users') {
+    if (!isAdmin) return json({ error: 'only an admin can delete accounts' }, 403);
+    const asked = Array.isArray(body.user_ids) ? [...new Set(body.user_ids.map(String))].filter(Boolean) : [];
+    if (!asked.length) return json({ error: 'user_ids required' }, 400);
+    if (asked.length > 1000) return json({ error: 'too many at once' }, 400);
+    const { data: rows, error: readErr } = await service.from('profiles').select('id, role').in('id', asked);
+    if (readErr) return json({ error: readErr.message }, 500);
+    const ids = (rows ?? []).filter((r) => r.role !== 'admin' && r.id !== caller.user.id).map((r) => r.id as string);
+    if (ids.length) {
+      // Keep tournaments and articles: they move to the admin who deletes the accounts.
+      const t = await service.from('tournaments').update({ organizer_id: caller.user.id }).in('organizer_id', ids);
+      if (t.error) return json({ error: t.error.message }, 500);
+      const p = await service.from('posts').update({ author_id: caller.user.id }).in('author_id', ids);
+      if (p.error) return json({ error: p.error.message }, 500);
+    }
+    let deleted = 0;
+    const failed: string[] = [];
+    for (const id of ids) {
+      const { error } = await service.auth.admin.deleteUser(id);
+      if (error) failed.push(id); else deleted++;
+    }
+    return json({ deleted, skipped: asked.length - ids.length, failed });
   }
 
   return json({ error: 'unknown action' }, 400);

@@ -854,3 +854,24 @@ details.faq > :last-child { margin-block-end: 16px; }
 @media (min-width: 900px) { .wa-fab { bottom: 24px; } }
 @media (prefers-reduced-motion: reduce) { .wa-fab { animation: none; } }
 @media print { .wa-fab { display: none; } }
+
+/* Group tables */
+.table-badge { background: #eafbe3; color: #2a7f20; border: 1px solid #7ed95766; }
+.tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.table-field {
+  display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px; padding: 8px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+}
+.table-field .gletter { grid-row: span 2; }
+.table-field .input { min-height: 36px; padding-block: 4px; }
+.table-map { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 10px; }
+.table-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px;
+  background: #ffffff26; color: #fff; font-size: 13px; font-weight: 700; backdrop-filter: blur(4px);
+}
+.table-chip .gletter { width: 22px; height: 22px; font-size: 12px; }
+.table-chip.mine { background: #7ed957; color: #0b2545; box-shadow: 0 0 0 2px #fff; animation: pop .4s ease-out; }
+.my-table {
+  display: inline-block; margin-block-start: 10px; padding: 6px 12px; border-radius: 12px;
+  background: #7ed957; color: #0b2545; font-weight: 700;
+}

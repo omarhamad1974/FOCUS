@@ -8,11 +8,11 @@ import {
 import { canEditKo, isBye, placements, roundName } from './domain/bracket';
 import { checkGame, gamesToWin, summarize, type MatchCheck } from './domain/scoring';
 import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample';
-import type { BestOf, Bracket, Game, Match, StageFormats, Tournament } from './domain/types';
+import type { BestOf, Bracket, Game, Group, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
-import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
+import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
 import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PUBLIC_STATUSES, publicStatus, sortForListing, TIME_FILTERS, topTwo, tournamentLocations, type PublicStatus, type TimeFilter } from './domain/tournament';
 import * as admin from './pages/admin';
@@ -126,6 +126,14 @@ const app = document.getElementById('app')!;
 
 const n = (x: number) => numberFmt.format(x);
 const hint = (key: MessageKey) => `<p class="hint">${esc(t(key))}</p>`;
+
+/** "طاولة 3" for a number, the organizer's own label otherwise. */
+function tableText(table?: string): string {
+  if (!table) return '';
+  return /^\d+$/.test(table) ? t('table.n', { n: table }) : table;
+}
+const tableBadge = (g?: Group) => g?.table
+  ? `<span class="badge table-badge" title="${esc(t('table.title'))}">🏓 <span dir="auto">${esc(tableText(g.table))}</span></span>` : '';
 const bo = (b: BestOf) => t('format.bestOf', { n: b });
 
 /** Player avatar: their profile photo when the account has one. */
@@ -690,12 +698,51 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
     ${tm.cover ? `<div class="t-hero-bg"><img src="${esc(tm.cover)}" alt="" decoding="async"></div>` : ''}
     <div class="row between" style="align-items:flex-start"><h1 dir="auto">${esc(tm.name)}</h1>${statusBadge(publicStatus(tm), 'hero-status')}</div>
     <p class="muted">${tm.date ? dateFmt.format(new Date(tm.date)) : ''}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}${tm.location ? ` · 📍 <span dir="auto">${esc(tm.location)}</span>` : ''} · ${n(tm.players.length)} ${t('t.players')}${org ? ` · ${t('tl.by')} <span dir="auto">${esc(org.full_name)}</span>` : ''}</p>
+    ${tableMap(tm)}
     ${stagePath(tm)}
     <div class="row between small" style="margin-block-start:10px"><span>${t('t.progress')}</span><span>${n(p.done)} / ${n(p.total)}</span></div>
     ${xp(p.done, p.total)}
   </section>
   <nav class="tabs" style="margin-block:14px 4px">${tabs.map(([k, l]) => `<a href="#/t/${tm.id}/${k}" ${k === tab ? 'aria-current="page"' : ''}>${t(l)}</a>`).join('')}</nav>
   ${body}`;
+}
+
+/* Tables: the organizer may give each group a table, players see where to play */
+
+/** The signed-in player's entry in this tournament, if they play in it. */
+function myPlayerId(tm: Tournament): string | undefined {
+  const me = session.profile?.id;
+  return me ? tm.players.find((p) => p.profileId === me || p.accountId === me)?.id : undefined;
+}
+
+/** Hero strip: the player's own group and table first, then every group's table. */
+function tableMap(tm: Tournament): string {
+  if (tm.stage === 'knockout' || !tm.groups.some((g) => g.table)) return '';
+  const pid = myPlayerId(tm);
+  const mine = pid ? groupOf(tm, pid) : undefined;
+  const mineLine = mine?.table ? `<div class="my-table">🎯 ${t('table.yourGroup')} <b>${esc(mine.name)}</b> · ${t('table.playAt')} <b dir="auto">${esc(tableText(mine.table))}</b></div>` : '';
+  const chips = tm.groups.map((g, i) => g.table ? `<span class="table-chip ${g === mine ? 'mine' : ''}">
+      <span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span><span dir="auto">🏓 ${esc(tableText(g.table))}</span></span>` : '').join('');
+  return `${mineLine}<div class="table-map" aria-label="${esc(t('table.where'))}">${chips}</div>`;
+}
+
+/** Organizer editor: one box per group, editable at any stage. */
+function tablesCard(tm: Tournament): string {
+  const any = tm.groups.some((g) => g.table);
+  return `<div class="card tables-card">
+    <div class="row between"><h3>🏓 ${t('table.cardTitle')}</h3><span class="badge">${t('table.optional')}</span></div>
+    ${hint('table.hint')}
+    <div class="tables-grid">${tm.groups.map((g, i) => `
+      <label class="table-field"><span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span>
+        <span class="small">${t('setup.group')} ${esc(g.name)}</span>
+        <input class="input" data-table-gid="${g.id}" value="${esc(g.table ?? '')}" maxlength="${TABLE_MAX}" dir="auto" placeholder="${esc(String(i + 1))}" aria-label="${esc(t('table.title'))} · ${t('setup.group')} ${esc(g.name)}"></label>`).join('')}
+    </div>
+    <div class="row" style="margin-block-start:10px">
+      <button class="btn small" data-act="tables-save">💾 ${t('common.save')}</button>
+      <button class="btn soft small" data-act="tables-auto">🔢 ${t('table.auto')}</button>
+      ${any ? `<button class="btn ghost small" data-act="tables-clear">✕ ${t('table.clear')}</button>` : ''}
+    </div>
+  </div>`;
 }
 
 /* Setup: drag-and-drop group board */
@@ -707,7 +754,7 @@ function setupBoard(tm: Tournament): string {
   const cols = tm.groups.map((g, i) => `
     <div class="gcol ${selectedChip ? 'target' : ''}" data-gid="${g.id}" ${org ? `tabindex="0" data-act="drop-here"` : ''} aria-label="${t('setup.group')} ${esc(g.name)}">
       <h3><span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span> ${t('setup.group')} ${esc(g.name)}
-        <span class="badge" style="margin-inline-start:auto">${n(g.playerIds.length)}</span></h3>
+        ${tableBadge(g)}<span class="badge" style="margin-inline-start:auto">${n(g.playerIds.length)}</span></h3>
       ${g.playerIds.map((pid) => `
         <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
           ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
@@ -722,6 +769,7 @@ function setupBoard(tm: Tournament): string {
     ${org ? hint('setup.hint') : ''}
     <div class="board" id="board">${cols}</div>
   </div>
+  ${org ? tablesCard(tm) : ''}
   ${org && online() ? dirPicker(new Set(tm.players.map((p) => p.directoryId).filter((x): x is string => !!x)), 'dir.addToTournament') : ''}
   ${org ? `<div class="card">
     ${hint('setup.startHint')}
@@ -749,7 +797,7 @@ function standingsTable(tm: Tournament, gi: number): string {
   const ties = s.unresolved.length ? tieResolver(tm, gi, s.unresolved) : '';
   return `
   <div class="card">
-    <h3><span class="gletter" style="background:${groupColor(gi)};display:inline-grid;margin-inline-end:6px">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)}</h3>
+    <h3 class="row" style="gap:6px"><span class="gletter" style="background:${groupColor(gi)};display:inline-grid">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)} ${tableBadge(g)}</h3>
     <div class="table-wrap"><table class="standings">
       <thead><tr><th>${t('standings.rank')}</th><th class="name">${t('standings.player')}</th><th>${t('standings.played')}</th><th>${t('standings.won')}</th><th>${t('standings.lost')}</th>
       <th class="hide-sm">${t('standings.games')}</th><th class="hide-sm">${t('standings.points')}</th><th>${t('standings.pts')}</th></tr></thead>
@@ -791,7 +839,7 @@ function groupsView(tm: Tournament): string {
     <button class="btn green block" data-act="start-ko" ${ready ? '' : 'disabled'}>⚔️ ${t('ko.start')}</button>
     ${ready ? '' : `<p class="muted small center">${t('ko.notReady')}</p>`}
   </div>` : '';
-  return `${hint('standings.hint')}${legend}
+  return `${isOrg() ? tablesCard(tm) : ''}${hint('standings.hint')}${legend}
     ${tm.groups.map((_, i) => standingsTable(tm, i)).join('')}
     ${startKo}
     ${statsCard(tm)}`;
@@ -823,7 +871,8 @@ function matchCard(tm: Tournament, m: Match, label = ''): string {
   const s = summarize(m);
   const done = !!s.winner;
   const a = playerName(tm, m.aId), b = playerName(tm, m.bId);
-  const meta = [label, bo(m.bestOf), m.walkover ? `🚩 ${t('matches.walkover')}` : '', m.history.length ? `✏️ ${n(m.history.length)}` : '']
+  const table = m.stage === 'group' ? tableText(tm.groups.find((g) => g.id === m.groupId)?.table) : '';
+  const meta = [label, table ? `🏓 ${table}` : '', bo(m.bestOf), m.walkover ? `🚩 ${t('matches.walkover')}` : '', m.history.length ? `✏️ ${n(m.history.length)}` : '']
     .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('');
   return `<a class="match" href="#/t/${tm.id}/m/${m.id}">
     <span class="p ${s.winner === 'a' ? 'win' : ''}" dir="auto">${esc(a)}</span>
@@ -844,7 +893,7 @@ function matchesView(tm: Tournament): string {
     const d = all.filter((m) => summarize(m).winner).length;
     const pct = Math.round((d / all.length) * 100);
     return `<div class="card">
-      <div class="row between"><h3><span class="gletter" style="background:${groupColor(i)};display:inline-grid;margin-inline-end:6px">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)}</h3>
+      <div class="row between"><h3 class="row" style="gap:6px"><span class="gletter" style="background:${groupColor(i)};display:inline-grid">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)} ${tableBadge(g)}</h3>
         <span class="ring" style="--p:${pct}" data-label="${n(d)}/${n(all.length)}"></span></div>
       ${ms.map((m) => matchCard(tm, m)).join('')}
     </div>`;
@@ -1033,7 +1082,7 @@ function scorePage(tm: Tournament, m: Match): string {
   const bracket = m.bracketId ? tm.brackets.find((x) => x.id === m.bracketId) : undefined;
   const locked = (m.stage === 'group' && tm.stage !== 'groups') || (bracket && !canEditKo(m, bracket, tm.matches));
   const where = m.stage === 'group'
-    ? `${t('setup.group')} ${tm.groups.find((g) => g.id === m.groupId)?.name ?? ''}`
+    ? `${t('setup.group')} ${tm.groups.find((g) => g.id === m.groupId)?.name ?? ''}${(() => { const tb = tableText(tm.groups.find((g) => g.id === m.groupId)?.table); return tb ? ` · 🏓 ${tb}` : ''; })()}`
     : `${bracket?.kind === 'main' ? t('ko.main') : bracket?.name} · ${t(`ko.round.${roundName(m.round!, bracket!.rounds.length)}` as MessageKey)}`;
   const back = `<a class="btn soft small" href="#/t/${tm.id}/${m.stage === 'group' ? 'matches' : 'knockout'}">→ ${esc(tm.name)}</a>`;
 
@@ -1828,6 +1877,18 @@ document.addEventListener('click', (e) => {
       tieDrafts.delete(el.dataset.key!);
       persist();
       toast(t('settings.saved'));
+      route();
+      return;
+    }
+    case 'tables-save':
+    case 'tables-auto':
+    case 'tables-clear': {
+      if (!tm || !isOrg()) return;
+      if (act === 'tables-auto') numberTables(tm);
+      else document.querySelectorAll<HTMLInputElement>('[data-table-gid]').forEach((inp) =>
+        setGroupTable(tm, inp.dataset.tableGid!, act === 'tables-clear' ? '' : inp.value));
+      persist();
+      toast(t(act === 'tables-clear' ? 'table.cleared' : 'table.saved'));
       route();
       return;
     }

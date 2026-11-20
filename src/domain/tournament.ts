@@ -166,14 +166,19 @@ export function movePlayer(t: Tournament, playerId: string, toGroupId: string, i
 
 /** Round-robin order (circle method) so players rest between matches. */
 export function roundRobin(ids: string[]): [string, string][] {
+  return roundRobinRounds(ids).map(([a, b]) => [a, b]);
+}
+
+/** Round-robin pairs with their round number (0-based), in the same order as `roundRobin`. */
+export function roundRobinRounds(ids: string[]): [string, string, number][] {
   const list: (string | null)[] = [...ids];
   if (list.length % 2) list.push(null);
   const n = list.length;
-  const out: [string, string][] = [];
+  const out: [string, string, number][] = [];
   for (let r = 0; r < n - 1; r++) {
     for (let i = 0; i < n / 2; i++) {
       const a = list[i], b = list[n - 1 - i];
-      if (a && b) out.push(r % 2 ? [b, a] : [a, b]);
+      if (a && b) out.push(r % 2 ? [b, a, r] : [a, b, r]);
     }
     list.splice(1, 0, list.pop()!);
   }
@@ -182,6 +187,9 @@ export function roundRobin(ids: string[]): [string, string][] {
 
 export function startGroups(t: Tournament): void {
   if (t.groups.some((g) => g.playerIds.length < 2)) throw new Error('smallGroup');
+  // Players still on the waiting list (in the tournament but in no group) must be placed first.
+  const placed = new Set(t.groups.flatMap((g) => g.playerIds));
+  if (t.players.some((p) => !placed.has(p.id))) throw new Error('waiting');
   t.matches = {};
   for (const g of t.groups) {
     roundRobin(g.playerIds).forEach(([a, b], i) => {

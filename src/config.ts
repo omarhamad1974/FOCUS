@@ -16,7 +16,7 @@ export const online = (): boolean => Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 /**
  * Pingo support on WhatsApp: the number in international form, digits only,
  * without + or leading zeros (for example 201001234567 for an Egyptian mobile).
- * Leave it empty to hide the floating support button.
+ * Set it to an empty string to hide the floating support button.
  */
-const SUPPORT_NUMBER = ''; // TODO: Pingo support number from Omar
+const SUPPORT_NUMBER = '201006552256'; // Pingo support (Omar, 2026-11-20)
 export const SUPPORT_WHATSAPP: string = (env.VITE_SUPPORT_WHATSAPP || SUPPORT_NUMBER).replace(/\D/g, '');

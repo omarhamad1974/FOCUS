@@ -9,7 +9,7 @@ import { canEditKo, isBye, placements, roundName } from './domain/bracket';
 import { GAME_POINTS, gamesToWin, possibleResults, summarize, type MatchCheck } from './domain/scoring';
 import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample';
 import type { BestOf, Bracket, Game, GamesResult, Match, StageFormats, Tournament } from './domain/types';
-import { avatar, confetti, esc, groupColor, toast } from './ui/util';
+import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
 import { addPlayerToSetup, closeRegistration, recordsPoints, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
@@ -114,7 +114,7 @@ async function uploadPendingPhoto(): Promise<void> {
 let myRegs: remote.Registration[] = [];
 let myRoleReqs: content.RoleRequest[] | null = null;
 const ONLINE_ACTS = new Set(['auth-tab', 'forgot', 'logout', 'join', 'withdraw', 'decide', 'reg-open', 'reg-close', 'copy-link',
-  'dir-pick', 'dir-new', 'rm-player', 'link-open', 'link-save', 'confirm-user']);
+  'dir-pick', 'dir-new', 'rm-player', 'link-open', 'link-save', 'confirm-user', 'me-photo-rm']);
 
 function findT(id: string): Tournament | undefined {
   return data.tournaments.find((x) => x.id === id);
@@ -131,7 +131,7 @@ const bo = (b: BestOf) => t('format.bestOf', { n: b });
 /** Player avatar: their profile photo when the account has one. */
 function pAvatar(tm: Tournament, pid: string | null): string {
   const pl = tm.players.find((x) => x.id === pid);
-  return avatar(playerName(tm, pid), pl ? content.photoOf(accountOf(pl)) : null);
+  return avatar(playerName(tm, pid), pl ? content.photoOf(accountOf(pl)) : null, pl ? content.genderOf(accountOf(pl)) : null);
 }
 
 /** Load photos for a tournament's players once. */
@@ -230,7 +230,7 @@ function shell(body: string): void {
       <button data-act="view" data-v="organizer" aria-pressed="${v === 'organizer'}">🛠️ <span class="hide-xs">${t('view.organizer')}</span></button>
     </div>` : ''}
     ${online() ? (session.profile
-      ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatar(session.profile.full_name, session.profile.avatar_url)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
+      ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatarOf(session.profile)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
       : `<a class="btn small" href="#/login">${t('auth.login')}</a>`) : ''}
     ${isAdmin() ? `<a class="helpbtn adminbtn" href="#/admin" title="${esc(t('adm.title'))}" aria-label="${esc(t('adm.title'))}">${icon('shield', 18)}</a>` : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
@@ -313,7 +313,7 @@ function tournamentCard(tm: Tournament): string {
     </div>
     <div class="tc-body">
       <h3 dir="auto"><a class="tc-link" href="#/t/${tm.id}">${esc(tm.name)}</a></h3>
-      ${online() && tm.organizerId ? `<div class="tc-org">${avatar(org?.full_name || '?', org?.avatar_url)}<span class="muted small">${t('tl.by')} <b dir="auto">${esc(org?.full_name || t('tl.organizer'))}</b></span></div>` : ''}
+      ${online() && tm.organizerId ? `<div class="tc-org">${avatarOf(org)}<span class="muted small">${t('tl.by')} <b dir="auto">${esc(org?.full_name || t('tl.organizer'))}</b></span></div>` : ''}
       <div class="tc-meta">
         ${tm.date ? `<span>${icon('calendar', 15)} ${dateFmt.format(new Date(tm.date))}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}</span>` : ''}
         ${tm.location ? `<span dir="auto">${icon('pin', 15)} ${esc(tm.location)}</span>` : ''}
@@ -1004,7 +1004,7 @@ function assistantsCard(tm: Tournament): string {
     content.assistants(tm.id).then(async (h) => { helpers = h; await content.people(h); route(); }).catch(() => { helpers = []; route(); });
   }
   return `<div class="card"><h3>${icon('users', 20)} ${t('assist.title')}</h3>${hint('assist.hint')}
-    ${helpers === null ? '<span class="spin"></span>' : helpers.length ? helpers.map((id) => `<div class="chip ro">${avatar(content.personName(id) || '?', content.photoOf(id))}<span dir="auto">${esc(content.personName(id))}</span>
+    ${helpers === null ? '<span class="spin"></span>' : helpers.length ? helpers.map((id) => `<div class="chip ro">${avatarOf(content.person(id))}<span dir="auto">${esc(content.personName(id))}</span>
       <button class="btn ghost small" style="margin-inline-start:auto" data-act="assist-del" data-id="${id}">${icon('x', 14)}</button></div>`).join('') : `<p class="muted small">${t('assist.none')}</p>`}
     <input class="input" id="assistQ" data-act="assist-q" placeholder="${esc(t('assist.search'))}" dir="auto" autocomplete="off" style="margin-block-start:8px">
     <div id="assistRes">${assistResults()}</div></div>`;
@@ -1012,7 +1012,7 @@ function assistantsCard(tm: Tournament): string {
 
 function assistResults(): string {
   return helperHits.filter((p) => !helpers?.includes(p.id)).map((p) => `<button class="chip" style="width:100%;cursor:pointer;touch-action:auto" data-act="assist-add" data-id="${p.id}">
-    ${avatar(p.full_name, p.avatar_url)}<span dir="auto">${esc(p.full_name)}</span>${p.club ? `<span class="muted small" dir="auto">· ${esc(p.club)}</span>` : ''}
+    ${avatarOf(p)}<span dir="auto">${esc(p.full_name)}</span>${p.club ? `<span class="muted small" dir="auto">· ${esc(p.club)}</span>` : ''}
     <span class="badge green" style="margin-inline-start:auto">${icon('plus', 12)} ${t('assist.add')}</span></button>`).join('');
 }
 
@@ -1224,8 +1224,11 @@ function loginPage(): string {
         ${field('aPhone', 'auth.phone', 'tel', 'autocomplete="tel" dir="ltr"')}
         <div class="row"><div style="flex:1">${field('aYear', 'auth.birthYear', 'text', 'inputmode="numeric" maxlength="4" dir="ltr"')}</div>
         <div style="flex:2">${field('aClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+        <span class="lbl">${t('auth.gender')}</span>
+        ${genderPick('aGender', authVals.aGender ?? '', authVals.aName || '?')}
+        <p class="muted small" style="margin-block-start:4px">${t('auth.genderHint')}</p>
         <span class="lbl">${t('me.photo')}</span>
-        <div class="row">${avatar(authVals.aName || '?', signupPhoto)}<label class="btn soft small">${icon('image', 16)} ${t(signupPhoto ? 'media.change' : 'media.choose')}<input type="file" accept="image/*" class="hidden" data-act="signup-photo"></label>
+        <div class="row">${avatar(authVals.aName || '?', signupPhoto, authVals.aGender)}<label class="btn soft small">${icon('image', 16)} ${t(signupPhoto ? 'media.change' : 'media.choose')}<input type="file" accept="image/*" class="hidden" data-act="signup-photo"></label>
           <span class="muted small">${t('me.photoHint')}</span></div>
         <span class="lbl">${t('roles.wantAlso')}</span>
         <div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="aWant-${r}" ${authVals[`aWant-${r}`] === '1' ? 'checked' : ''}> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>
@@ -1239,11 +1242,27 @@ function loginPage(): string {
 
 const val = (id: string) => ((document.getElementById(id) as HTMLInputElement | null)?.value ?? '').trim();
 
+/** The male/female choice in a form (radio buttons named `name`), or '' when none is picked. */
+const genderVal = (name: string) => (document.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value ?? '');
+
+/** Keep what the person typed in the sign-in form before it is drawn again. */
+function keepAuthVals(withPassword = false): void {
+  for (const id of ['aName', 'aEmail', 'aPhone', 'aYear', 'aClub', ...(withPassword ? ['aPass'] : [])]) if (document.getElementById(id)) authVals[id] = val(id);
+  if (document.querySelector('input[name="aGender"]')) authVals.aGender = genderVal('aGender');
+}
+
+/** Two big cards with the default avatars: player (male) or player (female). */
+function genderPick(name: string, current: string, fullName: string): string {
+  return `<div class="gender-pick" role="radiogroup">${(['male', 'female'] as const).map((g) => `<label class="gender-opt">
+    <input type="radio" name="${name}" value="${g}" ${current === g ? 'checked' : ''}>${avatar(fullName, null, g)}<b>${t(`auth.${g}` as MessageKey)}</b></label>`).join('')}</div>`;
+}
+
 async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
-  for (const id of ['aName', 'aEmail', 'aPass', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+  keepAuthVals(true);
   for (const r of ['organizer', 'seller', 'trainer']) { const c = document.getElementById(`aWant-${r}`) as HTMLInputElement | null; if (c) authVals[`aWant-${r}`] = c.checked ? '1' : ''; }
   const email = val('aEmail'), password = val('aPass');
   if (!email || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
+  if (kind === 'signup' && !genderVal('aGender')) { authMsg = t('auth.err.gender'); route(); return; }
   busy = true; authMsg = ''; route();
   try {
     if (kind === 'login') {
@@ -1253,7 +1272,7 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
     } else {
       const year = val('aYear').replace(/[^\d]/g, '');
       const wants = EXTRA.filter((r) => (document.getElementById(`aWant-${r}`) as HTMLInputElement | null)?.checked).join(',');
-      const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub'), wants });
+      const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub'), gender: genderVal('aGender'), wants });
       delete authVals.aPass;
       if (needsConfirm) { authMsg = '✅ ' + t('auth.checkEmail'); authTab = 'login'; }
       else location.hash = takeReturn();
@@ -1298,7 +1317,7 @@ function mePage(): string {
   };
   const roleBadges = [isAdmin() ? `<span class="badge red">${icon('shield', 14)} ${t('role.admin')}</span>` : '',
     ...EXTRA.filter(hasRole).map((r) => `<span class="badge blue">${icon(ROLE_ICON[r], 14)} ${t(`roles.${r}` as MessageKey)}</span>`)].join('');
-  return `<section class="banner b-me slim rise"><div class="row"><label class="me-photo" title="${esc(t('me.photo'))}">${avatar(p.full_name, p.avatar_url)}<span>${icon('image', 14)}</span><input type="file" accept="image/*" class="hidden" data-act="me-photo"></label><div><h1 dir="auto">${esc(p.full_name)}</h1>
+  return `<section class="banner b-me slim rise"><div class="row"><label class="me-photo" title="${esc(t('me.photo'))}">${avatarOf(p)}<span>${icon('image', 14)}</span><input type="file" accept="image/*" class="hidden" data-act="me-photo"></label><div><h1 dir="auto">${esc(p.full_name)}</h1>
     <div class="row" style="gap:6px">${roleBadges || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
   ${training.myBookingsCard()}
   ${shop.myOrdersCard()}
@@ -1308,7 +1327,14 @@ function mePage(): string {
   ${rolesCard()}
   <div class="card">
     <h3>${icon('user', 20)} ${t('me.title')}</h3>
+    <span class="lbl">${t('me.photo')}</span>
+    <div class="row me-photo-row">${avatarOf(p)}
+      <label class="btn soft small">${icon('image', 16)} ${t(p.avatar_url ? 'me.photoChange' : 'me.photoAdd')}<input type="file" accept="image/*" class="hidden" data-act="me-photo"></label>
+      ${p.avatar_url ? `<button class="btn ghost small" type="button" data-act="me-photo-rm">${icon('x', 14)} ${t('me.photoRemove')}</button>` : ''}
+      <span class="muted small">${t(p.avatar_url ? 'me.photoHint' : 'me.photoDefault')}</span></div>
     <form data-form="me" novalidate>
+      <span class="lbl">${t('auth.gender')}</span>
+      ${genderPick('mGender', p.gender ?? '', p.full_name)}
       <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="mName" value="${esc(p.full_name)}" dir="auto"></label>
       <label class="field"><span>${t('auth.phone')}</span><input class="input" id="mPhone" type="tel" value="${esc(p.phone ?? '')}" dir="ltr"></label>
       <div class="row"><label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="mYear" inputmode="numeric" value="${p.birth_year ?? ''}" dir="ltr"></label>
@@ -1360,7 +1386,7 @@ function usersPage(): string {
   }
   const nameOf = (id: string) => people?.find((p) => p.id === id)?.full_name ?? '…';
   const requests = !location.hash.startsWith('#/admin/users') && isAdmin() && roleReqs?.length ? `<div class="card"><h2>${icon('star', 22)} ${t('roles.requests')}</h2>${hint('roles.requestsHint')}
-    ${roleReqs.map((r) => `<div class="chip ro">${avatar(nameOf(r.user_id))}<span><b dir="auto">${esc(nameOf(r.user_id))}</b><br>
+    ${roleReqs.map((r) => `<div class="chip ro">${avatarOf(people?.find((p) => p.id === r.user_id), nameOf(r.user_id))}<span><b dir="auto">${esc(nameOf(r.user_id))}</b><br>
       <span class="badge blue">${icon(ROLE_ICON[r.role], 14)} ${t(`roles.${r.role}` as MessageKey)}</span>${r.note ? ` <span class="muted small" dir="auto">${esc(r.note)}</span>` : ''}</span>
       <span class="row" style="margin-inline-start:auto;gap:6px"><button class="btn green small" data-act="role-decide" data-id="${r.id}" data-v="yes">${icon('check', 14)} ${t('roles.approve')}</button>
       <button class="btn ghost small" data-act="role-decide" data-id="${r.id}" data-v="no">${icon('x', 14)}</button></span></div>`).join('')}</div>` : '';
@@ -1391,7 +1417,7 @@ function usersPage(): string {
     </form>
   </div>
   <div class="card"><h2>🛡️ ${t('users.all')}</h2>${hint('admin.hint')}
-    ${people.map((p) => `<div class="chip ro user-row">${avatar(p.full_name)}<span><span dir="auto">${esc(p.full_name)}</span>
+    ${people.map((p) => `<div class="chip ro user-row">${avatarOf(p)}<span><span dir="auto">${esc(p.full_name)}</span>
       ${p.phone ? `<br><span class="muted small" dir="ltr">${esc(p.phone)}</span>` : ''}</span>
       <span class="flags">${flags.map(([flag, label, on]) => isAdmin()
         ? `<label class="flag ${on(p) ? 'on' : ''}"><input type="checkbox" data-act="role-flag" data-id="${p.id}" data-flag="${flag}" ${on(p) ? 'checked' : ''} ${p.id === session.profile?.id && flag === 'admin' ? 'disabled' : ''}> ${t(label)}</label>`
@@ -1407,7 +1433,7 @@ let dirFilter = '';
 function loadDir(): void {
   if (dirLoading) return;
   dirLoading = true;
-  remote.listPlayers().then((d) => { dir = d; }).catch((e) => { dir = []; toast(authErr(e)); }).finally(() => { dirLoading = false; route(); });
+  remote.listPlayers().then(async (d) => { dir = d; await content.people(d.flatMap((x) => (x.profile_id ? [x.profile_id] : []))).catch(() => undefined); }).catch((e) => { dir = []; toast(authErr(e)); }).finally(() => { dirLoading = false; route(); });
 }
 
 function dirResults(query: string, exclude: Set<string>): string {
@@ -1419,7 +1445,7 @@ function dirResults(query: string, exclude: Set<string>): string {
   return `${hits.map((d) => {
     const inT = exclude.has(d.id);
     return `<button type="button" class="chip" style="width:100%;cursor:pointer;touch-action:auto" data-act="dir-pick" data-id="${d.id}" ${inT ? 'disabled' : ''}>
-      ${avatar(d.full_name)}<span dir="auto">${esc(d.full_name)}</span>${d.club ? `<span class="muted small" dir="auto">· ${esc(d.club)}</span>` : ''}
+      ${avatar(d.full_name, content.photoOf(d.profile_id ?? undefined), content.genderOf(d.profile_id ?? undefined))}<span dir="auto">${esc(d.full_name)}</span>${d.club ? `<span class="muted small" dir="auto">· ${esc(d.club)}</span>` : ''}
       <span class="badge ${d.profile_id ? 'green' : ''}" style="margin-inline-start:auto">${inT ? t('dir.inTournament') : d.profile_id ? t('dir.account') : t('dir.noAccount')}</span></button>`;
   }).join('')}
   ${hits.length ? '' : `<p class="muted small">${t('dir.none')}</p>`}
@@ -1442,7 +1468,7 @@ function playersPage(): string {
   if (linking && !people) { remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e))); }
   const linkedProfiles = new Set(dir.filter((d) => d.profile_id).map((d) => d.profile_id));
   const shown = dirFilter ? searchDirectory(dir, dirFilter, 500) : dir;
-  const row = (d: remote.DirPlayer) => `<div class="chip ro" style="flex-wrap:wrap">${avatar(d.full_name)}
+  const row = (d: remote.DirPlayer) => `<div class="chip ro" style="flex-wrap:wrap">${avatar(d.full_name, content.photoOf(d.profile_id ?? undefined), content.genderOf(d.profile_id ?? undefined))}
     <span><b dir="auto">${esc(d.full_name)}</b>${d.club ? ` <span class="muted small" dir="auto">· ${esc(d.club)}</span>` : ''}
     ${d.phone ? `<br><span class="muted small" dir="ltr">${esc(d.phone)}</span>` : ''}</span>
     <span class="row" style="margin-inline-start:auto;gap:6px">
@@ -1479,7 +1505,7 @@ function loadRegs(id: string): void {
   if (regLoading.has(id)) return;
   regLoading.add(id);
   remote.tournamentRegistrations(id)
-    .then((r) => regCache.set(id, r))
+    .then(async (r) => { regCache.set(id, r); await content.people(r.map((x) => x.player_id)).catch(() => undefined); })
     .catch(() => regCache.set(id, []))
     .finally(() => { regLoading.delete(id); route(); });
 }
@@ -1492,7 +1518,7 @@ function registerView(tm: Tournament): string {
   const pending = regs.filter((r) => r.status === 'pending');
   const others = regs.filter((r) => r.status === 'rejected' || r.status === 'withdrawn');
   const countText = reg.maxPlayers ? t('reg.count', { n: approved.length, max: reg.maxPlayers }) : n(approved.length);
-  const person = (r: remote.Registration, actions = '') => `<div class="chip ro">${avatar(r.full_name ?? '?')}<span dir="auto">${esc(r.full_name ?? '')}</span>
+  const person = (r: remote.Registration, actions = '') => `<div class="chip ro">${avatar(r.full_name ?? '?', content.photoOf(r.player_id), content.genderOf(r.player_id))}<span dir="auto">${esc(r.full_name ?? '')}</span>
     ${r.club ? `<span class="muted small" dir="auto">· ${esc(r.club)}</span>` : ''}<span class="row" style="margin-inline-start:auto;gap:6px">${actions}</span></div>`;
   const status = `<div class="row between"><h2>📝 ${t('reg.title')}</h2>
     <span class="badge ${reg.open ? 'gold' : ''}">${reg.open ? t('reg.open') : t('reg.closed')}</span></div>
@@ -1538,8 +1564,17 @@ function registerView(tm: Tournament): string {
 /** Actions that talk to Supabase. Returns true when handled. */
 async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Promise<boolean> {
   switch (act) {
+    case 'me-photo-rm':
+      if (!session.profile) return true;
+      try {
+        await remote.updateProfile(session.profile.id, { avatar_url: null });
+        session.profile.avatar_url = null;
+        try { localStorage.removeItem(PHOTO_KEY); } catch { /* ignore */ }
+        toast(t('me.photoRemoved'));
+      } catch (e) { toast(authErr(e)); }
+      route(); return true;
     case 'auth-tab':
-      for (const id of ['aName', 'aEmail', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+      keepAuthVals();
       authTab = el.dataset.v as typeof authTab; authMsg = ''; route(); return true;
     case 'forgot': {
       const email = val('aEmail');
@@ -2132,6 +2167,7 @@ document.addEventListener('submit', async (e) => {
       await remote.updateProfile(session.profile.id, {
         full_name: val('mName') || session.profile.full_name, phone: val('mPhone') || null,
         birth_year: year >= 1920 ? year : null, club: val('mClub') || null,
+        ...(genderVal('mGender') ? { gender: genderVal('mGender') as remote.Gender } : {}),
         ...(document.getElementById('mBio') ? { bio: (document.getElementById('mBio') as HTMLTextAreaElement).value.trim() || null } : {}),
       });
       session.profile = await remote.myProfile();
@@ -2178,12 +2214,13 @@ document.addEventListener('change', async (e) => {
     } catch (err) { toast(authErr(err)); }
     route(); return;
   }
+  if (el.name === 'aGender') { keepAuthVals(true); route(); return; }
   if (el.dataset.act === 'signup-photo' && el.files?.[0]) {
     try {
       signupPhoto = await content.squareDataUrl(el.files[0]);
       try { localStorage.setItem(PHOTO_KEY, signupPhoto); } catch { /* ignore */ }
     } catch { toast(t('auth.err.upload')); }
-    for (const id of ['aName', 'aEmail', 'aPass', 'aPhone', 'aYear', 'aClub']) if (document.getElementById(id)) authVals[id] = val(id);
+    keepAuthVals(true);
     route(); return;
   }
   if (el.dataset.act === 'role-flag') {

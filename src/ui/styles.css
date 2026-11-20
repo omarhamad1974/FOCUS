@@ -890,3 +890,20 @@ details.faq > :last-child { margin-block-end: 16px; }
 @media (min-width: 900px) { .wa-fab { bottom: 24px; } }
 @media (prefers-reduced-motion: reduce) { .wa-fab { animation: none; } }
 @media print { .wa-fab { display: none; } }
+
+/* Male / female choice with the default avatars */
+.gender-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-block: 6px 2px; }
+.gender-opt {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+  padding: 12px 8px 10px; border: 2px solid var(--line); border-radius: var(--radius); background: #fff;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.gender-opt:hover { transform: translateY(-2px); }
+.gender-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.gender-opt .avatar { width: 64px; height: 64px; transition: transform .2s; }
+.gender-opt:has(input:checked) { border-color: var(--green-press); background: var(--green-soft); color: var(--green-ink); }
+.gender-opt:has(input:checked) .avatar { transform: scale(1.08); box-shadow: 0 0 0 3px var(--green); }
+.gender-opt:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: 2px; }
+.avatar.drawn { background: var(--green-soft); }
+.me-photo-row { margin-block: 6px 14px; }
+.me-photo-row .avatar { width: 64px; height: 64px; }

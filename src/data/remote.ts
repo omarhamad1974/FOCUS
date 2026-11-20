@@ -17,7 +17,10 @@ export interface Profile {
   is_trainer?: boolean;
   bio?: string | null;
   avatar_url?: string | null;
+  gender?: Gender | null;
 }
+
+export type Gender = 'male' | 'female';
 
 export type RegStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
 
@@ -66,6 +69,8 @@ export interface SignUpInput {
   phone: string;
   birth_year: string;
   club: string;
+  /** 'male' or 'female': picks the default avatar. */
+  gender: string;
   /** Roles the person asks for at sign-up, comma separated. */
   wants?: string;
 }
@@ -104,8 +109,15 @@ export async function myProfile(): Promise<Profile | null> {
   return check(await db().from('profiles').select('*').eq('id', s.user.id).maybeSingle()) as Profile | null;
 }
 
-export async function updateProfile(id: string, p: Partial<Pick<Profile, 'full_name' | 'phone' | 'birth_year' | 'club' | 'bio' | 'avatar_url'>>): Promise<void> {
-  check(await db().from('profiles').update(p).eq('id', id));
+export async function updateProfile(id: string, p: Partial<Pick<Profile, 'full_name' | 'phone' | 'birth_year' | 'club' | 'bio' | 'avatar_url' | 'gender'>>): Promise<void> {
+  const res = await db().from('profiles').update(p).eq('id', id);
+  // Before migration 0007 is run there is no gender column: save the rest.
+  if (res.error && 'gender' in p && /gender/.test(res.error.message)) {
+    const { gender: _skip, ...rest } = p;
+    if (Object.keys(rest).length) check(await db().from('profiles').update(rest).eq('id', id));
+    return;
+  }
+  check(res);
 }
 
 export async function listProfiles(): Promise<Profile[]> {

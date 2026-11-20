@@ -1,3 +1,5 @@
+import { defaultAvatar } from './avatars';
+
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
@@ -18,11 +20,19 @@ export function groupColor(i: number): string {
   return COLORS[i % COLORS.length];
 }
 
-export function avatar(name: string, photo?: string | null): string {
-  if (photo) return `<img class="avatar photo" src="${esc(photo)}" alt="" loading="lazy" decoding="async">`;
-  const first = [...name.trim()][0] ?? '?';
-  return `<span class="avatar" style="background:${colorFor(name)}" aria-hidden="true">${esc(first)}</span>`;
+/**
+ * A person's round picture: their photo, else a table tennis player drawn for
+ * their gender (or a paddle when the gender is not known). The name is kept as
+ * the tooltip.
+ */
+export function avatar(name: string, photo?: string | null, gender?: string | null): string {
+  if (photo) return `<img class="avatar photo" src="${esc(photo)}" alt="" title="${esc(name)}" loading="lazy" decoding="async">`;
+  return `<img class="avatar photo drawn" src="${defaultAvatar(gender)}" alt="" title="${esc(name)}" decoding="async">`;
 }
+
+/** Avatar for anything shaped like a profile. */
+export const avatarOf = (p: { full_name?: string | null; avatar_url?: string | null; gender?: string | null } | null | undefined, fallbackName = '?') =>
+  avatar(p?.full_name || fallbackName, p?.avatar_url, p?.gender);
 
 let toastTimer = 0;
 export function toast(msg: string): void {

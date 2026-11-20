@@ -89,6 +89,7 @@ function homeView(): string {
       <a class="qa" href="#/admin/approvals">${icon('check', 22)}<span>${t('adm.tab.approvals')}</span></a>
       <a class="qa" href="#/admin/sim">${icon('eye', 22)}<span>${t('adm.tab.sim')}</span></a>
       <a class="qa" href="#/players">${icon('users', 22)}<span>${t('dir.link')}</span></a>
+      <a class="qa" href="#/players/batch">${icon('plus', 22)}<span>${t('batch.title')}</span></a>
     </div></div>`;
 }
 

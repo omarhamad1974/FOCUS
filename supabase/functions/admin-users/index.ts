@@ -5,6 +5,9 @@
 // POST JSON { action: 'confirm', user_id }                 -> { ok: true }
 // POST JSON { action: 'create', email, password, full_name, phone?, club?, birth_year?, roles? } -> { id }
 //   roles: ['organizer' | 'seller' | 'trainer'], admins only.
+// POST JSON { action: 'claim', code, email, password, gender? } -> { ok: true }
+//   Anyone holding a player's claim code (made by batch entry, migration 0008): creates a
+//   ready-to-use account for that player and attaches their directory row and results.
 //
 // SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided
 // to every Edge Function automatically by Supabase.
@@ -27,6 +30,16 @@ Deno.serve(async (req) => {
   const url = Deno.env.get('SUPABASE_URL')!;
   const service = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: 'bad request' }, 400);
+  }
+
+  // A player claiming their profile: no session needed, the personal code is the proof.
+  if (body.action === 'claim') return claim(service, body);
+
   // Who is calling? Verify their session token, then their role.
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   const { data: caller } = await service.auth.getUser(token);
@@ -34,13 +47,6 @@ Deno.serve(async (req) => {
   const { data: me } = await service.from('profiles').select('role, is_organizer').eq('id', caller.user.id).maybeSingle();
   const isAdmin = me?.role === 'admin';
   if (!me || !(isAdmin || me.role === 'organizer' || me.is_organizer)) return json({ error: 'only organizers' }, 403);
-
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: 'bad request' }, 400);
-  }
 
   if (body.action === 'unconfirmed') {
     const { data, error } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
@@ -90,3 +96,33 @@ Deno.serve(async (req) => {
 
   return json({ error: 'unknown action' }, 400);
 });
+
+// deno-lint-ignore no-explicit-any
+async function claim(service: any, body: Record<string, unknown>): Promise<Response> {
+  const code = String(body.code ?? '');
+  const email = String(body.email ?? '').trim();
+  const password = String(body.password ?? '');
+  const gender = ['male', 'female'].includes(String(body.gender)) ? String(body.gender) : '';
+  if (!code || !email || password.length < 6) return json({ error: 'code, email and password (6+) required' }, 400);
+
+  const { data: info, error: infoErr } = await service.rpc('claim_info', { code });
+  if (infoErr) return json({ error: infoErr.message }, 500);
+  const player = Array.isArray(info) ? info[0] : null;
+  if (!player) return json({ error: 'claim code not found' }, 404);
+
+  const { data, error } = await service.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: player.full_name, club: player.club ?? '', gender: gender || player.gender || '' },
+  });
+  if (error || !data.user) return json({ error: error?.message ?? 'could not create account' }, 400);
+
+  const { error: claimErr } = await service.rpc('claim_player_for', { code, account: data.user.id });
+  if (claimErr) {
+    // Someone used the code at the same moment: undo the new account.
+    await service.auth.admin.deleteUser(data.user.id);
+    return json({ error: claimErr.message }, 409);
+  }
+  return json({ ok: true });
+}

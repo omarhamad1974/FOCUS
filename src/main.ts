@@ -21,6 +21,7 @@ import * as news from './pages/news';
 import * as shop from './pages/shop';
 import * as training from './pages/training';
 import * as faq from './pages/faq';
+import * as claim from './pages/claim';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 
@@ -1328,6 +1329,7 @@ function loginPage(): string {
     </div>
     ${hint('auth.hint')}
     <a class="faq-mini" href="#/faq/${signup ? 'signup' : 'organizer'}">${icon('help', 16)} ${t('faq.link')}</a>
+    <a class="faq-mini" href="#/claim">🎟️ ${t('claim.menu')}</a>
     <form data-form="${signup ? 'signup' : 'login'}" novalidate>
       ${signup ? field('aName', 'auth.fullName', 'text', 'autocomplete="name" dir="auto" required') + `<p class="muted small" style="margin-block-start:-6px">${t('auth.fullNameHint')}</p>` : ''}
       ${field('aEmail', 'auth.email', 'email', 'autocomplete="email" dir="ltr" required')}
@@ -1586,13 +1588,18 @@ function playersPage(): string {
     <span class="row" style="margin-inline-start:auto;gap:6px">
       <span class="badge ${d.profile_id ? 'green' : ''}">${d.profile_id ? t('dir.account') : t('dir.noAccount')}</span>
       ${d.profile_id ? '' : `<button class="btn soft small" data-act="link-open" data-id="${d.id}">🔗 ${t('dir.linkTo')}</button>`}
+      ${d.profile_id || d.claim_code ? '' : `<button class="btn soft small" data-act="claim-make" data-id="${d.id}">🎟️ ${t('claim.make')}</button>`}
     </span>
+    ${!d.profile_id && d.claim_code ? `<div style="flex-basis:100%;display:flex">${claim.codeTools(d.full_name, d.claim_code, d.id)}</div>` : ''}
     ${linking === d.id ? `<div style="flex-basis:100%">${hint('dir.linkHint')}
       ${people ? `<div class="row"><select class="input" id="linkSel" style="flex:1"><option value="">${t('dir.choose')}</option>
         ${people.filter((p) => !linkedProfiles.has(p.id)).map((p) => `<option value="${p.id}">${esc(p.full_name)}${p.phone ? ' · ' + esc(p.phone) : ''}</option>`).join('')}
       </select><button class="btn green small" data-act="link-save" data-id="${d.id}">${t('common.save')}</button></div>` : '⏳'}</div>` : ''}
   </div>`;
-  return `<div class="card"><h2>👥 ${t('dir.title')}</h2>${hint('dir.hint')}
+  const coded = dir.filter((d) => !d.profile_id && d.claim_code);
+  return `${claim.batchCard()}
+  <div class="card"><h2>👥 ${t('dir.title')}</h2>${hint('dir.hint')}
+    ${coded.length ? `<button type="button" class="btn soft small" data-act="dir-print" style="margin-block-end:8px">🖨️ ${t('batch.printAll')} (${n(coded.length)})</button>` : ''}
     <input class="input" id="dirFilter" data-act="dir-filter" placeholder="${esc(t('dir.search'))}" value="${esc(dirFilter)}" dir="auto">
     <div style="margin-block-start:8px">${shown.length ? shown.map(row).join('') : `<p class="muted">${t('dir.empty')}</p>`}</div>
   </div>
@@ -1925,6 +1932,9 @@ function draw(): void {
   } else if (parts[0] === 'players' && online()) {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(playersPage());
+    if (parts[1] === 'batch') document.getElementById('bNames')?.focus();
+  } else if (parts[0] === 'claim' && online()) {
+    shell(claim.page(parts));
   } else if (parts[0] === 't') {
     const tm = findT(parts[1]);
     if (!tm) {
@@ -1964,6 +1974,11 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act.startsWith('role-')) { void roleAction(act, el); return; }
+  if (act === 'dir-print' && dir) {
+    claim.printCards(dir.filter((d) => !d.profile_id && d.claim_code).map((d) => ({ full_name: d.full_name, claim_code: d.claim_code!, club: d.club })));
+    return;
+  }
+  if (/^(batch|claim)-/.test(act)) { void claim.onClick(act, el); return; }
   if (/^(media|assist)-/.test(act) && tm) { void mediaAction(act, el, tm); return; }
   if (act === 'car-go' || act === 'car-step') {
     const c = el.closest<HTMLElement>('[data-carousel]');
@@ -2291,7 +2306,7 @@ function syncInputs(): void {
 let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
-  if (shop.onInput(el as HTMLInputElement)) return;
+  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el)) return;
   if (el.dataset.act === 'assist-q') {
     const q = (el as HTMLInputElement).value.trim();
     clearTimeout(assistTimer);
@@ -2348,7 +2363,7 @@ document.addEventListener('submit', async (e) => {
   if (!kind) return;
   e.preventDefault();
   if (kind === 'login' || kind === 'signup') { await submitAuth(kind); return; }
-  if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await training.onSubmit(kind, form)) return;
+  if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await training.onSubmit(kind, form) || await claim.onSubmit(kind, form)) return;
   if (kind === 'add-player') {
     const name = val('pName');
     if (!name) return;
@@ -2393,7 +2408,7 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
-  if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el)) return;
+  if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el) || await claim.onChange(el)) return;
   if (el.dataset.act === 'tl-time' || el.dataset.act === 'tl-place') {
     if (el.dataset.act === 'tl-time') listFilters.time = el.value as TimeFilter; else listFilters.place = el.value;
     route(); return;
@@ -2560,7 +2575,7 @@ if (online()) {
 }
 
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#/login' && /^#\/(t|news|shop|training)\//.test(lastHash)) {
+  if (location.hash === '#/login' && /^#\/(t|news|shop|training|claim)\//.test(lastHash)) {
     try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
   }
   lastHash = location.hash;
@@ -2569,5 +2584,7 @@ window.addEventListener('hashchange', () => {
   route();
 });
 setRender(route);
+claim.setOnAdded(() => { dir = null; route(); });
+claim.setAfterClaim(async () => { await refreshFromServer(); });
 admin.setUsersView(usersPage);
 route();

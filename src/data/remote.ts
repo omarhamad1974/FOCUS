@@ -208,6 +208,9 @@ export interface DirPlayer {
   birth_year: number | null;
   profile_id: string | null;
   merged_into: string | null;
+  /** Personal code the player uses to take over this profile (migration 0008). */
+  claim_code?: string | null;
+  gender?: Gender | null;
 }
 
 export async function listPlayers(): Promise<DirPlayer[]> {
@@ -229,6 +232,44 @@ export async function playerForProfile(profileId: string): Promise<string> {
 
 export async function linkPlayer(playerId: string, profileId: string): Promise<void> {
   check(await db().rpc('link_player', { player: playerId, account: profileId }));
+}
+
+/* ------------------------------------------------ batch entry and claim codes */
+
+export interface BatchRow {
+  id: string;
+  full_name: string;
+  claim_code: string | null;
+  existed: boolean;
+  has_account: boolean;
+}
+
+/** Add many players at once (one name per item); each player without an account gets a claim code. */
+export async function batchAddPlayers(names: string[], club: string | null, gender: Gender | null): Promise<BatchRow[]> {
+  return check(await db().rpc('batch_add_players', { names, club, gender })) as BatchRow[];
+}
+
+/** A new claim code for one player (the old code stops working). */
+export async function renewClaimCode(playerId: string): Promise<string> {
+  return check(await db().rpc('renew_claim_code', { player: playerId })) as string;
+}
+
+export interface ClaimInfo {
+  full_name: string;
+  club: string | null;
+  gender: Gender | null;
+  tournaments: number;
+}
+
+/** Who a claim code belongs to; null when the code is unknown or already used. */
+export async function claimInfo(code: string): Promise<ClaimInfo | null> {
+  const rows = check(await db().rpc('claim_info', { code })) as ClaimInfo[];
+  return rows[0] ?? null;
+}
+
+/** Attach the profile behind a code to the signed-in account. */
+export async function claimForMe(code: string): Promise<void> {
+  check(await db().rpc('claim_player', { code }));
 }
 
 /* ------------------------------------------- accounts (Edge Function) */
@@ -257,6 +298,12 @@ export const confirmUser = (userId: string) => adminUsers<{ ok: true }>({ action
 export const createAccount = (a: { email: string; password: string; full_name: string; phone: string; club: string; birth_year: string; roles?: string[] }) =>
   adminUsers<{ id: string }>({ action: 'create', ...a });
 
+/** Make an account for the player behind a claim code (no sign-in needed), then sign in. */
+export async function claimAccount(a: { code: string; email: string; password: string; gender: string }): Promise<void> {
+  await adminUsers<{ ok: true }>({ action: 'claim', ...a });
+  await signIn(a.email, a.password);
+}
+
 /** Map server error text to an Arabic message key suffix. */
 export function errorCode(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
@@ -268,6 +315,8 @@ export function errorCode(e: unknown): string {
   if (/Password should be/i.test(m)) return 'weakPassword';
   if (/row-level security|permission denied|only an admin/i.test(m)) return 'forbidden';
   if (/rate limit|over_email_send_rate_limit|429/i.test(m)) return 'rateLimit';
+  if (/claim code not found/i.test(m)) return 'claimCode';
+  if (/already claimed/i.test(m)) return 'claimed';
   if (/slot taken/i.test(m)) return 'slotTaken';
   if (/slot passed/i.test(m)) return 'slotPassed';
   if (/own slot|own product/i.test(m)) return 'own';

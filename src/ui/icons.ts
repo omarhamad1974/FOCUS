@@ -40,6 +40,8 @@ const P: Record<string, string> = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   racket: '<circle cx="9.5" cy="9.5" r="6.5"/><path d="M5.5 13.5 13.5 5.5" opacity=".5"/><path d="m13.8 13.8 1.4 1.4"/><path d="m15.2 15.2 4.4 4.4a1.4 1.4 0 0 1-2 2l-4.4-4.4"/><circle cx="19.5" cy="5" r="1.8"/>',
   ball: '<circle cx="12" cy="12" r="8"/><path d="M6 7c3 1.5 4 4 4 5s-1 3.5-4 5M18 7c-3 1.5-4 4-4 5s1 3.5 4 5"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14"/><path d="M12 17.5v.01"/>',
+  whatsapp: '<path d="M3.5 20.5 5 16a8.5 8.5 0 1 1 3 3l-4.5 1.5Z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.5-2-1-1 .8a5 5 0 0 1-2.3-2.3l.8-1-1-2L9 8.5Z"/>',
   table: '<path d="M2 10h20l-2 4H4l-2-4Z"/><path d="M12 6v8M5 14v6M19 14v6"/>',
 };
 

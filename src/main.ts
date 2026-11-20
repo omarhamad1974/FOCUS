@@ -20,6 +20,7 @@ import * as content from './data/content';
 import * as news from './pages/news';
 import * as shop from './pages/shop';
 import * as training from './pages/training';
+import * as faq from './pages/faq';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 
@@ -240,7 +241,8 @@ function shell(body: string): void {
     <button class="btn small soft" data-act="pv-set" data-v="off">${icon('x', 14)} ${t('sim.exit')}</button></div>` : ''}
   <main class="page">${body}</main>
   ${nav.length > 2 ? `<nav class="bottomnav" aria-label="${esc(t('nav.label'))}">${nav.map(([k, href, ic, label]) =>
-    `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}`;
+    `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}
+  ${faq.supportButton()}`;
 }
 
 /* ------------------------------------------------------------------- home */
@@ -328,6 +330,8 @@ function homePage(): string {
     ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
     ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
   </div>
+  <a class="card faq-cta rise" href="#/faq"><span class="faq-ic">${icon('help', 26)}</span>
+    <span><b>${t('faq.title')}</b><br><small class="muted">${t('faq.homeText')}</small></span>${icon('chevron', 18)}</a>
   <div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
   ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}
   <div class="sec-head"><h2>${icon('calendar', 22)} ${t('home.nextSlots')}</h2>${more('#/training')}</div>
@@ -1004,6 +1008,7 @@ function loginPage(): string {
       <button data-act="auth-tab" data-v="signup" aria-pressed="${signup}">👤 ${t('auth.signup')}</button>
     </div>
     ${hint('auth.hint')}
+    <a class="faq-mini" href="#/faq/${signup ? 'signup' : 'organizer'}">${icon('help', 16)} ${t('faq.link')}</a>
     <form data-form="${signup ? 'signup' : 'login'}" novalidate>
       ${signup ? field('aName', 'auth.fullName', 'text', 'autocomplete="name" dir="auto" required') + `<p class="muted small" style="margin-block-start:-6px">${t('auth.fullNameHint')}</p>` : ''}
       ${field('aEmail', 'auth.email', 'email', 'autocomplete="email" dir="ltr" required')}
@@ -1295,7 +1300,8 @@ function registerView(tm: Tournament): string {
         ${reg.open ? `<button class="btn ghost small" data-act="withdraw">${t('reg.withdraw')}</button>` : ''}`;
     } else if (mine?.status === 'rejected') action = `<div class="err">${t('reg.status.rejected')}</div>`;
     else if (reg.open) action = `<button class="btn green block" data-act="join" ${busy ? 'disabled' : ''}>🏓 ${t('reg.join')}</button>`;
-    return `<div class="card">${status}${action}</div>
+    return `<div class="card">${status}${action}
+        <a class="faq-mini" href="#/faq/${mine && (mine.status === 'pending' || mine.status === 'approved') ? 'withdraw' : 'join'}">${icon('help', 16)} ${t(mine && (mine.status === 'pending' || mine.status === 'approved') ? 'faq.withdraw.q' : 'faq.join.q')}</a></div>
       <div class="card"><h3>✅ ${t('reg.approved')} (${countText})</h3>
         ${approved.length ? approved.map((r) => person(r)).join('') : `<p class="muted">${t('reg.empty')}</p>`}</div>`;
   }
@@ -1481,6 +1487,9 @@ function draw(): void {
   } else if (['news', 'shop', 'training'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
     shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? '');
+  } else if (parts[0] === 'faq') {
+    shell(faq.route(parts) ?? '');
+    if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
   } else if (parts[0] === 'login' && online()) {
     shell(loginPage());
   } else if (parts[0] === 'me' && online()) {

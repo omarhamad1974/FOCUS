@@ -8,6 +8,7 @@ import {
 import { canEditKo, isBye, placements, roundName } from './domain/bracket';
 import { GAME_POINTS, gamesToWin, possibleResults, summarize, type MatchCheck } from './domain/scoring';
 import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample';
+import * as sim from './domain/simulate';
 import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
@@ -746,6 +747,7 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
     <div class="row between small" style="margin-block-start:10px"><span>${t('t.progress')}</span><span>${n(p.done)} / ${n(p.total)}</span></div>
     ${xp(p.done, p.total)}
   </section>
+  ${isOrg() ? simCard(tm) : ''}
   <nav class="tabs" style="margin-block:14px 4px">${tabs.map(([k, l]) => `<a href="#/t/${tm.id}/${k}" ${k === tab ? 'aria-current="page"' : ''}>${t(l)}</a>`).join('')}</nav>
   ${body}`;
 }
@@ -833,13 +835,26 @@ function setupBoard(tm: Tournament): string {
         </div>`).join('')}
       ${extraPicker(g)}
     </div>`).join('');
+  const waiting = sim.waitingPlayers(tm);
+  const waitCol = waiting.length || (org && simOpen.has(tm.id)) ? `
+    <div class="gcol waitcol ${selectedChip ? 'target' : ''}" data-gid="${WAITING}" ${org ? `tabindex="0" data-act="drop-here"` : ''} aria-label="${esc(t('tsim.waiting'))}">
+      <h3><span class="gletter wait-letter">⏳</span> ${t('tsim.waiting')}<span class="badge ${waiting.length ? 'gold' : ''}" style="margin-inline-start:auto">${n(waiting.length)}</span></h3>
+      ${waiting.length ? '' : `<p class="small muted">${t('tsim.waitingEmpty')}</p>`}
+      ${waiting.map((pid) => `
+        <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
+          ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
+          ${org ? `<button class="btn ghost small" data-act="rm-player" data-pid="${pid}" aria-label="${t('dir.remove')}" title="${t('dir.remove')}" style="min-height:28px;padding:2px 8px;margin-inline-start:auto">✕</button>` : ''}
+        </div>`).join('')}
+      ${org && waiting.length ? `<button class="btn green small block" data-act="sim-distribute" style="margin-block-start:8px">🎲 ${t('tsim.distribute')}</button>` : ''}
+    </div>` : '';
   return `
   <div class="card">
     <div class="row between"><h2>🧩 ${t('setup.title')}</h2>
       ${org ? `<button class="btn soft small" data-act="reshuffle">🔀 ${t('setup.reshuffle')}</button>` : ''}</div>
     ${org ? hint('setup.hint') : ''}
     ${org ? hint('extra.hint') : ''}
-    <div class="board" id="board">${cols}</div>
+    ${org && waiting.length ? hint('tsim.waitingHint') : ''}
+    <div class="board" id="board">${waitCol}${cols}</div>
   </div>
   ${org ? tablesCard(tm) : ''}
   ${org && online() ? dirPicker(new Set(tm.players.map((p) => p.directoryId).filter((x): x is string => !!x)), 'dir.addToTournament') : ''}
@@ -847,6 +862,141 @@ function setupBoard(tm: Tournament): string {
     ${hint('setup.startHint')}
     <button class="btn green block" data-act="start-groups">▶️ ${t('setup.start')}</button>
   </div>` : ''}`;
+}
+
+/* Step-by-step simulation with random players and results (organizer) */
+const WAITING = 'waiting';
+/** Tournaments whose simulation panel is open. */
+const simOpen = new Set<string>();
+let simCount = 16;
+
+/** Place a player in a group, or back on the waiting list. */
+function placePlayer(tm: Tournament, pid: string, gid: string, index?: number): void {
+  if (gid === WAITING) sim.moveToWaiting(tm, pid);
+  else movePlayer(tm, pid, gid, index);
+}
+
+function simCard(tm: Tournament): string {
+  const done = sim.finished(tm);
+  if (!simOpen.has(tm.id)) {
+    if (done) return '';
+    return `<button class="btn soft block sim-open" data-act="sim-toggle">🎮 ${t('tsim.open')}</button>`;
+  }
+  const waiting = sim.waitingPlayers(tm).length;
+  const placed = tm.players.length - waiting;
+  const setup = tm.stage === 'setup';
+  const gi = tm.stage === 'groups' ? sim.groupRoundInfo(tm) : null;
+  const koNext = sim.nextKoRound(tm);
+  const ready = sim.groupsReady(tm);
+  // Which step is active: 0 players, 1 by hand, 2 at random, 3 start groups, 4 group rounds, 5 knockout, 6 done.
+  const active = done ? 6 : tm.stage === 'knockout' ? 5 : tm.stage === 'groups' ? (ready ? 5 : 4)
+    : tm.players.length < tm.groups.length * 2 ? 0 : waiting ? 1 : 3;
+  const step = (i: number, title: MessageKey, body: string) => {
+    // Moving by hand and distributing at random are open together while players wait.
+    const state = i < active ? 'done' : i === active || (active === 1 && i === 2) ? 'now' : 'later';
+    return `<li class="sim-step ${state}"><span class="sim-dot">${state === 'done' ? '✓' : n(i + 1)}</span>
+      <div class="sim-body"><b>${t(title)}</b>${state === 'later' ? '' : body}</div></li>`;
+  };
+  const top = topTwo(tm);
+  const groupsUrl = `#/t/${tm.id}/groups`;
+  const steps = [
+    step(0, 'tsim.s.players', setup ? `
+      <p class="small muted">${t('tsim.s.playersHint')}</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <div class="choice sim-counts">${[8, 12, 16, 24, 32].map((c) => `<button data-act="sim-count" data-v="${c}" aria-pressed="${simCount === c}">${n(c)}</button>`).join('')}</div>
+        <button class="btn green small" data-act="sim-add">🎲 ${t('tsim.add', { n: simCount })}</button>
+      </div>` : ''),
+    step(1, 'tsim.s.manual', setup ? `<p class="small muted">${t('tsim.s.manualHint')}</p>
+      ${location.hash.startsWith(groupsUrl) ? '' : `<a class="btn soft small" href="${groupsUrl}">🧩 ${t('tsim.toBoard')}</a>`}` : ''),
+    step(2, 'tsim.s.random', setup ? `<p class="small muted">${t('tsim.s.randomHint')}</p>
+      <button class="btn green small" data-act="sim-distribute" ${waiting ? '' : 'disabled'}>🎲 ${t('tsim.distribute')} ${waiting ? `(${n(waiting)})` : ''}</button>` : ''),
+    step(3, 'tsim.s.start', setup ? `<p class="small muted">${t('tsim.s.startHint', { n: placed, g: tm.groups.length })}</p>
+      <button class="btn green small" data-act="sim-start-groups" ${waiting || placed < 2 ? 'disabled' : ''}>▶️ ${t('setup.start')}</button>` : ''),
+    step(4, 'tsim.s.groups', gi && gi.next !== null ? `<p class="small muted">${t('tsim.s.groupsHint')}</p>
+      ${xp(gi.next, gi.total)}
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn green small" data-act="sim-group-round">🏓 ${t('tsim.playRound', { r: gi.next + 1, of: gi.total })}</button>
+        <button class="btn soft small" data-act="sim-group-all">⏩ ${t('tsim.playAllGroups')}</button>
+      </div>` : ''),
+    step(5, 'tsim.s.ko', tm.stage === 'groups' && ready ? `<p class="small muted">${t('tsim.s.koStartHint')}</p>
+      <button class="btn green small" data-act="sim-start-ko">⚔️ ${t('ko.start')}</button>`
+      : koNext ? `<p class="small muted">${t('tsim.s.koHint')}</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn green small" data-act="sim-ko-round">🏓 ${t('tsim.playKo', { r: t(`ko.round.${koNext}` as MessageKey) })}</button>
+        <button class="btn soft small" data-act="sim-ko-all">⏩ ${t('tsim.playAllKo')}</button>
+      </div>` : ''),
+  ];
+  return `<div class="card sim-card">
+    <div class="row between"><h2>🎮 ${t('tsim.title')}</h2>
+      <button class="btn ghost small" data-act="sim-toggle" aria-label="${t('tsim.close')}" title="${t('tsim.close')}">✕</button></div>
+    ${hint('tsim.hint')}
+    <ol class="sim-steps">${steps.join('')}</ol>
+    ${done && top ? `<div class="sim-done">🏆 ${t('tsim.champion')} <b dir="auto">${esc(playerName(tm, top.first))}</b>
+      <a class="btn soft small" href="#/t/${tm.id}/knockout">${t('tsim.seeBracket')}</a></div>` : ''}
+  </div>`;
+}
+
+/** Run one simulation action. Returns true when handled. */
+function simAction(act: string, el: HTMLElement, tm: Tournament): boolean {
+  const go = (tab: Tab) => {
+    const want = `#/t/${tm.id}/${tab}`;
+    if (location.hash !== want) location.hash = want; else route();
+  };
+  switch (act) {
+    case 'sim-toggle':
+      if (simOpen.has(tm.id)) simOpen.delete(tm.id); else simOpen.add(tm.id);
+      route();
+      return true;
+    case 'sim-count':
+      simCount = Number(el.dataset.v) || 16;
+      route();
+      return true;
+    case 'sim-add': {
+      const added = sim.addRandomPlayers(tm, simCount);
+      persist();
+      toast(`🎲 ${t('tsim.added', { n: added.length })}`);
+      go('groups');
+      return true;
+    }
+    case 'sim-distribute': {
+      const moved = sim.distributeWaiting(tm);
+      selectedChip = null;
+      persist();
+      toast(`🎲 ${t('tsim.distributed', { n: moved })}`);
+      go('groups');
+      return true;
+    }
+    case 'sim-start-groups':
+      try { startGroups(tm); } catch (e) {
+        toast(t((e as Error).message === 'waiting' ? 'tsim.errWaiting' : 'setup.errSmall'));
+        return true;
+      }
+      persist();
+      go('matches');
+      return true;
+    case 'sim-group-round': case 'sim-group-all': {
+      let r = sim.simGroupRound(tm);
+      if (act === 'sim-group-all') while (r !== null) r = sim.simGroupRound(tm);
+      persist();
+      if (sim.groupsReady(tm)) { toast(`✅ ${t('tsim.groupsDone')}`); go('groups'); } else go('matches');
+      return true;
+    }
+    case 'sim-start-ko':
+      sim.settleTies(tm);
+      try { startKnockout(tm); } catch { toast(t('ko.notReady')); return true; }
+      persist();
+      go('knockout');
+      return true;
+    case 'sim-ko-round': case 'sim-ko-all': {
+      let r = sim.simKoRound(tm);
+      if (act === 'sim-ko-all') while (r) r = sim.simKoRound(tm);
+      persist();
+      if (sim.finished(tm)) { confetti(); toast(`🏆 ${t('tsim.finished')}`); }
+      go('knockout');
+      return true;
+    }
+  }
+  return false;
 }
 
 function standingsTable(tm: Tournament, gi: number): string {
@@ -2007,6 +2157,8 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act.startsWith('adm-') || act.startsWith('pv-')) { void admin.onClick(act, el); return; }
+  if (act.startsWith('sim-') && tm && isOrg()) { simAction(act, el, tm); return; }
+  if (act === 'rm-player' && tm && !online()) { removePlayerFromSetup(tm, el.dataset.pid!); persist(); route(); return; }
   if (online() && ONLINE_ACTS.has(act)) {
     void onlineAction(act, el, tm);
     return;
@@ -2132,7 +2284,7 @@ document.addEventListener('click', (e) => {
       return;
     case 'drop-here':
       if (!tm || !selectedChip) return;
-      movePlayer(tm, selectedChip, el.dataset.gid!);
+      placePlayer(tm, selectedChip, el.dataset.gid!);
       selectedChip = null;
       persist();
       route();
@@ -2148,8 +2300,8 @@ document.addEventListener('click', (e) => {
       if (!tm) return;
       try {
         startGroups(tm);
-      } catch {
-        toast(t('setup.errSmall'));
+      } catch (e) {
+        toast(t((e as Error).message === 'waiting' ? 'tsim.errWaiting' : 'setup.errSmall'));
         return;
       }
       persist();
@@ -2561,7 +2713,7 @@ function endDrag(commit: boolean): void {
     const chips = [...target.querySelectorAll<HTMLElement>('.chip')].filter((c) => c.dataset.pid !== d.pid);
     const ghostTop = parseFloat(d.ghost.style.top);
     const index = chips.findIndex((c) => c.getBoundingClientRect().top + c.offsetHeight / 2 > ghostTop + 20);
-    movePlayer(tm, d.pid, target.dataset.gid!, index === -1 ? undefined : index);
+    placePlayer(tm, d.pid, target.dataset.gid!, index === -1 ? undefined : index);
     persist();
   }
   selectedChip = null;

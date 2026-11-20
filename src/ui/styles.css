@@ -1045,3 +1045,25 @@ hr.sep { border: 0; border-top: 1px dashed var(--line); margin-block: 16px; }
   .print-code { font: 800 20pt/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .1em; border: 2px solid #7ed957; border-radius: 3mm; padding: 2mm; margin-block: 2mm !important; }
   .print-link { font-size: 8pt; word-break: break-all; color: #444; }
 }
+
+/* Tournament simulation panel (organizer) */
+.sim-open { margin-block-start: 12px; border: 2px dashed var(--green); }
+.sim-card { margin-block-start: 14px; border: 2px solid var(--green); background: linear-gradient(180deg, var(--green-soft), #fff 120px); }
+.sim-steps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.sim-step { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 14px; }
+.sim-step.now { background: #fff; box-shadow: 0 0 0 2px var(--green) inset; }
+.sim-step.later { opacity: .5; }
+.sim-step .sim-body { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.sim-step .sim-body p { margin: 0; }
+.sim-dot {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 900;
+  background: var(--line); color: var(--ink); font-size: 14px;
+}
+.sim-step.now .sim-dot { background: var(--green); color: var(--navy); animation: simPulse 1.6s ease-in-out infinite; }
+.sim-step.done .sim-dot { background: var(--ok); color: #fff; }
+@keyframes simPulse { 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .sim-step.now .sim-dot { animation: none; } }
+.sim-counts button { min-width: 44px; }
+.sim-done { margin-block-start: 10px; padding: 12px; border-radius: 14px; background: #fff7d6; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 17px; }
+.waitcol { background: #fffaf0; border-color: var(--gold); }
+.wait-letter { background: var(--gold); font-size: 16px; }

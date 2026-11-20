@@ -1,4 +1,5 @@
--- Manual check of batch entry and claim codes (0008). Run after supabase_shim.sql and all migrations
+-- Manual check of directory claim codes (0008; batch entry moved to temporary accounts in 0011,
+-- see temp_accounts_check.sql). Run after supabase_shim.sql and all migrations
 -- on a throwaway database. Lines marked "expect error" must fail.
 \set ON_ERROR_STOP 0
 insert into auth.users values
@@ -8,13 +9,12 @@ insert into auth.users values
 update profiles set is_organizer = true where id = '00000000-0000-0000-0000-0000000000a1';
 insert into players (full_name, profile_id) values ('Player', '00000000-0000-0000-0000-0000000000b1');
 
--- organizer pastes names (blank lines, duplicates, an existing name with an account)
+-- directory players with codes, as made by the 0008 batch
+insert into players (full_name, club, gender, claim_code) values
+ ('أحمد علي', 'نادي الزمالك', 'female', new_claim_code()), ('سارة', 'نادي الزمالك', 'female', new_claim_code());
+-- organizers can no longer use the batch (admin only, 0011)
 set role authenticated; set request.jwt.claim.sub='00000000-0000-0000-0000-0000000000a1';
-select full_name, claim_code ~ '^[A-Z2-9]{8}$' as code_ok, existed, has_account
-  from batch_add_players(array['  أحمد   علي ', '', 'سارة', 'أحمد علي', 'player'], 'نادي الزمالك', 'female');
--- the same list again reuses the rows and keeps the codes
-select count(*) as players_now from players;
-select full_name, existed from batch_add_players(array['سارة']);
+select * from batch_add_players(array['x']); -- expect error (admin only)
 
 -- a tournament that uses سارة
 reset role;
@@ -49,7 +49,8 @@ select state -> 'players' -> 0 ->> 'accountId' = '00000000-0000-0000-0000-000000
 select count(*) as used_code from claim_info((select 'x'));
 
 -- signed-in player claims أحمد علي; their own old row is merged into it
-reset role; set role authenticated; set request.jwt.claim.sub='00000000-0000-0000-0000-0000000000a1';
+reset role; update profiles set role = 'admin' where id = '00000000-0000-0000-0000-0000000000a1';
+set role authenticated; set request.jwt.claim.sub='00000000-0000-0000-0000-0000000000a1';
 select renew_claim_code((select id from players where full_name = 'Player')); -- expect error (already claimed)
 select renew_claim_code((select id from players where full_name = 'أحمد علي')) ~ '^[A-Z2-9]{8}$' as renewed;
 reset role;

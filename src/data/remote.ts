@@ -240,17 +240,27 @@ export async function linkPlayer(playerId: string, profileId: string): Promise<v
 
 /* ------------------------------------------------ batch entry and claim codes */
 
+/** How a pasted name was handled by the admin batch. */
+export type BatchKind = 'new' | 'new_many' | 'temp' | 'account' | 'failed';
+
 export interface BatchRow {
-  id: string;
+  /** Account id (temporary or real); null when it could not be made. */
+  id: string | null;
   full_name: string;
+  kind: BatchKind;
   claim_code: string | null;
-  existed: boolean;
-  has_account: boolean;
 }
 
-/** Add many players at once (one name per item); each player without an account gets a claim code. */
-export async function batchAddPlayers(names: string[], club: string | null, gender: Gender | null): Promise<BatchRow[]> {
-  return check(await db().rpc('batch_add_players', { names, club, gender })) as BatchRow[];
+/**
+ * Admin only: names without an account get a temporary account with a claim code; with a
+ * tournament, every name goes on its waiting list (Edge Function admin-users, action 'batch').
+ */
+export const batchPlayers = (a: { names: string[]; club: string | null; gender: Gender | null; tournament_id: string | null }) =>
+  adminUsers<{ rows: BatchRow[]; waitlisted: number }>({ action: 'batch', ...a });
+
+/** Temporary accounts and their claim codes (admin). */
+export async function tempAccounts(): Promise<{ id: string; claim_code: string | null }[]> {
+  return check(await db().from('profiles').select('id, claim_code').eq('is_temp', true).is('merged_into', null)) as { id: string; claim_code: string | null }[];
 }
 
 /** A new claim code for one player (the old code stops working). */

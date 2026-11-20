@@ -145,13 +145,15 @@ function managePage(): string {
   const myProducts = products.filter((p) => p.seller_id === session.profile!.id);
   const pending = sales.filter((o) => o.status === 'pending').length;
   const income = sales.filter((o) => o.status === 'delivered').reduce((s, o) => s + o.total, 0);
+  const waitingApproval = myProducts.filter((p) => !p.approved).length;
   return `<a class="backlink" href="#/shop">${icon('back', 18)} ${t('shop.back')}</a>
   <section class="banner b-shop slim"><div><h1>${icon('box', 26)} ${t('shop.manage')}</h1><p>${t('shop.manageHint')}</p></div>
     <a class="btn gold" href="#/shop/new">${icon('plus')} ${t('shop.add')}</a></section>
-  <div class="stats">
+  <div class="stats dash-stats">
     <div class="stat">${icon('box', 22)}<b>${n(myProducts.length)}</b><small>${t('shop.statProducts')}</small></div>
     <div class="stat ${pending ? 'hot' : ''}">${icon('bell', 22)}<b>${n(pending)}</b><small>${t('shop.statPending')}</small></div>
     <div class="stat">${icon('money', 22)}<b>${money(income)}</b><small>${t('shop.statIncome')}</small></div>
+    <div class="stat ${waitingApproval ? 'hot' : ''}">${icon('clock', 22)}<b>${n(waitingApproval)}</b><small>${t('shop.statWaitingApproval')}</small></div>
   </div>
   <div class="card"><h2>${icon('bell', 22)} ${t('shop.incoming')}</h2>
     ${sales.length ? sales.map((o) => orderRow(o, true)).join('') : `<p class="muted">${t('shop.noOrders')}</p>`}</div>

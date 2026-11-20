@@ -1,15 +1,12 @@
 /* Pingo load splash: the ball hops across the letters, each letter pops up as it
    lands, the paddle swings in to meet it, the swooshes sweep in and the subtitle
-   appears. About 2 seconds, once per browser session, skippable by tap, click or
+   appears. About 2 seconds on every page load, skippable by tap, click or
    any key, and a short fade only when the system asks for reduced motion.
    Layer positions are logo pixels (640 x 428); see scripts/splash-layers.py. */
 (function () {
   var splash = document.getElementById('splash');
   if (!splash) return;
-  var KEY = 'pingo.splash';
-  var seen = false;
-  try { seen = sessionStorage.getItem(KEY) === '1'; sessionStorage.setItem(KEY, '1'); } catch (e) { /* private mode */ }
-  if (seen || typeof splash.animate !== 'function') { splash.remove(); return; }
+  if (typeof splash.animate !== 'function') { splash.remove(); return; }
 
   var logo = splash.querySelector('.splash-logo');
   var $ = function (sel) { return splash.querySelector(sel); };

@@ -250,6 +250,16 @@ export function onInput(el: HTMLInputElement): boolean {
   return true;
 }
 
+/** A clear reason instead of the generic "try again" message. */
+function bulkError(e: unknown): string {
+  const code = remote.errorCode(e);
+  if (code === 'noFunction') return t('users.functionMissing');
+  if (code !== 'unknown') return authErr(e);
+  const why = e instanceof Error ? e.message : String(e);
+  console.warn('Pingo bulk delete failed:', e);
+  return /non-2xx|unknown action/i.test(why) ? t('bulk.oldFunction') : t('bulk.failedWhy', { why });
+}
+
 async function runBulk(kind: BulkKind, ids: string[]): Promise<string> {
   if (kind === 'tournaments') { await remote.deleteTournaments(ids); return t('bulk.done', { n: ids.length }); }
   if (kind === 'products') { await content.deleteProducts(ids); return t('bulk.done', { n: ids.length }); }
@@ -265,10 +275,16 @@ async function runBulk(kind: BulkKind, ids: string[]): Promise<string> {
     for (const g of groups.values()) await content.setRolesMany(g.ids, g.fields);
   }
   let deleted = 0;
-  if (plan.deleteAccounts.length) {
-    const r = await remote.deleteAccounts(plan.deleteAccounts);
-    deleted = r.deleted;
-    if (r.failed?.length) toast(t('bulk.someFailed', { n: r.failed.length }));
+  const failed: { id: string; error: string }[] = [];
+  // Small calls: each one finishes quickly, and a problem stops after what was already done.
+  for (const part of content.chunks(plan.deleteAccounts, 10)) {
+    const r = await remote.deleteAccounts(part);
+    deleted += r.deleted;
+    failed.push(...(r.failed ?? []));
+  }
+  if (failed.length) {
+    console.warn('Pingo bulk delete: accounts not deleted', failed);
+    toast(t('bulk.someFailed', { n: failed.length, why: failed[0].error }));
   }
   return t('bulk.doneUsers', { n: deleted, m: plan.removeRole.length });
 }
@@ -329,10 +345,9 @@ export async function onClick(act: string, el: HTMLElement): Promise<void> {
       if (!bulk.kind || !bulk.confirm?.length || bulk.running || !confirmed(word)) return;
       bulk.running = true;
       (el as HTMLButtonElement).disabled = true;
-      try { toast(await runBulk(bulk.kind, bulk.confirm)); } catch (e) {
-        toast(remote.errorCode(e) === 'noFunction' ? t('users.functionMissing') : authErr(e));
-      }
+      try { toast(await runBulk(bulk.kind, bulk.confirm)); } catch (e) { toast(bulkError(e)); }
       bulk.running = false; bulk.confirm = null; bulk.selected.clear();
+      render();
       await afterBulk().catch(() => undefined);
       reset(); render(); return;
     }

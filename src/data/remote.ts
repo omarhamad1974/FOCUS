@@ -322,6 +322,7 @@ export function errorCode(e: unknown): string {
   if (/Password should be/i.test(m)) return 'weakPassword';
   if (/row-level security|permission denied|only an admin/i.test(m)) return 'forbidden';
   if (/rate limit|over_email_send_rate_limit|429/i.test(m)) return 'rateLimit';
+  if (/admin cannot claim/i.test(m)) return 'claimAdmin';
   if (/claim code not found/i.test(m)) return 'claimCode';
   if (/already claimed/i.test(m)) return 'claimed';
   if (/slot taken/i.test(m)) return 'slotTaken';

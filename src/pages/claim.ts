@@ -131,6 +131,8 @@ export function printCards(items: PrintItem[]): void {
 let lookedUp: { code: string; info: remote.ClaimInfo | null } | null = null;
 let lookupBusy = false;
 let claimBusy = false;
+/** The code whose "link to my account" was pressed once and now waits for a yes. */
+let linkArmed = '';
 let claimMsg = '';
 let claimGender: remote.Gender | '' = '';
 let claimPhoto: string | null = null;
@@ -174,12 +176,7 @@ export function page(parts: string[]): string {
       ${info.tournaments ? `<span class="badge gold">🏆 ${t('claim.played', { n: numberFmt.format(info.tournaments) })}</span>` : ''}</div></div>
     <p>${t('claim.intro')}</p>
   </div>`;
-  if (session.profile) {
-    return `${head}<div class="card" style="max-width:520px;margin-inline:auto">
-      <p>${esc(t('claim.signedIn', { name: session.profile.full_name }))}</p>${hint('claim.linkHint')}
-      <button class="btn green block" data-act="claim-mine" data-code="${code}" ${claimBusy ? 'disabled' : ''}>🔗 ${t('claim.linkMine')}</button>
-    </div>`;
-  }
+  if (session.profile) return signedInCard(head, code, info.full_name);
   const g = (v: remote.Gender) => `<label class="gender-opt"><input type="radio" name="cGender" value="${v}" ${claimGender === v ? 'checked' : ''}>${avatar(info.full_name, null, v)}<b>${t(`auth.${v}` as MessageKey)}</b></label>`;
   return `${head}<div class="card" style="max-width:520px;margin-inline:auto">
     <form data-form="claim-new" data-code="${code}" novalidate>
@@ -199,6 +196,29 @@ export function page(parts: string[]): string {
     <hr class="sep">
     <p class="center"><b>${t('claim.haveAccount')}</b><br>
       <a class="btn soft small" href="#/login" data-return="#/claim/${code}">🔑 ${t('claim.loginFirst')}</a></p>
+  </div>`;
+}
+
+/**
+ * Someone is already signed in on this device. Usually it is the organizer or admin who
+ * made the link, opening it to check it: never link without a clear, two-step choice,
+ * and an admin account can't take a player's profile at all.
+ */
+function signedInCard(head: string, code: string, player: string): string {
+  const me = session.profile!;
+  const admin = me.role === 'admin';
+  const staff = admin || me.role === 'organizer' || !!me.is_organizer;
+  const linkBtn = admin ? '' : linkArmed === code
+    ? `<div class="err" role="alert">${esc(t('claim.linkConfirm', { player, name: me.full_name }))}</div>
+      <div class="row" style="margin-block-start:8px">
+        <button class="btn green" data-act="claim-mine" data-code="${code}" ${claimBusy ? 'disabled' : ''}>✅ ${t('claim.linkYes')}</button>
+        <button class="btn ghost" data-act="claim-unarm">${t('claim.linkNo')}</button></div>`
+    : `<button class="btn ${staff ? 'ghost' : 'soft'} block" data-act="claim-arm" data-code="${code}">🔗 ${esc(t('claim.linkMine', { player }))}</button>`;
+  return `${head}<div class="card" style="max-width:520px;margin-inline:auto">
+    <p><b>${esc(t('claim.signedIn', { name: me.full_name }))}</b></p>
+    <p>${esc(t(staff ? 'claim.staffNote' : 'claim.otherNote', { player }))}</p>
+    <button class="btn green block" data-act="claim-logout" style="margin-block:8px">🚪 ${esc(t('claim.signOutFor', { player }))}</button>
+    ${admin ? `<p class="muted small">${t('claim.adminNoLink')}</p>` : `${hint('claim.linkHint')}${linkBtn}`}
   </div>`;
 }
 
@@ -235,7 +255,17 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
       try { await remote.renewClaimCode(el.dataset.id!); toast(`✅ ${t('claim.renewed')}`); onAdded(); } catch (e) { toast(authErr(e)); }
       return true;
     }
+    case 'claim-arm':
+      linkArmed = el.dataset.code ?? ''; render(); return true;
+    case 'claim-unarm':
+      linkArmed = ''; render(); return true;
+    case 'claim-logout':
+      linkArmed = '';
+      try { await remote.signOut(); await afterClaim(); } catch (e) { toast(authErr(e)); }
+      render(); return true;
     case 'claim-mine': {
+      if (linkArmed !== el.dataset.code) return true;
+      linkArmed = '';
       claimBusy = true; render();
       try {
         await remote.claimForMe(el.dataset.code!);

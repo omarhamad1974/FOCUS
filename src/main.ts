@@ -12,7 +12,7 @@ import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, To
 import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
 import { online } from './config';
 import * as remote from './data/remote';
-import { addPlayerToSetup, closeRegistration, recordsPoints, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
+import { addExtraPlayer, addPlayerToSetup, closeRegistration, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
 import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PUBLIC_STATUSES, publicStatus, sortForListing, TIME_FILTERS, topTwo, tournamentLocations, type PublicStatus, type TimeFilter } from './domain/tournament';
 import * as admin from './pages/admin';
@@ -756,7 +756,9 @@ function tableMap(tm: Tournament): string {
   if (tm.stage === 'knockout' || !tm.groups.some((g) => g.table)) return '';
   const pid = myPlayerId(tm);
   const mine = pid ? groupOf(tm, pid) : undefined;
-  const mineLine = mine?.table ? `<div class="my-table">🎯 ${t('table.yourGroup')} <b>${esc(mine.name)}</b> · ${t('table.playAt')} <b dir="auto">${esc(tableText(mine.table))}</b></div>` : '';
+  const fills = pid ? groupsOf(tm, pid).filter((g) => g !== mine && g.table) : [];
+  const mineLine = (mine?.table ? `<div class="my-table">🎯 ${t('table.yourGroup')} <b>${esc(mine.name)}</b> · ${t('table.playAt')} <b dir="auto">${esc(tableText(mine.table))}</b></div>` : '')
+    + fills.map((g) => `<div class="my-table">🧩 ${t('extra.youFill')} <b>${esc(g.name)}</b> · ${t('table.playAt')} <b dir="auto">${esc(tableText(g.table!))}</b></div>`).join('');
   const chips = tm.groups.map((g, i) => g.table ? `<span class="table-chip ${g === mine ? 'mine' : ''}">
       <span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span><span dir="auto">🏓 ${esc(tableText(g.table))}</span></span>` : '').join('');
   return `${mineLine}<div class="table-map" aria-label="${esc(t('table.where'))}">${chips}</div>`;
@@ -783,26 +785,53 @@ function tablesCard(tm: Tournament): string {
 
 /* Setup: drag-and-drop group board */
 let selectedChip: string | null = null;
+/** Group whose "fill with a player from another group" list is open. */
+let extraPickFor: string | null = null;
 
 function setupBoard(tm: Tournament): string {
   const org = isOrg();
   const seedOf = (id: string) => tm.players.findIndex((p) => p.id === id) + 1;
+  const biggest = Math.max(...tm.groups.map((g) => g.playerIds.length));
+  const homeName = (pid: string) => groupOf(tm, pid)?.name ?? '';
+  const extraChip = (g: Group, pid: string) => `
+        <div class="chip ro extra" data-extra-pid="${pid}">
+          ${pAvatar(tm, pid)}<span class="extra-who"><span dir="auto">${esc(playerName(tm, pid))}</span>
+          <span class="badge extra-badge" title="${esc(t('extra.badgeTitle'))}">🧩 ${t('extra.badge')} ${t('extra.from')} ${t('setup.group')} ${esc(homeName(pid))}</span></span>
+          ${org ? `<button class="btn ghost small" data-act="rm-extra" data-pid="${pid}" data-gid="${g.id}" aria-label="${t('extra.remove')}" title="${t('extra.remove')}" style="min-height:28px;padding:2px 8px;margin-inline-start:auto">✕</button>` : ''}
+        </div>`;
+  const extraPicker = (g: Group) => {
+    if (!org) return '';
+    if (extraPickFor !== g.id) {
+      const short = g.playerIds.length < biggest || g.playerIds.length % 2 === 1;
+      return `<button class="btn ${short ? 'soft' : 'ghost'} small block extra-add" data-act="extra-open" data-gid="${g.id}">🧩 ${t('extra.add')}</button>`;
+    }
+    const cands = extraCandidates(tm, g.id);
+    return `<div class="extra-pick">
+      <p class="small muted">${t('extra.pickHint')}</p>
+      ${cands.length ? cands.map((p) => `<button class="chip ro extra-cand" data-act="extra-add" data-pid="${p.id}" data-gid="${g.id}">
+        ${pAvatar(tm, p.id)}<span dir="auto">${esc(p.name)}</span><span class="seed">${t('setup.group')} ${esc(homeName(p.id))}</span></button>`).join('')
+        : `<p class="small muted">${t('extra.none')}</p>`}
+      <button class="btn ghost small block" data-act="extra-open" data-gid="">${t('common.cancel')}</button>
+    </div>`;
+  };
   const cols = tm.groups.map((g, i) => `
     <div class="gcol ${selectedChip ? 'target' : ''}" data-gid="${g.id}" ${org ? `tabindex="0" data-act="drop-here"` : ''} aria-label="${t('setup.group')} ${esc(g.name)}">
       <h3><span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span> ${t('setup.group')} ${esc(g.name)}
         ${tableBadge(g)}<span class="badge" style="margin-inline-start:auto">${n(g.playerIds.length)}</span></h3>
-      ${g.playerIds.map((pid) => `
+      ${g.playerIds.map((pid) => isExtra(g, pid) ? extraChip(g, pid) : `
         <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
           ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
           <span class="seed">#${n(seedOf(pid))}</span>
           ${org && online() ? `<button class="btn ghost small" data-act="rm-player" data-pid="${pid}" aria-label="${t('dir.remove')}" title="${t('dir.remove')}" style="min-height:28px;padding:2px 8px">✕</button>` : ''}
         </div>`).join('')}
+      ${extraPicker(g)}
     </div>`).join('');
   return `
   <div class="card">
     <div class="row between"><h2>🧩 ${t('setup.title')}</h2>
       ${org ? `<button class="btn soft small" data-act="reshuffle">🔀 ${t('setup.reshuffle')}</button>` : ''}</div>
     ${org ? hint('setup.hint') : ''}
+    ${org ? hint('extra.hint') : ''}
     <div class="board" id="board">${cols}</div>
   </div>
   ${org ? tablesCard(tm) : ''}
@@ -817,13 +846,17 @@ function standingsTable(tm: Tournament, gi: number): string {
   const g = tm.groups[gi];
   const s = groupStandings(tm, g);
   const pts = recordsPoints(tm);
+  // Filling players count in the table but cannot qualify from it: the next player takes their place.
+  const qRank = new Map(qualifyingRows(tm, g).map((r) => [r.playerId, r.rank]));
   const rows = s.rows.map((r) => {
-    const cls = r.rank <= 2 ? 'q' : r.rank <= 4 && tm.consolation.enabled ? 'c' : '';
+    const q = qRank.get(r.playerId);
+    const extra = q === undefined;
+    const cls = extra ? 'x' : q <= 2 ? 'q' : q <= 4 && tm.consolation.enabled ? 'c' : '';
     const pct = r.played ? Math.round((r.wins / r.played) * 100) : 0;
     const tb = r.tiebreak !== 'none' ? `<span class="badge ${r.tiebreak === 'unresolved' ? 'red' : 'blue'}" style="font-size:10px">${t(`tiebreak.${r.tiebreak}` as MessageKey)}</span>` : '';
     return `<tr class="${cls}">
       <td><span class="rank r${r.rank}">${n(r.rank)}</span></td>
-      <td class="name"><div class="row" style="gap:6px;flex-wrap:nowrap">${pAvatar(tm, r.playerId)}<span dir="auto">${esc(playerName(tm, r.playerId))}</span> ${tb}</div>
+      <td class="name"><div class="row" style="gap:6px;flex-wrap:nowrap">${pAvatar(tm, r.playerId)}<span dir="auto">${esc(playerName(tm, r.playerId))}</span> ${tb}${extra ? `<span class="badge extra-badge" style="font-size:10px" title="${esc(t('extra.badgeTitle'))}">🧩 ${t('extra.badge')}</span>` : ''}</div>
         <div class="winbar" title="${t('stats.winRate')} ${pct}%"><span style="width:${pct}%"></span></div></td>
       <td>${n(r.played)}</td><td>${n(r.wins)}</td><td>${n(r.losses)}</td>
       <td class="hide-sm">${pair(n(r.gamesWon), n(r.gamesLost), ':')}</td>
@@ -869,7 +902,8 @@ function tieResolver(tm: Tournament, gi: number, groups: string[][]): string {
 
 function groupsView(tm: Tournament): string {
   const legend = `<div class="legend"><span><i style="background:var(--ok)"></i>${t('standings.qualified')}</span>
-    ${tm.consolation.enabled ? `<span><i style="background:var(--warn)"></i>${t('standings.consolation')} · ${esc(tm.consolation.name)}</span>` : ''}</div>`;
+    ${tm.consolation.enabled ? `<span><i style="background:var(--warn)"></i>${t('standings.consolation')} · ${esc(tm.consolation.name)}</span>` : ''}
+    ${tm.groups.some((g) => g.extraIds?.length) ? `<span>🧩 ${t('extra.legend')}</span>` : ''}</div>`;
   const ready = groupsComplete(tm);
   const startKo = isOrg() && tm.stage === 'groups' ? `<div class="card">
     ${hint('ko.startHint')}
@@ -2047,6 +2081,24 @@ document.addEventListener('click', (e) => {
       route();
       if (selectedChip) toast(t('setup.selected'));
       return;
+    case 'extra-open':
+      extraPickFor = el.dataset.gid || null;
+      route();
+      return;
+    case 'extra-add':
+      if (!tm || !isOrg()) return;
+      try { addExtraPlayer(tm, el.dataset.pid!, el.dataset.gid!); } catch { return; }
+      extraPickFor = null;
+      persist();
+      toast(t('extra.added'));
+      route();
+      return;
+    case 'rm-extra':
+      if (!tm || !isOrg()) return;
+      removeExtraPlayer(tm, el.dataset.pid!, el.dataset.gid!);
+      persist();
+      route();
+      return;
     case 'drop-here':
       if (!tm || !selectedChip) return;
       movePlayer(tm, selectedChip, el.dataset.gid!);
@@ -2056,7 +2108,8 @@ document.addEventListener('click', (e) => {
       return;
     case 'reshuffle':
       if (!tm) return;
-      snakeGroups(tm.players.map((p) => p.id), tm.groups.length).forEach((ids, i) => (tm.groups[i].playerIds = ids));
+      reshuffleGroups(tm);
+      extraPickFor = null;
       persist();
       route();
       return;

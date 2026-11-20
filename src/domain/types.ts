@@ -75,6 +75,12 @@ export interface Group {
   manualOrder: string[];
   /** Table where the group plays, set by the organizer at any time: a number ("3") or a short label. */
   table?: string;
+  /**
+   * Players from another group added here to fill an odd group. They are also
+   * listed in `playerIds` and play every match of this group, but they qualify
+   * only from their own (home) group. Missing or empty on most groups.
+   */
+  extraIds?: string[];
 }
 
 export interface StageFormats {

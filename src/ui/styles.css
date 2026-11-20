@@ -800,3 +800,52 @@ button.slot:not(:disabled):hover, a.slot:hover { border-color: var(--table); tra
 .fsel { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 4px 10px; color: var(--blue); }
 .fsel select { border: 0; background: transparent; font-weight: 700; color: var(--ink); padding: 6px 2px; min-height: 36px; max-width: 46vw; }
 .fsel select:disabled { color: var(--muted); }
+/* FAQ */
+.b-faq { background: linear-gradient(135deg, #0f1b33, #0e7c66 70%, #13a383); }
+.faq-index { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 4px 12px; }
+.faq-index .chip { text-decoration: none; color: var(--ink); font-weight: 700; font-size: 13px; }
+details.faq { padding: 0; overflow: hidden; scroll-margin-top: 80px; }
+details.faq summary {
+  display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; list-style: none; font-size: 16px;
+}
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary b { flex: 1; }
+.faq-ic {
+  display: inline-grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 14px;
+  background: #e2f7ef; color: var(--table);
+}
+.faq-chev { transform: rotate(-90deg); transition: transform .2s; color: var(--muted); }
+details.faq[open] .faq-chev { transform: rotate(90deg); }
+details.faq[open] summary { border-block-end: 1px solid var(--line); }
+details.faq > :not(summary) { margin-inline: 16px; }
+details.faq > :last-child { margin-block-end: 16px; }
+.faq-steps { padding-inline-start: 22px; margin-block: 12px 4px; }
+.faq-steps li { margin-block: 6px; }
+.faq-steps li::marker { color: var(--table); font-weight: 800; }
+.faq-more { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.faq-more p { margin: 2px 0 0; }
+.faq-cta { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; margin-block: 4px 16px; }
+.faq-cta > span:nth-child(2) { flex: 1; }
+.faq-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--blue); text-decoration: none; margin-block: 6px; }
+
+/* Floating WhatsApp support button (bottom corner, above the phone nav bar) */
+.wa-fab {
+  position: fixed; z-index: 40; inset-inline-end: 16px; bottom: calc(84px + env(safe-area-inset-bottom));
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+  background: #25d366; color: #fff; box-shadow: 0 8px 22px #128c7e66; text-decoration: none;
+  animation: wa-in .5s ease-out both, wa-ring 2.6s 1.5s ease-out 3;
+  transition: transform .15s;
+}
+.wa-fab:hover, .wa-fab:focus-visible { transform: scale(1.08); }
+.wa-fab .ic { stroke-width: 2.1; }
+.wa-tip {
+  position: absolute; inset-inline-end: 64px; white-space: nowrap; background: var(--navy); color: #fff;
+  font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 10px; opacity: 0; pointer-events: none;
+  transform: translateX(-6px); transition: opacity .15s, transform .15s;
+}
+.wa-fab:hover .wa-tip, .wa-fab:focus-visible .wa-tip { opacity: 1; transform: none; }
+@keyframes wa-in { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes wa-ring { 0% { box-shadow: 0 8px 22px #128c7e66, 0 0 0 0 #25d36699; } 100% { box-shadow: 0 8px 22px #128c7e66, 0 0 0 18px #25d36600; } }
+@media (min-width: 900px) { .wa-fab { bottom: 24px; } }
+@media (prefers-reduced-motion: reduce) { .wa-fab { animation: none; } }
+@media print { .wa-fab { display: none; } }

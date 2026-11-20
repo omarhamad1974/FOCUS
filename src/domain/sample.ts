@@ -1,4 +1,4 @@
-import { createTournament, saveResult, startGroups, startKnockout, groupsComplete, groupStandings } from './tournament';
+import { createTournament, numberTables, saveResult, startGroups, startKnockout, groupsComplete, groupStandings } from './tournament';
 import { bracketMatches } from './bracket';
 import { gamesToWin, hasResult, summarize } from './scoring';
 import type { Game, Match, Side, Tournament } from './types';
@@ -74,6 +74,7 @@ export function sampleTournament(level: SampleLevel, seed = Date.now(), playerCo
   });
   if (level === 'setup') return t;
   startGroups(t);
+  numberTables(t);
   const groupMs = Object.values(t.matches);
   const toPlay = level === 'groupsHalf' ? groupMs.slice(0, Math.ceil(groupMs.length / 2)) : groupMs;
   for (const m of toPlay) {

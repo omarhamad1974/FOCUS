@@ -11,6 +11,28 @@ export function groupName(i: number): string {
   return GROUP_LETTERS[i] ?? String(i + 1);
 }
 
+/** Longest table label the organizer can type. */
+export const TABLE_MAX = 20;
+
+/** Sets or clears (empty value) the table of a group. Allowed at every stage. */
+export function setGroupTable(t: Tournament, groupId: string, value: string): void {
+  const g = t.groups.find((x) => x.id === groupId);
+  if (!g) return;
+  const v = value.replace(/\s+/g, ' ').trim().slice(0, TABLE_MAX)
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660));
+  if (v) g.table = v; else delete g.table;
+}
+
+/** Numbers the tables 1, 2, 3… in group order. */
+export function numberTables(t: Tournament): void {
+  t.groups.forEach((g, i) => (g.table = String(i + 1)));
+}
+
+/** The group a player is in, if any. */
+export function groupOf(t: Tournament, playerId: string): Group | undefined {
+  return t.groups.find((g) => g.playerIds.includes(playerId));
+}
+
 export interface NewTournament {
   name: string;
   date: string;
@@ -66,7 +88,9 @@ export function duplicateTournament(t: Tournament, name: string): Tournament {
     formats: { ...t.formats },
     consolation: { ...t.consolation },
     pointsPerGame: recordsPoints(t),
-    groups: t.groups.map((g) => ({ id: uid(), name: g.name, playerIds: g.playerIds.map((id) => idMap.get(id)!), manualOrder: [] })),
+    groups: t.groups.map((g) => ({
+      id: uid(), name: g.name, playerIds: g.playerIds.map((id) => idMap.get(id)!), manualOrder: [], ...(g.table ? { table: g.table } : {}),
+    })),
     matches: {},
     brackets: [],
     stage: 'setup',

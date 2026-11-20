@@ -73,6 +73,8 @@ export interface Group {
   playerIds: string[];
   /** Order chosen by the organizer for ties the rules cannot break. */
   manualOrder: string[];
+  /** Table where the group plays, set by the organizer at any time: a number ("3") or a short label. */
+  table?: string;
 }
 
 export interface StageFormats {

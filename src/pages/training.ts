@@ -5,7 +5,7 @@ import type { Booking, Location, PublicProfile, Slot } from '../data/content';
 import { authErr, hint, isTrainer, loading, money, n, needLogin, render, session, val } from '../app/ctx';
 import { empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
-import { avatar, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast } from '../ui/util';
 import { byDay, dayKey, slotEnd, slotStarts } from '../domain/training';
 import { becomePrompt } from './shop';
 
@@ -92,7 +92,7 @@ function trainerCard(tr: PublicProfile): string {
   const free = (slots ?? []).filter((s) => s.trainer_id === tr.id && !s.booked && future(s)).length;
   const locs = (locations ?? []).filter((l) => l.trainer_id === tr.id);
   return `<a class="card trainer rise" href="#/training/t/${tr.id}">
-    <div class="row">${avatar(tr.full_name)}<div><h3 dir="auto">${esc(tr.full_name)}</h3>${tr.club ? `<span class="muted small" dir="auto">${esc(tr.club)}</span>` : ''}</div>
+    <div class="row">${avatarOf(tr)}<div><h3 dir="auto">${esc(tr.full_name)}</h3>${tr.club ? `<span class="muted small" dir="auto">${esc(tr.club)}</span>` : ''}</div>
       <span class="badge ${free ? 'green' : ''}" style="margin-inline-start:auto">${free ? t('tr.freeCount', { n: free }) : t('tr.full')}</span></div>
     ${tr.bio ? `<p class="small clamp" dir="auto">${esc(tr.bio)}</p>` : ''}
     ${locs.length ? `<div class="row small muted">${locs.map((l) => `<span dir="auto">${icon('pin', 14)} ${esc(l.name)}</span>`).join('')}</div>` : ''}
@@ -136,7 +136,7 @@ function trainerPage(id: string): string {
   if (!tr) return empty('coach', t('tr.notFound'), `<a class="btn" href="#/training">${t('tr.back')}</a>`);
   const locs = (locations ?? []).filter((l) => l.trainer_id === id);
   return `<a class="backlink" href="#/training">${icon('back', 18)} ${t('tr.back')}</a>
-  <section class="banner b-train slim rise"><div class="row">${avatar(tr.full_name)}<div><h1 dir="auto">${esc(tr.full_name)}</h1>
+  <section class="banner b-train slim rise"><div class="row">${avatarOf(tr)}<div><h1 dir="auto">${esc(tr.full_name)}</h1>
     ${tr.club ? `<p dir="auto">${esc(tr.club)}</p>` : ''}</div></div></section>
   ${tr.bio ? `<div class="card"><p dir="auto">${esc(tr.bio)}</p></div>` : ''}
   ${locs.length ? `<div class="card"><h3>${icon('map', 20)} ${t('tr.locations')}</h3>${locs.map((l) => locRow(l)).join('')}</div>` : ''}

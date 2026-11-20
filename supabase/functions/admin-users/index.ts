@@ -99,26 +99,12 @@ Deno.serve(async (req) => {
 
   if (body.action === 'delete_users') {
     if (!isAdmin) return json({ error: 'only an admin can delete accounts' }, 403);
-    const asked = Array.isArray(body.user_ids) ? [...new Set(body.user_ids.map(String))].filter(Boolean) : [];
-    if (!asked.length) return json({ error: 'user_ids required' }, 400);
-    if (asked.length > 1000) return json({ error: 'too many at once' }, 400);
-    const { data: rows, error: readErr } = await service.from('profiles').select('id, role').in('id', asked);
-    if (readErr) return json({ error: readErr.message }, 500);
-    const ids = (rows ?? []).filter((r) => r.role !== 'admin' && r.id !== caller.user.id).map((r) => r.id as string);
-    if (ids.length) {
-      // Keep tournaments and articles: they move to the admin who deletes the accounts.
-      const t = await service.from('tournaments').update({ organizer_id: caller.user.id }).in('organizer_id', ids);
-      if (t.error) return json({ error: t.error.message }, 500);
-      const p = await service.from('posts').update({ author_id: caller.user.id }).in('author_id', ids);
-      if (p.error) return json({ error: p.error.message }, 500);
+    try {
+      return json(await deleteUsers(service, caller.user.id, body.user_ids));
+    } catch (e) {
+      // Always answer with a readable reason so the admin screen can show it.
+      return json({ error: `delete failed: ${e instanceof Error ? e.message : String(e)}` }, 500);
     }
-    let deleted = 0;
-    const failed: string[] = [];
-    for (const id of ids) {
-      const { error } = await service.auth.admin.deleteUser(id);
-      if (error) failed.push(id); else deleted++;
-    }
-    return json({ deleted, skipped: asked.length - ids.length, failed });
   }
 
   return json({ error: 'unknown action' }, 400);
@@ -152,4 +138,35 @@ async function claim(service: any, body: Record<string, unknown>): Promise<Respo
     return json({ error: claimErr.message }, 409);
   }
   return json({ ok: true });
+}
+
+// deno-lint-ignore no-explicit-any
+async function deleteUsers(service: any, adminId: string, raw: unknown) {
+  const asked = Array.isArray(raw) ? [...new Set(raw.map(String))].filter(Boolean) : [];
+  if (!asked.length) throw new Error('user_ids required');
+  if (asked.length > 200) throw new Error('too many at once');
+  const { data: rows, error: readErr } = await service.from('profiles').select('id, role').in('id', asked);
+  if (readErr) throw new Error(`read profiles: ${readErr.message}`);
+  const found = new Set((rows ?? []).map((r: { id: string }) => r.id));
+  const ids = (rows ?? []).filter((r: { id: string; role: string }) => r.role !== 'admin' && r.id !== adminId).map((r: { id: string }) => r.id);
+  if (ids.length) {
+    // Keep tournaments and articles: they move to the admin who deletes the accounts.
+    const t = await service.from('tournaments').update({ organizer_id: adminId }).in('organizer_id', ids);
+    if (t.error) throw new Error(`move tournaments: ${t.error.message}`);
+    const p = await service.from('posts').update({ author_id: adminId }).in('author_id', ids);
+    if (p.error) throw new Error(`move articles: ${p.error.message}`);
+  }
+  let deleted = 0;
+  const failed: { id: string; error: string }[] = [];
+  // A few at a time keeps the call short without hitting the auth API too hard.
+  for (let i = 0; i < ids.length; i += 5) {
+    await Promise.all(ids.slice(i, i + 5).map(async (id: string) => {
+      const { error } = await service.auth.admin.deleteUser(id);
+      if (error) failed.push({ id, error: error.message });
+      else deleted++;
+    }));
+  }
+  // Ids with no profile (already deleted) count as done, admins and yourself as skipped.
+  const gone = asked.filter((id) => !found.has(id)).length;
+  return { deleted: deleted + gone, skipped: asked.length - ids.length - gone, failed };
 }

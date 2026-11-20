@@ -303,7 +303,7 @@ export const createAccount = (a: { email: string; password: string; full_name: s
   adminUsers<{ id: string }>({ action: 'create', ...a });
 /** Admins only: deletes the accounts (never admins or yourself). Their tournaments and articles move to you. */
 export const deleteAccounts = (userIds: string[]) =>
-  adminUsers<{ deleted: number; skipped: number; failed: string[] }>({ action: 'delete_users', user_ids: userIds });
+  adminUsers<{ deleted: number; skipped: number; failed: { id: string; error: string }[] }>({ action: 'delete_users', user_ids: userIds });
 
 /** Make an account for the player behind a claim code (no sign-in needed), then sign in. */
 export async function claimAccount(a: { code: string; email: string; password: string; gender: string }): Promise<void> {

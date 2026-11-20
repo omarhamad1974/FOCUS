@@ -1,5 +1,5 @@
 import './ui/styles.css';
-import { dateFmt, dateTimeFmt, numberFmt, t, type MessageKey } from './i18n/ar';
+import { dateFmt, dateTimeFmt, days, numberFmt, t, timeFmt, type MessageKey } from './i18n/ar';
 import { load, parseBackup, save, type AppData } from './domain/storage';
 import {
   createTournament, duplicateTournament, groupName, groupMatches, groupStandings, groupsComplete, movePlayer,
@@ -14,7 +14,7 @@ import { online } from './config';
 import * as remote from './data/remote';
 import { addPlayerToSetup, closeRegistration, exactDirectoryMatch, registrationOf, removePlayerFromSetup, searchDirectory } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
-import { accountOf, homeTournaments, topTwo } from './domain/tournament';
+import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PUBLIC_STATUSES, publicStatus, sortForListing, TIME_FILTERS, topTwo, tournamentLocations, type PublicStatus, type TimeFilter } from './domain/tournament';
 import * as admin from './pages/admin';
 import * as content from './data/content';
 import * as news from './pages/news';
@@ -82,6 +82,7 @@ async function refreshFromServer(): Promise<void> {
     }
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
+    await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
     news.reset(); shop.reset(); training.reset(); admin.reset();
     assisting.clear();
     if (session.profile) {
@@ -245,21 +246,6 @@ function shell(body: string): void {
 
 /* ------------------------------------------------------------------- home */
 
-function tournamentTile(tm: Tournament): string {
-  const p = progress(tm);
-  const st = stageIndex(tm);
-  const badge = ['blue', 'green', 'red', 'gold'][st];
-  const labels: MessageKey[] = ['stage.setup', 'stage.groups', 'stage.knockout', 'stage.champion'];
-  const champ = st === 3 ? placements(tm.brackets[0], tm.matches)[0] : null;
-  return `<a class="card tile rise" href="#/t/${tm.id}">
-    <div class="row between"><h3>${icon('trophy', 18)} ${esc(tm.name)}</h3>${registrationOf(tm).open
-      ? `<span class="badge gold">📝 ${t('reg.badge')}</span>` : `<span class="badge ${badge}">${t(labels[st])}</span>`}</div>
-    <div class="muted small">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')} · ${n(tm.groups.length)} ${t('t.groupsCount')}</div>
-    ${champ ? `<div class="row" style="margin-block-start:6px">🏆 <b>${esc(playerName(tm, champ.playerId))}</b></div>` : ''}
-    ${xp(p.done, p.total)}
-  </a>`;
-}
-
 /** Wide news carousel: newest articles with their pictures, managed by the admin. */
 function newsCarousel(posts: content.Post[]): string {
   if (!posts.length) {
@@ -274,36 +260,99 @@ function newsCarousel(posts: content.Post[]): string {
       <div class="car-text"><span class="badge gold">${icon(news.CAT_ICON[p.category], 14)} ${t(`news.cat.${p.category}` as MessageKey)}</span>
         <h2 dir="auto">${esc(p.title)}</h2>${p.summary ? `<p dir="auto">${esc(p.summary)}</p>` : ''}
         <span class="car-more">${t('home.readMore')} ${icon('chevron', 16)}</span></div></a>`).join('')}</div>
-    ${posts.length > 1 ? `<div class="car-dots">${posts.map((_, i) => `<button data-act="car-go" data-i="${i}" aria-label="${i + 1}" ${i ? '' : 'aria-current="true"'}></button>`).join('')}</div>
-      <button class="car-arrow prev" data-act="car-step" data-d="-1" aria-label="${esc(t('home.prev'))}">${icon('back', 20)}</button>
-      <button class="car-arrow next" data-act="car-step" data-d="1" aria-label="${esc(t('home.next'))}">${icon('chevron', 20)}</button>` : ''}
+    ${carControls(posts.length)}
   </section>`;
 }
 
-/** Tournament slider: open and running tournaments, then the top two of those that ended in the last 30 days. */
-function tournamentSlider(): string {
+/** Status badge for a tournament card. */
+function statusBadge(st: PublicStatus, cls = 'tc-status'): string {
+  const look: Record<PublicStatus, [string, string]> = {
+    open: ['gold', '📝'], running: ['green', '⚡'], upcoming: ['blue', '⏳'], finished: ['', '🏆'],
+  };
+  const ic = look[st][1];
+  return `<span class="badge ${cls} ${look[st][0]}">${ic} ${t(`tl.st.${st}` as MessageKey)}</span>`;
+}
+
+/** "Today", "in 3 days", "2 days ago". */
+function whenText(tm: Tournament): string {
+  const d = daysUntil(tm);
+  if (d === null) return '';
+  if (d === 0) return t('tl.today');
+  if (d === 1) return t('tl.tomorrow');
+  if (d === -1) return t('tl.yesterday');
+  return d > 0 ? t('tl.inDays', { n: days(d) }) : t('tl.daysAgo', { n: days(-d) });
+}
+
+/** Join button, or where the visitor stands with this tournament. */
+function cardAction(tm: Tournament, st: PublicStatus): string {
+  if (st === 'finished') return `<a class="btn soft small" href="#/t/${tm.id}/knockout">${icon('trophy', 16)} ${t('tl.results')}</a>`;
+  if (st !== 'open') return `<a class="btn soft small" href="#/t/${tm.id}">${icon('eye', 16)} ${t('tl.follow')}</a>`;
+  if (!online()) return '';
+  if (!session.profile) return `<a class="btn gold small tc-join" href="#/t/${tm.id}/register">${icon('ball', 16)} ${t('reg.join')}</a>`;
+  const mine = myRegs.find((r) => r.tournament_id === tm.id && (r.status === 'pending' || r.status === 'approved'));
+  if (mine) return `<span class="badge ${mine.status === 'approved' ? 'green' : 'gold'} tc-mine">${mine.status === 'approved' ? `${icon('check', 14)} ${t('tl.joined')}` : `⏳ ${t('tl.waiting')}`}</span>`;
+  const reg = registrationOf(tm);
+  if (reg.maxPlayers && tm.players.length >= reg.maxPlayers) return `<span class="badge">${t('tl.full')}</span>`;
+  return `<button class="btn gold small tc-join" data-act="join" data-tid="${tm.id}" ${busy ? 'disabled' : ''}>${icon('ball', 16)} ${t('reg.join')}</button>`;
+}
+
+/** Rich tournament card: main photo, status, title, organizer, time, players and the join button. */
+function tournamentCard(tm: Tournament): string {
+  const st = publicStatus(tm);
+  const org = tm.organizerId ? content.person(tm.organizerId) : undefined;
+  const when = whenText(tm);
+  const top = st === 'finished' ? topTwo(tm) : null;
+  const p = progress(tm);
+  const reg = registrationOf(tm);
+  return `<article class="tcard st-${st} rise">
+    <div class="tc-media">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}
+      ${statusBadge(st)}${when && (st === 'open' || st === 'upcoming') ? `<span class="tc-when">${icon('clock', 14)} ${when}</span>` : ''}
+      ${top ? `<div class="tc-champ">${pAvatar(tm, top.first)}<span><small>🥇 ${t('stage.champion')}</small><b dir="auto">${esc(playerName(tm, top.first))}</b></span></div>` : ''}
+    </div>
+    <div class="tc-body">
+      <h3 dir="auto"><a class="tc-link" href="#/t/${tm.id}">${esc(tm.name)}</a></h3>
+      ${online() && tm.organizerId ? `<div class="tc-org">${avatar(org?.full_name || '?', org?.avatar_url)}<span class="muted small">${t('tl.by')} <b dir="auto">${esc(org?.full_name || t('tl.organizer'))}</b></span></div>` : ''}
+      <div class="tc-meta">
+        ${tm.date ? `<span>${icon('calendar', 15)} ${dateFmt.format(new Date(tm.date))}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}</span>` : ''}
+        ${tm.location ? `<span dir="auto">${icon('pin', 15)} ${esc(tm.location)}</span>` : ''}
+        <span>${icon('users', 15)} ${n(tm.players.length)}${reg.maxPlayers && st === 'open' ? ` / ${n(reg.maxPlayers)}` : ''} ${t('t.players')}</span>
+      </div>
+      ${st === 'running' ? xp(p.done, p.total) : ''}
+      ${top ? `<div class="tc-runner muted small">🥈 <span dir="auto">${esc(playerName(tm, top.second))}</span></div>` : ''}
+      <div class="tc-foot">${cardAction(tm, st)}<a class="tc-more" href="#/t/${tm.id}" aria-hidden="true" tabindex="-1">${icon('chevron', 18)}</a></div>
+    </div>
+  </article>`;
+}
+
+/** "18:30" shown as "6:30 م". */
+function timeText(hm: string): string {
+  const [h, m] = hm.split(':').map(Number);
+  if (Number.isNaN(h)) return hm;
+  const d = new Date(2000, 0, 1, h, m || 0);
+  return timeFmt.format(d);
+}
+
+/** Arrows and dots for a carousel of `count` slides. */
+function carControls(count: number): string {
+  if (count < 2) return '';
+  return `<div class="car-dots">${Array.from({ length: count }, (_, i) => `<button data-act="car-go" data-i="${i}" aria-label="${i + 1}" ${i ? '' : 'aria-current="true"'}></button>`).join('')}</div>
+    <button class="car-arrow prev" data-act="car-step" data-d="-1" aria-label="${esc(t('home.prev'))}">${icon('back', 20)}</button>
+    <button class="car-arrow next" data-act="car-step" data-d="1" aria-label="${esc(t('home.next'))}">${icon('chevron', 20)}</button>`;
+}
+
+/** Tournament carousel: open and running tournaments, then the top two of those that ended in the last 30 days. */
+function tournamentCarousel(): string {
   const { live, recent } = homeTournaments(data.tournaments);
-  if (!live.length && !recent.length) return '';
+  const list = [...sortForListing(live), ...recent];
   recent.forEach(loadPhotos);
-  const liveCard = (tm: Tournament) => {
-    const open = registrationOf(tm).open;
-    const p = progress(tm);
-    return `<a class="tslide ${open ? 'open' : ''}" href="#/t/${tm.id}">
-      <span class="badge ${open ? 'gold' : 'green'}">${open ? `📝 ${t('reg.badge')}` : `${icon('bolt', 12)} ${t('home.liveNow')}`}</span>
-      <h3 dir="auto">${esc(tm.name)}</h3>
-      <span class="muted small">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')}</span>
-      ${open ? `<span class="btn gold small">${t('reg.join')}</span>` : xp(p.done, p.total)}</a>`;
-  };
-  const doneCard = (tm: Tournament) => {
-    const top = topTwo(tm)!;
-    const who = (pid: string, medal: string, cls: string) => `<div class="winner ${cls}">${pAvatar(tm, pid)}<span class="medal-dot">${medal}</span><b dir="auto">${esc(playerName(tm, pid))}</b></div>`;
-    return `<a class="tslide done" href="#/t/${tm.id}/knockout">
-      <span class="badge">${icon('trophy', 12)} ${t('home.endedOn', { d: tm.date ? dateFmt.format(new Date(tm.date)) : '' })}</span>
-      <h3 dir="auto">${esc(tm.name)}</h3>
-      <div class="winners">${who(top.first, '🥇', 'w1')}${who(top.second, '🥈', 'w2')}</div></a>`;
-  };
-  return `<div class="sec-head"><h2>${icon('trophy', 22)} ${t('nav.tournaments')}</h2><a class="more" href="#/tournaments">${t('home.seeAll')} ${icon('chevron', 16)}</a></div>
-    <div class="tslider">${live.map(liveCard).join('')}${recent.map(doneCard).join('')}</div>`;
+  const head = `<div class="sec-head"><div><h2>${icon('trophy', 22)} ${t('nav.tournaments')}</h2>${hint('tl.homeHint')}</div>
+    <a class="btn soft small" href="#/tournaments">${icon('grid', 16)} ${t('tl.showAll')} <span class="badge">${n(data.tournaments.length)}</span></a></div>`;
+  if (!list.length) return head + empty('trophy', t('tl.noneNow'), `<a class="btn gold small" href="#/tournaments">${t('tl.showAll')}</a>`);
+  return `${head}
+    <section class="tcarousel" data-carousel aria-roledescription="carousel" aria-label="${esc(t('nav.tournaments'))}">
+      <div class="car-track">${list.map((tm, i) => `<div class="car-cell" data-i="${i}">${tournamentCard(tm)}</div>`).join('')}</div>
+      ${carControls(list.length)}
+    </section>`;
 }
 
 /** Home: news carousel first, then tournaments, then the other sections. */
@@ -321,7 +370,7 @@ function homePage(): string {
   const more = (href: string) => `<a class="more" href="${href}">${t('home.seeAll')} ${icon('chevron', 16)}</a>`;
   return `
   ${posts === null ? '<div class="sk-row car-sk"></div>' : newsCarousel(posts)}
-  ${tournamentSlider()}
+  ${tournamentCarousel()}
   <div class="features">
     ${feature('#/tournaments', 'trophy', 'nav.tournaments', 'home.fTournaments', 'f1')}
     ${feature('#/training', 'coach', 'nav.training', 'home.fTraining', 'f2')}
@@ -337,41 +386,83 @@ function homePage(): string {
     : `<p class="muted">${t('tr.noSlots')}</p>`}`;
 }
 
-/* Carousel: auto-advance every 6 seconds unless the visitor is touching it. */
-let carTimer = 0;
-function carGo(i: number): void {
-  const c = document.querySelector<HTMLElement>('[data-carousel]');
-  const track = c?.querySelector<HTMLElement>('.car-track');
-  if (!c || !track) return;
+/* Carousels: arrows, dots and auto-advance every 6 seconds unless the visitor is touching them. */
+const carTimers: number[] = [];
+
+/** Distance to scroll so `cell` sits at the start edge of `track` (right edge in Arabic). */
+function carOffset(track: HTMLElement, cell: HTMLElement): number {
+  const tr = track.getBoundingClientRect(), cr = cell.getBoundingClientRect();
+  return getComputedStyle(track).direction === 'rtl' ? cr.right - tr.right : cr.left - tr.left;
+}
+
+/** Index of the slide nearest the start edge. */
+function carIndex(track: HTMLElement): number {
+  let best = 0, dist = Infinity;
+  Array.from(track.children).forEach((c, i) => {
+    const d = Math.abs(carOffset(track, c as HTMLElement));
+    if (d < dist) { dist = d; best = i; }
+  });
+  return best;
+}
+
+const carAtEnd = (track: HTMLElement) => Math.abs(track.scrollLeft) + track.clientWidth >= track.scrollWidth - 4;
+
+function carGo(c: HTMLElement, i: number): void {
+  const track = c.querySelector<HTMLElement>('.car-track');
+  if (!track || !track.children.length) return;
   const slides = track.children.length;
   const k = ((i % slides) + slides) % slides;
-  const slide = track.children[k] as HTMLElement;
-  track.scrollTo({ left: slide.offsetLeft - track.offsetLeft, behavior: 'smooth' });
+  track.scrollBy({ left: carOffset(track, track.children[k] as HTMLElement), behavior: 'smooth' });
   c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
   c.dataset.at = String(k);
 }
-function startCarousel(): void {
-  clearInterval(carTimer);
-  const c = document.querySelector<HTMLElement>('[data-carousel]');
-  if (!c || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const track = c.querySelector<HTMLElement>('.car-track')!;
-  track.addEventListener('scroll', () => {
-    const w = track.clientWidth || 1;
-    const k = Math.round(Math.abs(track.scrollLeft) / w);
-    c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
-    c.dataset.at = String(k);
-  }, { passive: true });
-  let paused = false;
-  c.addEventListener('pointerenter', () => (paused = true));
-  c.addEventListener('pointerleave', () => (paused = false));
-  carTimer = window.setInterval(() => { if (!paused && document.contains(c)) carGo(Number(c.dataset.at ?? 0) + 1); }, 6000);
+
+function startCarousels(): void {
+  while (carTimers.length) clearInterval(carTimers.pop());
+  document.querySelectorAll<HTMLElement>('[data-carousel]').forEach((c) => {
+    const track = c.querySelector<HTMLElement>('.car-track');
+    if (!track) return;
+    track.addEventListener('scroll', () => {
+      const k = carIndex(track);
+      c.querySelectorAll('.car-dots button').forEach((b, j) => b.toggleAttribute('aria-current', j === k));
+      c.dataset.at = String(k);
+    }, { passive: true });
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let paused = false;
+    c.addEventListener('pointerenter', () => (paused = true));
+    c.addEventListener('pointerleave', () => (paused = false));
+    c.addEventListener('focusin', () => (paused = true));
+    c.addEventListener('focusout', () => (paused = false));
+    carTimers.push(window.setInterval(() => {
+      if (paused || !document.contains(c) || document.hidden) return;
+      carGo(c, carAtEnd(track) ? 0 : Number(c.dataset.at ?? 0) + 1);
+    }, 6000));
+  });
 }
 
-function tournamentsPage(): string {
+type ListFilter = 'all' | PublicStatus;
+const listFilters = { time: 'any' as TimeFilter, place: '' };
+
+/** Places already used, offered as suggestions when typing a location. */
+function placeList(): string {
+  return `<datalist id="placeList">${tournamentLocations(data.tournaments).map((p) => `<option value="${esc(p)}">`).join('')}</datalist>`;
+}
+
+/** All tournaments, filtered by status (the filter is part of the link: #/tournaments/open). */
+function tournamentsPage(filterArg?: string): string {
   const ts = data.tournaments;
   const players = ts.reduce((s, x) => s + x.players.length, 0);
   const done = ts.reduce((s, x) => s + Object.values(x.matches).filter((m) => summarize(m).winner && m.aId && m.bId).length, 0);
-  const tiles = ts.map(tournamentTile).join('');
+  const filter: ListFilter = (PUBLIC_STATUSES as string[]).includes(filterArg ?? '') ? filterArg as PublicStatus : 'all';
+  const places = tournamentLocations(ts);
+  if (listFilters.place && !places.includes(listFilters.place)) listFilters.place = '';
+  const inWindow = ts.filter((x) => matchesTime(x, listFilters.time) && matchesLocation(x, listFilters.place));
+  const counts = new Map<ListFilter, number>([['all', inWindow.length]]);
+  for (const x of inWindow) { const st = publicStatus(x); counts.set(st, (counts.get(st) ?? 0) + 1); }
+  const shown = sortForListing(inWindow).filter((x) => filter === 'all' || publicStatus(x) === filter);
+  const filtered = listFilters.time !== 'any' || !!listFilters.place;
+  shown.filter((x) => publicStatus(x) === 'finished').forEach(loadPhotos);
+  const chip = (k: ListFilter, ic: string) => `<a class="fchip" href="#/tournaments${k === 'all' ? '' : '/' + k}" ${k === filter ? 'aria-current="true"' : ''}>${ic} ${t(`tl.f.${k}` as MessageKey)} <b>${n(counts.get(k) ?? 0)}</b></a>`;
 
   const org = isOrg();
   if (session.loading) return `<div class="card center muted">⏳ ${t('sync.loading')}</div>`;
@@ -393,8 +484,18 @@ function tournamentsPage(): string {
     <div class="stat"><b>${n(done)}</b><small>${t('home.statMatches')}</small></div>
   </div>
   ${org ? samplePanel() : ''}
-  <h2 style="margin-block:18px 4px">${t('home.title')}</h2>
-  ${ts.length ? `<div class="grid">${tiles}</div>` : `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`}
+  <div class="sec-head"><h2>${icon('trophy', 22)} ${t('tl.allTitle')}</h2></div>
+  <div class="fbar">
+    <label class="fsel">${icon('calendar', 16)}
+      <select data-act="tl-time" aria-label="${esc(t('tl.whenLabel'))}">${TIME_FILTERS.map((f) => `<option value="${f}" ${f === listFilters.time ? 'selected' : ''}>${t(`tl.when.${f}` as MessageKey)}</option>`).join('')}</select></label>
+    <label class="fsel">${icon('pin', 16)}
+      <select data-act="tl-place" aria-label="${esc(t('tl.location'))}" ${places.length ? '' : 'disabled'}><option value="">${t('tl.anyPlace')}</option>${places.map((p) => `<option ${p === listFilters.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+    ${filtered ? `<button class="btn ghost small" data-act="tl-clear">${icon('x', 14)} ${t('tl.clear')}</button>` : ''}
+  </div>
+  <nav class="fchips" aria-label="${esc(t('tl.filter'))}">${chip('all', '🏓')}${chip('open', '📝')}${chip('running', '⚡')}${chip('upcoming', '⏳')}${chip('finished', '🏆')}</nav>
+  ${!ts.length ? `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`
+    : shown.length ? `<div class="grid tgrid">${shown.map(tournamentCard).join('')}</div>`
+    : empty('search', t('tl.noneFilter'), filtered ? `<button class="btn soft small" data-act="tl-clear">${t('tl.clear')}</button>` : `<a class="btn soft small" href="#/tournaments">${t('tl.f.all')}</a>`)}
   ${org && !online() ? `<div class="card">
     <h3>💾 ${t('home.backup')}</h3>
     ${hint('home.backupHint')}
@@ -428,6 +529,8 @@ interface Draft {
   step: number;
   name: string;
   date: string;
+  time: string;
+  location: string;
   players: string;
   groupCount: number;
   formats: StageFormats;
@@ -444,6 +547,8 @@ const newDraft = (): Draft => ({
   step: 0,
   name: '',
   date: new Date().toISOString().slice(0, 10),
+  time: '',
+  location: '',
   players: '',
   groupCount: 4,
   formats: { group: 3, early: 3, semi: 5, final: 5 },
@@ -468,7 +573,12 @@ function wizardPage(): string {
       <label class="field"><span>🏷️ ${t('wizard.name')}</span>
         <input class="input" id="wName" value="${esc(draft.name)}" placeholder="${esc(t('wizard.namePh'))}" autocomplete="off"></label>
       <label class="field"><span>📅 ${t('wizard.date')}</span>
-        <input class="input" id="wDate" type="date" value="${esc(draft.date)}"></label>`;
+        <input class="input" id="wDate" type="date" value="${esc(draft.date)}"></label>
+      <label class="field"><span>⏰ ${t('tl.time')}</span>
+        <input class="input" id="wTime" type="time" value="${esc(draft.time)}"></label>
+      <label class="field"><span>📍 ${t('tl.location')}</span>
+        <input class="input" id="wLoc" dir="auto" maxlength="80" value="${esc(draft.location)}" placeholder="${esc(t('tl.locationPh'))}" list="placeList"></label>
+      ${placeList()}`;
   } else if (s === 1) {
     body = `
       <label class="field"><span>👥 ${t('wizard.players')} <span class="badge blue" id="wCount">${n(draftNames().length)} ${t('wizard.count')}</span></span>
@@ -530,6 +640,8 @@ function readDraft(): void {
   const v = (id: string) => (document.getElementById(id) as HTMLInputElement | null);
   if (v('wName')) draft.name = v('wName')!.value;
   if (v('wDate')) draft.date = v('wDate')!.value;
+  if (v('wTime')) draft.time = v('wTime')!.value;
+  if (v('wLoc')) draft.location = v('wLoc')!.value;
   if (v('wPlayers')) draft.players = (v('wPlayers') as unknown as HTMLTextAreaElement).value;
   if (v('wCons')) draft.consolation.enabled = v('wCons')!.checked;
   if (v('wConsName')) draft.consolation.name = v('wConsName')!.value;
@@ -568,10 +680,12 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
   else if (tab === 'media') body = mediaView(tm);
   else body = settingsView(tm);
   if (isAssistantFor(tm.id) && !isOrg()) body = `<div class="hint">${t('assist.youAre')}</div>` + body;
+  const org = tm.organizerId ? content.person(tm.organizerId) : undefined;
   return `
-  <section class="hero">
-    <h1>${esc(tm.name)}</h1>
-    <p class="muted">${tm.date ? dateFmt.format(new Date(tm.date)) : ''} · ${n(tm.players.length)} ${t('t.players')}</p>
+  <section class="hero ${tm.cover ? 't-hero' : ''}">
+    ${tm.cover ? `<div class="t-hero-bg"><img src="${esc(tm.cover)}" alt="" decoding="async"></div>` : ''}
+    <div class="row between" style="align-items:flex-start"><h1 dir="auto">${esc(tm.name)}</h1>${statusBadge(publicStatus(tm), 'hero-status')}</div>
+    <p class="muted">${tm.date ? dateFmt.format(new Date(tm.date)) : ''}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}${tm.location ? ` · 📍 <span dir="auto">${esc(tm.location)}</span>` : ''} · ${n(tm.players.length)} ${t('t.players')}${org ? ` · ${t('tl.by')} <span dir="auto">${esc(org.full_name)}</span>` : ''}</p>
     ${stagePath(tm)}
     <div class="row between small" style="margin-block-start:10px"><span>${t('t.progress')}</span><span>${n(p.done)} / ${n(p.total)}</span></div>
     ${xp(p.done, p.total)}
@@ -779,6 +893,16 @@ function knockoutView(tm: Tournament): string {
 }
 
 let deleteArmed = false;
+/** Main photo of the tournament: shown on cards, in the home carousel and at the top of the tournament page. */
+function coverCard(tm: Tournament): string {
+  return `<div class="card cover-card"><h3>${icon('image', 20)} ${t('tl.cover')}</h3>${hint('tl.coverHint')}
+    <div class="cover-edit">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}</div>
+    <div class="row">
+      <label class="btn gold">${icon('image', 18)} ${t(tm.cover ? 'media.change' : 'tl.coverUpload')}<input type="file" accept="image/*" class="hidden" data-act="t-cover" data-tid="${tm.id}"></label>
+      ${tm.cover ? `<button class="btn ghost" data-act="t-cover-del" data-tid="${tm.id}">${icon('trash', 16)} ${t('media.remove')}</button>` : ''}
+    </div></div>`;
+}
+
 function settingsView(tm: Tournament): string {
   if (!isOrg()) return '';
   const locked = tm.stage !== 'setup';
@@ -789,9 +913,16 @@ function settingsView(tm: Tournament): string {
   return `<div class="card">
     <h3>⚙️ ${t('settings.title')}</h3>
     <label class="field"><span>${t('wizard.name')}</span><input class="input" id="setName" value="${esc(tm.name)}"></label>
+    <div class="row">
+      <label class="field" style="flex:1"><span>📅 ${t('wizard.date')}</span><input class="input" id="setDate" type="date" value="${esc(tm.date)}"></label>
+      <label class="field" style="flex:1"><span>⏰ ${t('tl.time')}</span><input class="input" id="setTime" type="time" value="${esc(tm.time ?? '')}"></label>
+    </div>
+    <label class="field"><span>📍 ${t('tl.location')}</span><input class="input" id="setLoc" dir="auto" maxlength="80" value="${esc(tm.location ?? '')}" placeholder="${esc(t('tl.locationPh'))}" list="placeList"></label>
+    ${placeList()}
     <label class="field"><span>${t('wizard.consolationName')}</span><input class="input" id="setCons" value="${esc(tm.consolation.name)}"></label>
     <button class="btn small" data-act="set-save">💾 ${t('common.save')}</button>
   </div>
+  ${online() ? coverCard(tm) : ''}
   <div class="card">
     <h3>🎯 ${t('wizard.formats')}</h3>
     ${locked ? `<p class="muted small">🔒 ${t('settings.formatsLocked')}</p>` : hint('wizard.formatsHint')}
@@ -1468,7 +1599,7 @@ function route(): void {
   rendering.preview = onAdmin ? 'off' : as;
   if (as !== 'off' && real && !onAdmin) session.profile = previewProfile(real, as);
   try { draw(); } finally { session.profile = real; rendering.preview = 'off'; }
-  startCarousel();
+  startCarousels();
 }
 
 function draw(): void {
@@ -1477,7 +1608,7 @@ function draw(): void {
     if (!isOrg()) { location.hash = '#/'; return; }
     shell(wizardPage());
   } else if (parts[0] === 'tournaments') {
-    shell(tournamentsPage());
+    shell(tournamentsPage(parts[1]));
   } else if (['news', 'shop', 'training'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
     shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? '');
@@ -1523,7 +1654,9 @@ document.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
   if (!el || el.tagName === 'INPUT') return;
   const act = el.dataset.act!;
-  const { tm, m } = current();
+  const here = current();
+  const tm = el.dataset.tid ? findT(el.dataset.tid) : here.tm;
+  const m = here.m;
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
     return;
@@ -1531,8 +1664,13 @@ document.addEventListener('click', (e) => {
   if (act.startsWith('role-')) { void roleAction(act, el); return; }
   if (/^(media|assist)-/.test(act) && tm) { void mediaAction(act, el, tm); return; }
   if (act === 'car-go' || act === 'car-step') {
-    const c = document.querySelector<HTMLElement>('[data-carousel]');
-    carGo(act === 'car-go' ? Number(el.dataset.i) : Number(c?.dataset.at ?? 0) + Number(el.dataset.d));
+    const c = el.closest<HTMLElement>('[data-carousel]');
+    if (!c) return;
+    const track = c.querySelector<HTMLElement>('.car-track');
+    const at = Number(c.dataset.at ?? 0), d = Number(el.dataset.d);
+    if (act === 'car-go') carGo(c, Number(el.dataset.i));
+    else if (d > 0 && track && carAtEnd(track)) carGo(c, 0);
+    else carGo(c, at + d);
     return;
   }
   if (act.startsWith('adm-') || act.startsWith('pv-')) { void admin.onClick(act, el); return; }
@@ -1542,6 +1680,16 @@ document.addEventListener('click', (e) => {
   }
 
   switch (act) {
+    case 'tl-clear':
+      listFilters.time = 'any'; listFilters.place = '';
+      route();
+      return;
+    case 't-cover-del':
+      if (!tm) return;
+      delete tm.cover;
+      persist(); admin.reset(); toast(t('admin.saved'));
+      route();
+      return;
     case 'view':
       prefs.view = el.dataset.v as View;
       selectedChip = null;
@@ -1616,6 +1764,8 @@ document.addEventListener('click', (e) => {
         name: draft.name.trim(), date: draft.date, playerNames: draftNames(), groupCount: draft.groupCount,
         formats: draft.formats, consolation: { enabled: draft.consolation.enabled, name: draft.consolation.name.trim() || 'بطولة الترضية' },
       });
+      if (draft.time) nt.time = draft.time;
+      if (draft.location.trim()) nt.location = draft.location.trim();
       void commitNew(nt);
       return;
     }
@@ -1689,6 +1839,11 @@ document.addEventListener('click', (e) => {
       const nm = (document.getElementById('setName') as HTMLInputElement).value.trim();
       const cn = (document.getElementById('setCons') as HTMLInputElement).value.trim();
       if (nm) tm.name = nm;
+      tm.date = (document.getElementById('setDate') as HTMLInputElement).value;
+      const tv = (document.getElementById('setTime') as HTMLInputElement).value;
+      if (tv) tm.time = tv; else delete tm.time;
+      const lv = (document.getElementById('setLoc') as HTMLInputElement).value.trim();
+      if (lv) tm.location = lv; else delete tm.location;
       if (cn) {
         tm.consolation.name = cn;
         tm.brackets.filter((b) => b.kind === 'consolation').forEach((b) => (b.name = cn));
@@ -1884,6 +2039,20 @@ document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
   if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el)) return;
+  if (el.dataset.act === 'tl-time' || el.dataset.act === 'tl-place') {
+    if (el.dataset.act === 'tl-time') listFilters.time = el.value as TimeFilter; else listFilters.place = el.value;
+    route(); return;
+  }
+  if (el.dataset.act === 't-cover' && el.files?.[0]) {
+    const target = findT(el.dataset.tid ?? '');
+    if (!target) return;
+    toast(t('media.uploading'));
+    try {
+      target.cover = await content.uploadImage(el.files[0], 1600);
+      persist(); admin.reset(); toast(t('media.uploaded'));
+    } catch (err) { toast(authErr(err)); }
+    route(); return;
+  }
   if (el.dataset.act === 'media-photo' && el.files?.[0] && tm) {
     toast(t('media.uploading'));
     try {

@@ -654,9 +654,60 @@ export const ar = {
   'shop.approvalHint': 'يظهر المنتج للمشترين بعد موافقة المدير. تعديل الاسم أو الصورة أو الوصف يعيده للمراجعة.',
   'shop.waitingApproval': 'هذا المنتج بانتظار موافقة المدير ولا يراه المشترون بعد.',
   'shop.savedPending': 'تم الحفظ. سيظهر في المتجر بعد موافقة المدير',
+
+  'tl.st.open': 'التسجيل مفتوح',
+  'tl.st.running': 'جارية الآن',
+  'tl.st.upcoming': 'قريباً',
+  'tl.st.finished': 'انتهت',
+  'tl.today': 'اليوم',
+  'tl.tomorrow': 'غداً',
+  'tl.yesterday': 'أمس',
+  'tl.inDays': 'بعد {n}',
+  'tl.daysAgo': 'منذ {n}',
+  'tl.by': 'تنظيم',
+  'tl.organizer': 'المنظم',
+  'tl.results': 'النتائج والأبطال',
+  'tl.follow': 'تابع البطولة',
+  'tl.joined': 'أنت مسجّل',
+  'tl.waiting': 'طلبك قيد المراجعة',
+  'tl.full': 'اكتمل العدد',
+  'tl.showAll': 'عرض كل البطولات',
+  'tl.homeHint': 'البطولات المفتوحة للتسجيل والجارية الآن، وأبطال البطولات التي انتهت خلال آخر 30 يوماً.',
+  'tl.noneNow': 'لا توجد بطولات مفتوحة أو جارية الآن.',
+  'tl.allTitle': 'كل البطولات',
+  'tl.filter': 'تصفية حسب الحالة',
+  'tl.f.all': 'الكل',
+  'tl.f.open': 'التسجيل مفتوح',
+  'tl.f.running': 'جارية',
+  'tl.f.upcoming': 'قريباً',
+  'tl.f.finished': 'منتهية',
+  'tl.noneFilter': 'لا توجد بطولات بهذه الحالة.',
+  'tl.time': 'وقت البداية (اختياري)',
+  'tl.cover': 'الصورة الرئيسية للبطولة',
+  'tl.coverHint': 'تظهر على بطاقة البطولة في الصفحة الرئيسية وفي أعلى صفحة البطولة. الأفضل صورة عرضية (أفقية).',
+  'tl.coverUpload': 'رفع الصورة الرئيسية',
+  'tl.adminCoverHint': 'ارفع صورة رئيسية لكل بطولة لتظهر في شريط البطولات بالصفحة الرئيسية.',
+  'tl.missingCovers': '{n} بطولة بدون صورة رئيسية',
+  'tl.location': 'المكان',
+  'tl.locationPh': 'مثال: نادي الزمالك، القاهرة',
+  'tl.anyPlace': 'كل الأماكن',
+  'tl.whenLabel': 'الموعد',
+  'tl.when.any': 'كل المواعيد',
+  'tl.when.week': 'خلال 7 أيام',
+  'tl.when.month': 'خلال 30 يوماً',
+  'tl.when.upcoming': 'القادمة',
+  'tl.when.past': 'السابقة',
+  'tl.clear': 'مسح التصفية',
 } as const;
 
 export type MessageKey = keyof typeof ar;
+
+/** Arabic count of days: يومين، 5 أيام، 12 يوماً. */
+export function days(n: number): string {
+  if (n === 2) return 'يومين';
+  if (n >= 3 && n <= 10) return `${n} أيام`;
+  return `${n} يوماً`;
+}
 
 export function t(key: MessageKey, vars: Record<string, string | number> = {}): string {
   return ar[key].replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
@@ -666,3 +717,4 @@ export function t(key: MessageKey, vars: Record<string, string | number> = {}): 
 export const numberFmt = new Intl.NumberFormat('ar-EG-u-nu-latn');
 export const dateFmt = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric' });
 export const dateTimeFmt = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+export const timeFmt = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { hour: 'numeric', minute: '2-digit' });

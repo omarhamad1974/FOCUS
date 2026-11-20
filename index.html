@@ -13,9 +13,48 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    /* Load splash: the Pingo logo assembles itself, once per browser session. */
+    #splash { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; align-content: center; gap: 18px;
+      background: radial-gradient(circle at 50% 42%, #eafbe3 0, #f7fdf4 38%, #ffffff 70%); cursor: pointer;
+      font-family: 'Cairo', system-ui, sans-serif; color: #0c1f4a;
+      animation: splash-failsafe .3s ease 4.5s forwards; }
+    #splash.splash-wait .splash-logo, #splash.splash-wait .splash-sub { visibility: hidden; }
+    .splash-logo { position: relative; width: min(76vw, 340px); aspect-ratio: 640 / 428; }
+    .splash-logo > * { position: absolute; display: block; height: auto; }
+    .splash-logo img { user-select: none; -webkit-user-drag: none; pointer-events: none; }
+    .splash-ball { width: 10.6%; aspect-ratio: 1; left: 82.97%; top: 17.29%; border-radius: 50%;
+      background: radial-gradient(circle at 36% 32%, #ffffff 0 34%, #eef3f8 58%, #c9d4e2 100%);
+      box-shadow: inset -2px -3px 5px rgba(12, 31, 74, .18), 0 2px 5px rgba(12, 31, 74, .25); }
+    .splash-ring { width: 10.6%; aspect-ratio: 1; left: 82.97%; top: 17.29%; border-radius: 50%;
+      border: 3px solid #7ed957; opacity: 0; }
+    .splash-sub { margin: 0; font-size: clamp(17px, 4.6vw, 22px); font-weight: 800; letter-spacing: 0; text-align: center; }
+    .splash-sub::after { content: ''; display: block; height: 4px; width: 56px; margin: 8px auto 0; border-radius: 4px; background: #7ed957; }
+    .splash-skip { position: absolute; bottom: max(22px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+      font: 700 14px 'Cairo', system-ui, sans-serif; color: #66758c; background: none; border: 0; padding: 8px 18px; border-radius: 999px; cursor: pointer; }
+    .splash-skip:hover, .splash-skip:focus-visible { color: #0c1f4a; background: #eafbe3; outline: none; }
+    @keyframes splash-failsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
+  </style>
 </head>
 <body>
   <div id="app"></div>
+  <div id="splash" class="splash-wait" role="img" aria-label="بينجو: ملتقى لاعبي تنس الطاولة">
+    <div class="splash-logo" dir="ltr">
+      <img class="sp-swoosh-red" src="./brand/splash/swoosh-red.png" alt="" style="left:13.44%;top:21.50%;width:45.00%">
+      <img class="sp-swoosh-blue" src="./brand/splash/swoosh-blue.png" alt="" style="left:11.56%;top:73.36%;width:78.75%">
+      <img class="sp-paddle" src="./brand/splash/paddle.png" alt="" style="left:49.22%;top:0.00%;width:47.34%">
+      <img class="sp-p" src="./brand/splash/p.png" alt="" style="left:0.00%;top:47.20%;width:29.38%">
+      <img class="sp-i" src="./brand/splash/i.png" alt="" style="left:24.53%;top:44.16%;width:14.37%">
+      <img class="sp-n" src="./brand/splash/n.png" alt="" style="left:32.81%;top:54.21%;width:24.06%">
+      <img class="sp-g" src="./brand/splash/g.png" alt="" style="left:54.22%;top:53.04%;width:25.16%">
+      <img class="sp-o" src="./brand/splash/o.png" alt="" style="left:76.88%;top:51.87%;width:23.12%">
+      <span class="splash-ring"></span>
+      <span class="splash-ball"></span>
+    </div>
+    <p class="splash-sub">ملتقى لاعبي تنس الطاولة</p>
+    <button type="button" class="splash-skip">تخطي</button>
+  </div>
+  <script src="./splash.js"></script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

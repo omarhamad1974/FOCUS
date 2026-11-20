@@ -8,6 +8,10 @@
 // POST JSON { action: 'claim', code, email, password, gender? } -> { ok: true }
 //   Anyone holding a player's claim code (made by batch entry, migration 0008): creates a
 //   ready-to-use account for that player and attaches their directory row and results.
+// POST JSON { action: 'batch', names: [...], club?, gender?, tournament_id? } -> { rows: [...] }   admins only.
+//   Each name without an account gets a temporary account (no real email) with a claim code
+//   (migration 0011). With tournament_id, every name is put on that tournament's waiting list.
+//   The player completes registration later with action 'claim' on the same account.
 // POST JSON { action: 'delete_users', user_ids: [...] }   -> { deleted, skipped }   admins only.
 //   Admin accounts and the caller's own account are never deleted. Tournaments and
 //   articles of a deleted account move to the calling admin so they are not lost.
@@ -97,6 +101,15 @@ Deno.serve(async (req) => {
     return json({ id: data.user?.id });
   }
 
+  if (body.action === 'batch') {
+    if (!isAdmin) return json({ error: 'only an admin' }, 403);
+    try {
+      return json(await batch(service, body));
+    } catch (e) {
+      return json({ error: `batch failed: ${e instanceof Error ? e.message : String(e)}` }, 500);
+    }
+  }
+
   if (body.action === 'delete_users') {
     if (!isAdmin) return json({ error: 'only an admin can delete accounts' }, 403);
     try {
@@ -117,6 +130,23 @@ async function claim(service: any, body: Record<string, unknown>): Promise<Respo
   const password = String(body.password ?? '');
   const gender = ['male', 'female'].includes(String(body.gender)) ? String(body.gender) : '';
   if (!code || !email || password.length < 6) return json({ error: 'code, email and password (6+) required' }, 400);
+
+  // A temporary account (admin batch, 0011): the same account gets the player's email and password.
+  const { data: tempId, error: tempErr } = await service.rpc('temp_account_for', { code });
+  if (tempErr && !/temp_account_for/.test(tempErr.message)) return json({ error: tempErr.message }, 500);
+  if (tempId) {
+    const { data: prof } = await service.from('profiles').select('full_name, club, gender').eq('id', tempId).maybeSingle();
+    const { error } = await service.auth.admin.updateUserById(tempId, {
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: prof?.full_name ?? '', club: prof?.club ?? '', gender: gender || prof?.gender || '', temp: false },
+    });
+    if (error) return json({ error: error.message }, 400);
+    const { error: finErr } = await service.rpc('finish_temp_account', { account: tempId, gender: gender || null });
+    if (finErr) return json({ error: finErr.message }, 500);
+    return json({ ok: true });
+  }
 
   const { data: info, error: infoErr } = await service.rpc('claim_info', { code });
   if (infoErr) return json({ error: infoErr.message }, 500);
@@ -169,4 +199,59 @@ async function deleteUsers(service: any, adminId: string, raw: unknown) {
   // Ids with no profile (already deleted) count as done, admins and yourself as skipped.
   const gone = asked.filter((id) => !found.has(id)).length;
   return { deleted: deleted + gone, skipped: asked.length - ids.length - gone, failed };
+}
+
+const TEMP_DOMAIN = 'temp.pingo.example';
+
+// deno-lint-ignore no-explicit-any
+async function batch(service: any, body: Record<string, unknown>) {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const raw of Array.isArray(body.names) ? body.names : []) {
+    const name = String(raw ?? '').replace(/\s+/g, ' ').trim();
+    if (!name || name.length > 80 || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    names.push(name);
+  }
+  if (!names.length) throw new Error('names required');
+  if (names.length > 300) throw new Error('too many names');
+  const club = String(body.club ?? '').trim() || null;
+  const gender = ['male', 'female'].includes(String(body.gender)) ? String(body.gender) : null;
+  const tournament = String(body.tournament_id ?? '').trim() || null;
+
+  const { data: matches, error: mErr } = await service.rpc('batch_match_names', { names });
+  if (mErr) throw new Error(`match names: ${mErr.message}`);
+  type Row = { name: string; account: string | null; kind: string; claim_code: string | null };
+  const rows: Row[] = (matches ?? []).map((m: Row) => ({ ...m }));
+
+  // New temporary accounts, a few at a time.
+  const fresh = rows.filter((r) => !r.account);
+  for (let i = 0; i < fresh.length; i += 8) {
+    await Promise.all(fresh.slice(i, i + 8).map(async (r) => {
+      const { data, error } = await service.auth.admin.createUser({
+        email: `p-${crypto.randomUUID()}@${TEMP_DOMAIN}`,
+        password: crypto.randomUUID() + crypto.randomUUID(),
+        email_confirm: true,
+        user_metadata: { full_name: r.name, club: club ?? '', gender: gender ?? '', temp: true },
+      });
+      if (error || !data.user) { r.kind = 'failed'; return; }
+      const { data: code, error: sErr } = await service.rpc('setup_temp_player', { account: data.user.id, club, gender });
+      if (sErr) { await service.auth.admin.deleteUser(data.user.id); r.kind = 'failed'; return; }
+      r.account = data.user.id;
+      r.claim_code = code;
+      r.kind = r.kind === 'many' ? 'new_many' : 'new';
+    }));
+  }
+
+  let waitlisted = 0;
+  if (tournament) {
+    const ids = rows.filter((r) => r.account).map((r) => r.account);
+    const { data: n, error: wErr } = await service.rpc('waitlist_add', { t: tournament, accounts: ids });
+    if (wErr) throw new Error(`waiting list: ${wErr.message}`);
+    waitlisted = n ?? 0;
+  }
+  return {
+    waitlisted,
+    rows: rows.map((r) => ({ full_name: r.name, id: r.account, kind: r.kind, claim_code: r.claim_code })),
+  };
 }

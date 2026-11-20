@@ -1583,27 +1583,40 @@ function dirPicker(exclude: Set<string>, title: MessageKey): string {
 }
 
 let linking: string | null = null;
+/** Players with a claim code shown on the players page, for "print all". */
+let printable: claim.PrintItem[] = [];
 function playersPage(): string {
   if (!dir) { loadDir(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
   if (linking && !people) { remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e))); }
   const linkedProfiles = new Set(dir.filter((d) => d.profile_id).map((d) => d.profile_id));
   const shown = dirFilter ? searchDirectory(dir, dirFilter, 500) : dir;
+  // Claim codes and temporary accounts are handled by the admin only.
+  const adm = isAdmin();
+  const temps = adm ? claim.tempCodes() : new Map<string, string | null>();
+  const codeOf = (d: remote.DirPlayer): [string, string] | null => {
+    if (!adm) return null;
+    if (d.profile_id && temps.get(d.profile_id)) return [temps.get(d.profile_id)!, d.profile_id];
+    if (!d.profile_id && d.claim_code) return [d.claim_code, d.id];
+    return null;
+  };
   const row = (d: remote.DirPlayer) => `<div class="chip ro" style="flex-wrap:wrap">${avatar(d.full_name, content.photoOf(d.profile_id ?? undefined), content.genderOf(d.profile_id ?? undefined))}
     <span><b dir="auto">${esc(d.full_name)}</b>${d.club ? ` <span class="muted small" dir="auto">· ${esc(d.club)}</span>` : ''}
     ${d.phone ? `<br><span class="muted small" dir="ltr">${esc(d.phone)}</span>` : ''}</span>
     <span class="row" style="margin-inline-start:auto;gap:6px">
-      <span class="badge ${d.profile_id ? 'green' : ''}">${d.profile_id ? t('dir.account') : t('dir.noAccount')}</span>
+      ${d.profile_id && temps.has(d.profile_id) ? `<span class="badge gold">${t('batch.temp')}</span>`
+        : `<span class="badge ${d.profile_id ? 'green' : ''}">${d.profile_id ? t('dir.account') : t('dir.noAccount')}</span>`}
       ${d.profile_id ? '' : `<button class="btn soft small" data-act="link-open" data-id="${d.id}">🔗 ${t('dir.linkTo')}</button>`}
-      ${d.profile_id || d.claim_code ? '' : `<button class="btn soft small" data-act="claim-make" data-id="${d.id}">🎟️ ${t('claim.make')}</button>`}
+      ${!adm || d.profile_id || d.claim_code ? '' : `<button class="btn soft small" data-act="claim-make" data-id="${d.id}">🎟️ ${t('claim.make')}</button>`}
     </span>
-    ${!d.profile_id && d.claim_code ? `<div style="flex-basis:100%;display:flex">${claim.codeTools(d.full_name, d.claim_code, d.id)}</div>` : ''}
+    ${codeOf(d) ? `<div style="flex-basis:100%;display:flex">${claim.codeTools(d.full_name, codeOf(d)![0], codeOf(d)![1])}</div>` : ''}
     ${linking === d.id ? `<div style="flex-basis:100%">${hint('dir.linkHint')}
       ${people ? `<div class="row"><select class="input" id="linkSel" style="flex:1"><option value="">${t('dir.choose')}</option>
         ${people.filter((p) => !linkedProfiles.has(p.id)).map((p) => `<option value="${p.id}">${esc(p.full_name)}${p.phone ? ' · ' + esc(p.phone) : ''}</option>`).join('')}
       </select><button class="btn green small" data-act="link-save" data-id="${d.id}">${t('common.save')}</button></div>` : '⏳'}</div>` : ''}
   </div>`;
-  const coded = dir.filter((d) => !d.profile_id && d.claim_code);
-  return `${claim.batchCard()}
+  const coded = dir.filter((d) => codeOf(d));
+  printable = coded.map((d) => ({ full_name: d.full_name, claim_code: codeOf(d)![0], club: d.club }));
+  return `${adm ? claim.batchCard() : ''}
   <div class="card"><h2>👥 ${t('dir.title')}</h2>${hint('dir.hint')}
     ${coded.length ? `<button type="button" class="btn soft small" data-act="dir-print" style="margin-block-end:8px">🖨️ ${t('batch.printAll')} (${n(coded.length)})</button>` : ''}
     <input class="input" id="dirFilter" data-act="dir-filter" placeholder="${esc(t('dir.search'))}" value="${esc(dirFilter)}" dir="auto">
@@ -1980,10 +1993,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act.startsWith('role-')) { void roleAction(act, el); return; }
-  if (act === 'dir-print' && dir) {
-    claim.printCards(dir.filter((d) => !d.profile_id && d.claim_code).map((d) => ({ full_name: d.full_name, claim_code: d.claim_code!, club: d.club })));
-    return;
-  }
+  if (act === 'dir-print') { if (printable.length) claim.printCards(printable); return; }
   if (/^(batch|claim)-/.test(act)) { void claim.onClick(act, el); return; }
   if (/^(media|assist)-/.test(act) && tm) { void mediaAction(act, el, tm); return; }
   if (act === 'car-go' || act === 'car-step') {
@@ -2591,7 +2601,10 @@ window.addEventListener('hashchange', () => {
   route();
 });
 setRender(route);
-claim.setOnAdded(() => { dir = null; route(); });
+claim.setOnAdded(() => { dir = null; regCache.clear(); route(); });
+claim.setTournaments(() => data.tournaments
+  .filter((x) => x.stage === 'setup')
+  .map((x) => ({ id: x.id, name: x.name, open: registrationOf(x).open })));
 claim.setAfterClaim(async () => { await refreshFromServer(); });
 admin.setUsersView(usersPage);
 admin.setAfterBulk(async () => { await refreshFromServer(); route(); });

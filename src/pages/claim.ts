@@ -1,9 +1,10 @@
 /**
  * Batch player entry and claim codes.
- * - Organizers paste names (one per line): each becomes a directory player, ready for
- *   tournaments, with a personal claim code to share on WhatsApp or print.
+ * - The admin pastes names (one per line): each new name gets a temporary account with a
+ *   personal claim code to share on WhatsApp or print, and the batch can go straight onto a
+ *   tournament's waiting list for the organizer to approve.
  * - #/claim/CODE lets that player set their own email, password, gender and photo;
- *   the profile (with every result) moves to the new account.
+ *   the temporary account becomes theirs (directory players from 0008 get a new account).
  */
 import { numberFmt, t, type MessageKey } from '../i18n/ar';
 import * as remote from '../data/remote';
@@ -47,8 +48,9 @@ export function codeTools(name: string, code: string, playerId?: string): string
 let batchText = '';
 let batchClub = '';
 let batchGender: remote.Gender | '' = '';
+let batchTournament = '';
 let batchBusy = false;
-let result: remote.BatchRow[] | null = null;
+let result: { rows: remote.BatchRow[]; waitlisted: number; tournament: string } | null = null;
 let onAdded: () => void = () => {};
 /** Main page hook: reload the directory after a batch. */
 export const setOnAdded = (fn: () => void) => { onAdded = fn; };
@@ -56,13 +58,51 @@ let afterClaim: () => Promise<void> = async () => {};
 /** Main page hook: reload tournaments after a signed-in player claims a profile. */
 export const setAfterClaim = (fn: () => Promise<void>) => { afterClaim = fn; };
 
+/** Tournaments that can still take players (groups not drawn yet), from the main page. */
+export interface OpenTournament { id: string; name: string; open: boolean }
+let tournaments: () => OpenTournament[] = () => [];
+export const setTournaments = (fn: () => OpenTournament[]) => { tournaments = fn; };
+
+/* Temporary accounts (profile id → claim code), for the directory list. Admin only. */
+let temps: Map<string, string | null> | null = null;
+let tempsBusy = false;
+export function tempCodes(): Map<string, string | null> {
+  if (!temps && !tempsBusy) {
+    tempsBusy = true;
+    remote.tempAccounts()
+      .then((rows) => { temps = new Map(rows.map((r) => [r.id, r.claim_code])); })
+      .catch(() => { temps = new Map(); })
+      .finally(() => { tempsBusy = false; render(); });
+  }
+  return temps ?? new Map();
+}
+export const resetTemps = () => { temps = null; };
+
 function genderChoice(): string {
   const opt = (v: remote.Gender | '', label: MessageKey) =>
     `<button type="button" data-act="batch-gender" data-v="${v}" aria-pressed="${batchGender === v}">${v ? avatar('', null, v) : '👥'} ${t(label)}</button>`;
   return `<div class="choice batch-gender">${opt('', 'batch.mixed')}${opt('male', 'auth.male')}${opt('female', 'auth.female')}</div>`;
 }
 
-/** The card on the players page. */
+function tournamentChoice(): string {
+  const list = tournaments();
+  if (batchTournament && !list.some((x) => x.id === batchTournament)) batchTournament = '';
+  return `<label class="field"><span>🏆 ${t('batch.tournament')}</span>
+    <select class="input" id="bTour">
+      <option value="">${t('batch.noTournament')}</option>
+      ${list.map((x) => `<option value="${esc(x.id)}" ${x.id === batchTournament ? 'selected' : ''}>${esc(x.name)}${x.open ? '' : ` · ${t('batch.regClosed')}`}</option>`).join('')}
+    </select></label>
+    <p class="muted small" style="margin-block-start:-6px">${t(list.length ? 'batch.tournamentHint' : 'batch.noOpenTournaments')}</p>`;
+}
+
+function keepBatch(): void {
+  const names = document.getElementById('bNames') as HTMLTextAreaElement | null;
+  if (names) batchText = names.value;
+  if (document.getElementById('bClub')) batchClub = val('bClub');
+  if (document.getElementById('bTour')) batchTournament = val('bTour');
+}
+
+/** The card on the players page (admin only). */
 export function batchCard(): string {
   const count = parseNames(batchText).length;
   return `<div class="card batch-card rise">
@@ -71,31 +111,47 @@ export function batchCard(): string {
       <label class="field"><span>${t('batch.names')}</span>
         <textarea class="input batch-names" id="bNames" data-act="batch-names" rows="7" dir="auto" placeholder="${esc(t('batch.placeholder'))}">${esc(batchText)}</textarea></label>
       <p class="muted small batch-count" id="bCount">${t('batch.count', { n: numberFmt.format(count) })}</p>
+      ${tournamentChoice()}
       <label class="field"><span>${t('batch.club')}</span><input class="input" id="bClub" dir="auto" value="${esc(batchClub)}"></label>
       <span class="lbl">${t('batch.gender')}</span>
       ${genderChoice()}
       <p class="muted small">${t('batch.genderHint')}</p>
       <button class="btn green block" type="submit" id="bSubmit" ${batchBusy || !count ? 'disabled' : ''}>${batchBusy ? '<span class="spin"></span>' : '➕'} ${t('batch.submit', { n: numberFmt.format(count) })}</button>
+      ${batchBusy ? `<p class="muted small center">${t('batch.working')}</p>` : ''}
     </form>
   </div>
-  ${result ? resultCard(result) : ''}`;
+  ${result ? resultCard() : ''}`;
 }
 
-function resultCard(rows: remote.BatchRow[]): string {
+const KIND_BADGE: Record<remote.BatchKind, [string, MessageKey]> = {
+  new: ['green', 'batch.kind.new'],
+  new_many: ['gold', 'batch.kind.newMany'],
+  temp: ['', 'batch.kind.temp'],
+  account: ['blue', 'batch.kind.account'],
+  failed: ['red', 'batch.kind.failed'],
+};
+
+function resultCard(): string {
+  const { rows, waitlisted, tournament } = result!;
   const withCode = rows.filter((r) => r.claim_code);
+  const made = rows.filter((r) => r.kind === 'new' || r.kind === 'new_many').length;
+  const tName = tournament ? tournaments().find((x) => x.id === tournament)?.name ?? '' : '';
   return `<div class="card batch-result pop" id="batchResult">
-    <div class="sec-head"><h2>🎉 ${t('batch.done', { n: numberFmt.format(rows.length) })}</h2>
+    <div class="sec-head"><h2>🎉 ${t('batch.done', { n: numberFmt.format(made) })}</h2>
       <button type="button" class="btn ghost small" data-act="batch-close">${icon('x', 16)} ${t('batch.close')}</button></div>
+    ${tournament ? `<div class="hint" style="background:var(--green-soft)">📝 ${esc(t('batch.waitlisted', { n: numberFmt.format(waitlisted), name: tName }))}</div>` : ''}
     ${hint('batch.doneHint')}
     ${withCode.length ? `<div class="row" style="margin-block:8px">
       <button type="button" class="btn soft small" data-act="batch-copy-all">📋 ${t('batch.copyAll')}</button>
       <button type="button" class="btn soft small" data-act="batch-print">🖨️ ${t('batch.print')}</button></div>` : ''}
-    <div class="stack">${rows.map((r) => `<div class="chip ro batch-row">
+    <div class="stack">${rows.map((r) => {
+      const [cls, key] = KIND_BADGE[r.kind] ?? KIND_BADGE.failed;
+      return `<div class="chip ro batch-row">
       ${avatar(r.full_name, null, batchGender || null)}<b dir="auto">${esc(r.full_name)}</b>
-      ${r.existed ? `<span class="badge">${t('batch.existed')}</span>` : ''}
-      ${r.has_account ? `<span class="badge green">${t('batch.hasAccount')}</span>` : ''}
+      <span class="badge ${cls}">${t(key)}</span>
       ${r.claim_code ? codeTools(r.full_name, r.claim_code) : ''}
-    </div>`).join('')}</div>
+    </div>`;
+    }).join('')}</div>
   </div>`;
 }
 
@@ -233,26 +289,25 @@ function keepTyped(): void {
 export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
   switch (act) {
     case 'batch-gender':
-      batchText = (document.getElementById('bNames') as HTMLTextAreaElement | null)?.value ?? batchText;
-      batchClub = val('bClub');
+      keepBatch();
       batchGender = (el.dataset.v as remote.Gender) || '';
       render(); return true;
     case 'batch-close':
       result = null; render(); return true;
     case 'batch-copy-all':
-      if (result) await copy(result.filter((r) => r.claim_code).map((r) => `${r.full_name}: ${claimLink(r.claim_code!)}`).join('\n'));
+      if (result) await copy(result.rows.filter((r) => r.claim_code).map((r) => `${r.full_name}: ${claimLink(r.claim_code!)}`).join('\n'));
       return true;
     case 'batch-print':
-      if (result) printCards(result.filter((r) => r.claim_code).map((r) => ({ full_name: r.full_name, claim_code: r.claim_code!, club: batchClub || null })));
+      if (result) printCards(result.rows.filter((r) => r.claim_code).map((r) => ({ full_name: r.full_name, claim_code: r.claim_code!, club: batchClub || null })));
       return true;
     case 'claim-copy':
       await copy(claimLink(el.dataset.code!)); return true;
     case 'claim-make':
-      try { await remote.renewClaimCode(el.dataset.id!); onAdded(); } catch (e) { toast(authErr(e)); }
+      try { await remote.renewClaimCode(el.dataset.id!); temps = null; onAdded(); } catch (e) { toast(authErr(e)); }
       return true;
     case 'claim-renew': {
       if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = `♻️ ${t('claim.renewHint')}`; return true; }
-      try { await remote.renewClaimCode(el.dataset.id!); toast(`✅ ${t('claim.renewed')}`); onAdded(); } catch (e) { toast(authErr(e)); }
+      try { await remote.renewClaimCode(el.dataset.id!); toast(`✅ ${t('claim.renewed')}`); temps = null; onAdded(); } catch (e) { toast(authErr(e)); }
       return true;
     }
     case 'claim-arm':
@@ -304,15 +359,17 @@ export async function onChange(el: HTMLInputElement): Promise<boolean> {
 
 export async function onSubmit(kind: string, form: HTMLFormElement): Promise<boolean> {
   if (kind === 'batch-add') {
-    batchText = (document.getElementById('bNames') as HTMLTextAreaElement).value;
-    batchClub = val('bClub');
+    keepBatch();
     const names = parseNames(batchText);
     if (!names.length) { toast(t('batch.empty')); return true; }
     if (names.length > MAX_BATCH) { toast(t('batch.tooMany')); return true; }
     batchBusy = true; render();
     try {
-      result = await remote.batchAddPlayers(names, batchClub || null, batchGender || null);
+      const tournament = batchTournament;
+      const r = await remote.batchPlayers({ names, club: batchClub || null, gender: batchGender || null, tournament_id: tournament || null });
+      result = { rows: r.rows ?? [], waitlisted: r.waitlisted ?? 0, tournament };
       batchText = '';
+      temps = null;
       confetti();
       onAdded();
     } catch (e) { toast(authErr(e)); }

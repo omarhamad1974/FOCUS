@@ -197,14 +197,36 @@ function scoreText(m: Match): string {
   return pair(s.gamesA, s.gamesB);
 }
 
+/** A tournament the signed-in organizer created, or helps with as score assistant. */
+function isMine(tm: Tournament): boolean {
+  const me = session.profile?.id;
+  return !!me && (tm.organizerId === me || assisting.has(tm.id));
+}
+
 /* ------------------------------------------------------------------ shell */
+
+/**
+ * One-click shortcuts to each role's own area, shown under the header on every
+ * page for organizers, sellers and trainers. Someone with several roles sees each.
+ */
+function workspaceBar(): string {
+  if (!online() || !session.profile) return '';
+  const here = location.hash;
+  const links: [string, string, MessageKey, MessageKey, boolean][] = [];
+  if (canOrganize()) links.push(['#/org', 'trophy', 'ws.myTournaments', 'ws.myTournamentsTip', here.startsWith('#/org') || here.startsWith('#/tournaments/mine')]);
+  if (isSeller()) links.push(['#/shop/manage', 'shop', 'ws.myProducts', 'ws.myProductsTip', here.startsWith('#/shop/manage')]);
+  if (isTrainer()) links.push(['#/training/manage', 'coach', 'ws.mySessions', 'ws.mySessionsTip', here.startsWith('#/training/manage')]);
+  if (!links.length) return '';
+  return `<nav class="wsbar" aria-label="${esc(t('ws.label'))}"><span class="ws-label">${icon('grid', 16)} <span class="ws-name">${t('ws.label')}</span></span>
+    ${links.map(([href, ic, label, tip, on]) => `<a class="ws-btn" href="${href}" title="${esc(t(tip))}" ${on ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>`;
+}
 
 type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'me';
 
 function section(): Section {
   const p = location.hash.replace(/^#\/?/, '').split('/')[0];
   if (p === 'news' || p === 'shop' || p === 'training') return p;
-  if (p === 'tournaments' || p === 't' || p === 'new') return 'tournaments';
+  if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org') return 'tournaments';
   if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
   return 'home';
 }
@@ -248,6 +270,7 @@ function shell(body: string): void {
     <span class="pv-roles">${PREVIEWS.map((r) => `<button data-act="pv-set" data-v="${r}" ${r === rendering.preview ? 'aria-pressed="true"' : ''}>${t(`sim.role.${r}` as MessageKey)}</button>`).join('')}</span>
     <a class="btn small gold" href="#/admin/sim">${t('sim.steps')}</a>
     <button class="btn small soft" data-act="pv-set" data-v="off">${icon('x', 14)} ${t('sim.exit')}</button></div>` : ''}
+  ${workspaceBar()}
   <main class="page">${body}</main>
   ${nav.length > 2 ? `<nav class="bottomnav" aria-label="${esc(t('nav.label'))}">${nav.map(([k, href, ic, label]) =>
     `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}
@@ -452,7 +475,7 @@ function startCarousels(): void {
   });
 }
 
-type ListFilter = 'all' | PublicStatus;
+type ListFilter = 'all' | 'mine' | PublicStatus;
 const listFilters = { time: 'any' as TimeFilter, place: '' };
 
 /** Places already used, offered as suggestions when typing a location. */
@@ -465,13 +488,18 @@ function tournamentsPage(filterArg?: string): string {
   const ts = data.tournaments;
   const players = ts.reduce((s, x) => s + x.players.length, 0);
   const done = ts.reduce((s, x) => s + Object.values(x.matches).filter((m) => summarize(m).winner && m.aId && m.bId).length, 0);
-  const filter: ListFilter = (PUBLIC_STATUSES as string[]).includes(filterArg ?? '') ? filterArg as PublicStatus : 'all';
+  const canMine = canOrganize() && !!session.profile;
+  const filter: ListFilter = filterArg === 'mine' && canMine ? 'mine'
+    : (PUBLIC_STATUSES as string[]).includes(filterArg ?? '') ? filterArg as PublicStatus : 'all';
+  // The organizer shortcut lands here: open it in organizer view so the tools are ready.
+  if (filter === 'mine' && prefs.view !== 'organizer') prefs.view = 'organizer';
   const places = tournamentLocations(ts);
   if (listFilters.place && !places.includes(listFilters.place)) listFilters.place = '';
   const inWindow = ts.filter((x) => matchesTime(x, listFilters.time) && matchesLocation(x, listFilters.place));
   const counts = new Map<ListFilter, number>([['all', inWindow.length]]);
   for (const x of inWindow) { const st = publicStatus(x); counts.set(st, (counts.get(st) ?? 0) + 1); }
-  const shown = sortForListing(inWindow).filter((x) => filter === 'all' || publicStatus(x) === filter);
+  if (canMine) counts.set('mine', inWindow.filter(isMine).length);
+  const shown = sortForListing(inWindow).filter((x) => filter === 'all' || (filter === 'mine' ? isMine(x) : publicStatus(x) === filter));
   const filtered = listFilters.time !== 'any' || !!listFilters.place;
   shown.filter((x) => publicStatus(x) === 'finished').forEach(loadPhotos);
   const chip = (k: ListFilter, ic: string) => `<a class="fchip" href="#/tournaments${k === 'all' ? '' : '/' + k}" ${k === filter ? 'aria-current="true"' : ''}>${ic} ${t(`tl.f.${k}` as MessageKey)} <b>${n(counts.get(k) ?? 0)}</b></a>`;
@@ -496,7 +524,7 @@ function tournamentsPage(filterArg?: string): string {
     <div class="stat"><b>${n(done)}</b><small>${t('home.statMatches')}</small></div>
   </div>
   ${org ? samplePanel() : ''}
-  <div class="sec-head"><h2>${icon('trophy', 22)} ${t('tl.allTitle')}</h2></div>
+  <div class="sec-head"><h2>${icon('trophy', 22)} ${t(filter === 'mine' ? 'ws.myTournaments' : 'tl.allTitle')}</h2></div>
   <div class="fbar">
     <label class="fsel">${icon('calendar', 16)}
       <select data-act="tl-time" aria-label="${esc(t('tl.whenLabel'))}">${TIME_FILTERS.map((f) => `<option value="${f}" ${f === listFilters.time ? 'selected' : ''}>${t(`tl.when.${f}` as MessageKey)}</option>`).join('')}</select></label>
@@ -504,8 +532,9 @@ function tournamentsPage(filterArg?: string): string {
       <select data-act="tl-place" aria-label="${esc(t('tl.location'))}" ${places.length ? '' : 'disabled'}><option value="">${t('tl.anyPlace')}</option>${places.map((p) => `<option ${p === listFilters.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
     ${filtered ? `<button class="btn ghost small" data-act="tl-clear">${icon('x', 14)} ${t('tl.clear')}</button>` : ''}
   </div>
-  <nav class="fchips" aria-label="${esc(t('tl.filter'))}">${chip('all', '🏓')}${chip('open', '📝')}${chip('running', '⚡')}${chip('upcoming', '⏳')}${chip('finished', '🏆')}</nav>
-  ${!ts.length ? `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`
+  <nav class="fchips" aria-label="${esc(t('tl.filter'))}">${canMine ? chip('mine', '🛠️') : ''}${chip('all', '🏓')}${chip('open', '📝')}${chip('running', '⚡')}${chip('upcoming', '⏳')}${chip('finished', '🏆')}</nav>
+  ${filter === 'mine' && !shown.length && !filtered ? empty('trophy', t('ws.noMine'), `<a class="btn gold small" href="#/new">➕ ${t('home.create')}</a>`)
+    : !ts.length ? `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`
     : shown.length ? `<div class="grid tgrid">${shown.map(tournamentCard).join('')}</div>`
     : empty('search', t('tl.noneFilter'), filtered ? `<button class="btn soft small" data-act="tl-clear">${t('tl.clear')}</button>` : `<a class="btn soft small" href="#/tournaments">${t('tl.f.all')}</a>`)}
   ${org && !online() ? `<div class="card">
@@ -1546,6 +1575,71 @@ function playersPage(): string {
   </div>`;
 }
 
+/* Organizer dashboard */
+
+/** Everything an organizer runs in one place: current tournaments, join requests waiting, matches left. */
+function orgDashboard(): string {
+  const mine = sortForListing(data.tournaments.filter(isMine));
+  const current = mine.filter((x) => publicStatus(x) !== 'finished');
+  const finished = mine.filter((x) => publicStatus(x) === 'finished');
+  const owned = (x: Tournament) => x.organizerId === session.profile?.id || isAdmin();
+  // Join requests matter while a tournament is still being set up.
+  const regTs = current.filter((x) => x.stage === 'setup' && owned(x));
+  regTs.forEach((x) => { if (!regCache.has(x.id)) loadRegs(x.id); });
+  const waiting = regTs.flatMap((x) => (regCache.get(x.id) ?? []).filter((r) => r.status === 'pending').map((r) => ({ tm: x, r })));
+  const left = current.reduce((s, x) => { const p = progress(x); return s + Math.max(0, p.total - p.done); }, 0);
+  const players = current.reduce((s, x) => s + x.players.length, 0);
+  const loadingRegs = regTs.some((x) => !regCache.has(x.id));
+
+  const row = (tm: Tournament) => {
+    const st = publicStatus(tm);
+    const p = progress(tm);
+    const pend = (regCache.get(tm.id) ?? []).filter((r) => r.status === 'pending').length;
+    const reg = registrationOf(tm);
+    const helper = !owned(tm);
+    const stageKey: MessageKey = (['stage.setup', 'stage.groups', 'stage.knockout', 'stage.champion'] as MessageKey[])[stageIndex(tm)];
+    return `<article class="dash-t rise">
+      <a class="dash-cover" href="#/t/${tm.id}">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}</a>
+      <div class="dash-body">
+        <div class="row between"><h3 dir="auto"><a href="#/t/${tm.id}">${esc(tm.name)}</a></h3>${statusBadge(st, '')}</div>
+        <div class="tc-meta">
+          <span>🧭 ${t(stageKey)}</span>
+          ${tm.date ? `<span>${icon('calendar', 15)} ${dateFmt.format(new Date(tm.date))}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}</span>` : ''}
+          <span>${icon('users', 15)} ${n(tm.players.length)}${reg.maxPlayers && tm.stage === 'setup' ? ` / ${n(reg.maxPlayers)}` : ''} ${t('t.players')}</span>
+          ${helper ? `<span class="badge blue">${t('dash.helper')}</span>` : ''}
+        </div>
+        ${p.total ? `${xp(p.done, p.total)}<small class="muted">${t('dash.matchesDone', { done: n(p.done), total: n(p.total) })}</small>` : ''}
+        <div class="row dash-acts">
+          ${tm.stage === 'setup' && !helper ? `<a class="btn small ${pend ? 'gold' : 'soft'}" href="#/t/${tm.id}/register">📝 ${t('dash.requests')}${pend ? ` <span class="badge red">${n(pend)}</span>` : ''}</a>` : ''}
+          ${tm.stage !== 'setup' ? `<a class="btn small soft" href="#/t/${tm.id}/${tm.stage === 'knockout' ? 'knockout' : 'groups'}">⚔️ ${t('dash.matches')}</a>` : ''}
+          ${!helper ? `<a class="btn small soft" href="#/t/${tm.id}/settings">⚙️ ${t('dash.settings')}</a>` : ''}
+        </div>
+      </div></article>`;
+  };
+
+  return `<section class="banner b-org slim"><div><h1>${icon('trophy', 26)} ${t('dash.orgTitle')}</h1><p>${t('dash.orgHint')}</p></div>
+    <div class="row"><a class="btn gold" href="#/new">➕ ${t('home.create')}</a><a class="btn soft" href="#/players">👥 ${t('dir.link')}</a></div></section>
+  <div class="stats dash-stats">
+    <div class="stat">${icon('trophy', 22)}<b>${n(current.length)}</b><small>${t('dash.statCurrent')}</small></div>
+    <div class="stat ${waiting.length ? 'hot' : ''}">${icon('bell', 22)}<b>${loadingRegs ? '…' : n(waiting.length)}</b><small>${t('dash.statWaiting')}</small></div>
+    <div class="stat">${icon('ball', 22)}<b>${n(left)}</b><small>${t('dash.statLeft')}</small></div>
+    <div class="stat">${icon('users', 22)}<b>${n(players)}</b><small>${t('dash.statPlayers')}</small></div>
+  </div>
+  <div class="card"><h2>${icon('bell', 22)} ${t('dash.waitingTitle')}</h2>${hint('dash.waitingHint')}
+    ${waiting.length ? waiting.map(({ tm, r }) => `<div class="chip ro dash-req">${avatar(r.full_name ?? '?', content.photoOf(r.player_id), content.genderOf(r.player_id))}
+      <span><b dir="auto">${esc(r.full_name ?? '')}</b><br><small class="muted" dir="auto">${icon('trophy', 12)} ${esc(tm.name)}${r.club ? ` · ${esc(r.club)}` : ''}</small></span>
+      <span class="row" style="margin-inline-start:auto;gap:6px">
+        <button class="btn small green" data-act="decide" data-tid="${tm.id}" data-id="${r.id}" data-s="approved">${icon('check', 14)} ${t('dash.accept')}</button>
+        <button class="btn small ghost" data-act="decide" data-tid="${tm.id}" data-id="${r.id}" data-s="rejected">${icon('x', 14)}</button></span></div>`).join('')
+      : `<p class="muted">${loadingRegs ? `<span class="spin"></span> ${t('reg.loading')}` : t('dash.noWaiting')}</p>`}</div>
+  <div class="sec-head"><h2>${icon('trophy', 22)} ${t('dash.currentTitle')}</h2></div>
+  ${current.length ? `<div class="dash-list">${current.map(row).join('')}</div>`
+    : empty('trophy', t('ws.noMine'), `<a class="btn gold small" href="#/new">➕ ${t('home.create')}</a>`)}
+  ${finished.length ? `<div class="card"><h2>🏆 ${t('dash.finishedTitle')}</h2>
+    ${finished.map((tm) => { const top = topTwo(tm); return `<a class="match" href="#/t/${tm.id}/knockout" style="grid-template-columns:1fr auto">
+      <span class="p" dir="auto">${esc(tm.name)}</span><span class="small">${top ? `🥇 <span dir="auto">${esc(playerName(tm, top.first))}</span>` : ''}</span></a>`; }).join('')}</div>` : ''}`;
+}
+
 /* Registration tab */
 const regCache = new Map<string, remote.Registration[]>();
 const regLoading = new Set<string>();
@@ -1789,6 +1883,11 @@ function draw(): void {
   } else if (parts[0] === 'admin' && online()) {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(isAdmin() ? admin.page(parts) : usersPage());
+  } else if (parts[0] === 'org' && online()) {
+    if (!session.profile) { location.hash = '#/login'; return; }
+    if (!canOrganize()) { shell(shop.becomePrompt('organizer')); return; }
+    if (prefs.view !== 'organizer') prefs.view = 'organizer';
+    shell(orgDashboard());
   } else if (parts[0] === 'players' && online()) {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(playersPage());

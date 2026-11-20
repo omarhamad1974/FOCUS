@@ -969,3 +969,38 @@ details.faq > :last-child { margin-block-end: 16px; }
 .extra-pick .chip { width: 100%; cursor: pointer; font: inherit; font-weight: 700; text-align: start; }
 .standings tr.x td { background: #f7f9fd; }
 .standings tr.x td:first-child { box-shadow: inset -4px 0 0 #9fb3d6; }
+
+/* Batch player entry and claim codes */
+.batch-names { min-height: 150px; font-size: 16px; line-height: 1.7; resize: vertical; }
+.batch-count { font-weight: 700; color: var(--green-ink); }
+.batch-gender button { display: inline-flex; align-items: center; gap: 6px; }
+.batch-gender .avatar { width: 26px; height: 26px; }
+.batch-result { border: 2px solid var(--green); }
+.batch-row { flex-wrap: wrap; gap: 8px; }
+.claim-tools { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-inline-start: auto; }
+.claim-code {
+  font: 800 15px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em;
+  background: var(--green-soft); color: var(--navy); border: 2px dashed var(--green-press); border-radius: 10px; padding: 6px 10px;
+}
+.btn.wa { background: #25d366; color: #fff; box-shadow: var(--press) #1a9e4b; }
+.claim-hero { max-width: 520px; margin-inline: auto; margin-block-end: 14px; }
+.claim-hero::after { display: none; }
+.claim-who { display: flex; align-items: center; gap: 14px; }
+.claim-who .avatar { width: 76px; height: 76px; border: 3px solid #fff; box-shadow: 0 6px 16px #0003; }
+.claim-who h1 { margin: 0 0 4px; }
+.claim-input { font: 800 22px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+hr.sep { border: 0; border-top: 1px dashed var(--line); margin-block: 16px; }
+.print-sheet { display: none; }
+@media print {
+  body.printing > :not(.print-sheet) { display: none !important; }
+  body.printing .print-sheet { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; padding: 6mm; }
+  .print-card {
+    break-inside: avoid; border: 1.5px dashed #0c1f4a; border-radius: 4mm; padding: 5mm; text-align: center;
+    font-family: inherit; color: #0c1f4a; min-height: 58mm;
+  }
+  .print-card h3 { font-size: 18pt; margin: 2mm 0; }
+  .print-card p { margin: 1mm 0; }
+  .print-logo { height: 12mm; }
+  .print-code { font: 800 20pt/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .1em; border: 2px solid #7ed957; border-radius: 3mm; padding: 2mm; margin-block: 2mm !important; }
+  .print-link { font-size: 8pt; word-break: break-all; color: #444; }
+}

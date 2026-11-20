@@ -1067,3 +1067,30 @@ hr.sep { border: 0; border-top: 1px dashed var(--line); margin-block: 16px; }
 .sim-done { margin-block-start: 10px; padding: 12px; border-radius: 14px; background: #fff7d6; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 17px; }
 .waitcol { background: #fffaf0; border-color: var(--gold); }
 .wait-letter { background: var(--gold); font-size: 16px; }
+/* Winner celebration on a finished tournament's card */
+.champ-cel { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.cel-svg { position: absolute; bottom: 0; inset-inline-end: 4%; height: 94%; width: auto; overflow: visible;
+  filter: drop-shadow(0 6px 10px #0c1f4a66); }
+.cel-svg * { transform-box: fill-box; }
+.cel-jump { animation: cel-jump 1.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.cel-arm-l { animation: cel-wave-l 1.6s ease-in-out infinite; transform-origin: 100% 100%; }
+.cel-arm-r { animation: cel-wave-r 1.6s ease-in-out infinite; transform-origin: 0% 100%; }
+.cel-head { animation: cel-nod 1.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.cel-glow { animation: cel-glow 2.4s ease-in-out infinite; transform-origin: 50% 50%; }
+.cel-spark { animation: cel-twinkle 1.2s ease-in-out infinite alternate; }
+.cel-ball { animation: cel-ball 1.6s ease-in-out infinite; }
+@keyframes cel-jump { 0%, 100% { transform: translateY(0) scaleY(1); } 12% { transform: translateY(0) scaleY(.96); } 45% { transform: translateY(-9px) scaleY(1.02); } 70% { transform: translateY(0) scaleY(1); } }
+@keyframes cel-wave-l { 0%, 100% { transform: rotate(0); } 45% { transform: rotate(-8deg); } }
+@keyframes cel-wave-r { 0%, 100% { transform: rotate(0); } 45% { transform: rotate(10deg); } }
+@keyframes cel-nod { 0%, 100% { transform: rotate(0); } 45% { transform: rotate(-5deg); } 75% { transform: rotate(4deg); } }
+@keyframes cel-glow { 0%, 100% { transform: scale(.92); opacity: .8; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes cel-twinkle { from { opacity: .25; transform: scale(.7); } to { opacity: 1; transform: scale(1.1); } }
+@keyframes cel-ball { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-6px, -22px); } }
+.cel-confetti i { position: absolute; top: -10px; left: var(--x); width: 6px; height: 10px; border-radius: 2px; opacity: .95;
+  animation: cel-fall var(--t) linear var(--d) infinite; }
+.cel-confetti i:nth-child(3n) { width: 8px; height: 8px; border-radius: 50%; }
+@keyframes cel-fall { from { transform: translateY(-12px) rotate(0); } to { transform: translateY(240px) rotate(var(--r)); } }
+.tc-champ { max-width: 56%; z-index: 2; }
+.tc-media:has(.champ-cel) .ph-ic { display: none; }
+.tc-champ b { font-size: 16px; text-shadow: 0 2px 6px #0009; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-champ small { text-shadow: 0 1px 4px #0008; }

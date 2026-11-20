@@ -11,6 +11,7 @@ import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample
 import * as sim from './domain/simulate';
 import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
+import { championCelebration } from './ui/champion';
 import { online } from './config';
 import * as remote from './data/remote';
 import { addExtraPlayer, addPlayerToSetup, closeRegistration, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
@@ -143,6 +144,13 @@ const bo = (b: BestOf) => t('format.bestOf', { n: b });
 function pAvatar(tm: Tournament, pid: string | null): string {
   const pl = tm.players.find((x) => x.id === pid);
   return avatar(playerName(tm, pid), pl ? content.photoOf(accountOf(pl)) : null, pl ? content.genderOf(accountOf(pl)) : null);
+}
+
+/** Cartoon celebration with the champion's photo (or drawn face) for a finished tournament's card. */
+function champCelebration(tm: Tournament, pid: string | null): string {
+  const pl = tm.players.find((x) => x.id === pid);
+  const acc = pl ? accountOf(pl) : undefined;
+  return championCelebration(tm.id, content.photoOf(acc), content.genderOf(acc));
 }
 
 /** Load photos for a tournament's players once. */
@@ -344,7 +352,7 @@ function tournamentCard(tm: Tournament): string {
   return `<article class="tcard st-${st} rise">
     <div class="tc-media">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}
       ${statusBadge(st)}${when && (st === 'open' || st === 'upcoming') ? `<span class="tc-when">${icon('clock', 14)} ${when}</span>` : ''}
-      ${top ? `<div class="tc-champ">${pAvatar(tm, top.first)}<span><small>🥇 ${t('stage.champion')}</small><b dir="auto">${esc(playerName(tm, top.first))}</b></span></div>` : ''}
+      ${top ? `${champCelebration(tm, top.first)}<div class="tc-champ"><span><small>🥇 ${t('stage.champion')}</small><b dir="auto">${esc(playerName(tm, top.first))}</b></span></div>` : ''}
     </div>
     <div class="tc-body">
       <h3 dir="auto"><a class="tc-link" href="#/t/${tm.id}">${esc(tm.name)}</a></h3>

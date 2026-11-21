@@ -24,6 +24,7 @@ import * as shop from './pages/shop';
 import * as training from './pages/training';
 import * as faq from './pages/faq';
 import * as claim from './pages/claim';
+import * as desk from './admin';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
@@ -88,7 +89,7 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
-    news.reset(); shop.reset(); training.reset(); admin.reset();
+    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset();
     assisting.clear();
     if (session.profile) {
       for (const id of await content.myAssignments().catch(() => [] as string[])) assisting.add(id);
@@ -224,9 +225,10 @@ function workspaceBar(): string {
   if (!online() || !session.profile) return '';
   const here = location.hash;
   const links: [string, string, MessageKey, MessageKey, boolean][] = [];
-  if (canOrganize()) links.push(['#/org', 'trophy', 'ws.myTournaments', 'ws.myTournamentsTip', here.startsWith('#/org') || here.startsWith('#/tournaments/mine')]);
-  if (isSeller()) links.push(['#/shop/manage', 'shop', 'ws.myProducts', 'ws.myProductsTip', here.startsWith('#/shop/manage')]);
-  if (isTrainer()) links.push(['#/training/manage', 'coach', 'ws.mySessions', 'ws.mySessionsTip', here.startsWith('#/training/manage')]);
+  if (canOrganize()) links.push(['#/desk/org', 'trophy', 'ws.myTournaments', 'ws.myTournamentsTip', here.startsWith('#/tournaments/mine')]);
+  if (isSeller()) links.push(['#/desk/seller', 'shop', 'ws.myProducts', 'ws.myProductsTip', here.startsWith('#/shop/manage')]);
+  if (isTrainer()) links.push(['#/desk/trainer', 'coach', 'ws.mySessions', 'ws.mySessionsTip', here.startsWith('#/training/manage')]);
+  if (isAdmin()) links.push(['#/desk/admin', 'shield', 'ws.adminDesk', 'ws.adminDeskTip', false]);
   if (!links.length) return '';
   return `<nav class="wsbar" aria-label="${esc(t('ws.label'))}"><span class="ws-label">${icon('grid', 16)} <span class="ws-name">${t('ws.label')}</span></span>
     ${links.map(([href, ic, label, tip, on]) => `<a class="ws-btn" href="${href}" title="${esc(t(tip))}" ${on ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>`;
@@ -1793,71 +1795,6 @@ function playersPage(): string {
   </div>`;
 }
 
-/* Organizer dashboard */
-
-/** Everything an organizer runs in one place: current tournaments, join requests waiting, matches left. */
-function orgDashboard(): string {
-  const mine = sortForListing(data.tournaments.filter(isMine));
-  const current = mine.filter((x) => publicStatus(x) !== 'finished');
-  const finished = mine.filter((x) => publicStatus(x) === 'finished');
-  const owned = (x: Tournament) => x.organizerId === session.profile?.id || isAdmin();
-  // Join requests matter while a tournament is still being set up.
-  const regTs = current.filter((x) => x.stage === 'setup' && owned(x));
-  regTs.forEach((x) => { if (!regCache.has(x.id)) loadRegs(x.id); });
-  const waiting = regTs.flatMap((x) => (regCache.get(x.id) ?? []).filter((r) => r.status === 'pending').map((r) => ({ tm: x, r })));
-  const left = current.reduce((s, x) => { const p = progress(x); return s + Math.max(0, p.total - p.done); }, 0);
-  const players = current.reduce((s, x) => s + x.players.length, 0);
-  const loadingRegs = regTs.some((x) => !regCache.has(x.id));
-
-  const row = (tm: Tournament) => {
-    const st = publicStatus(tm);
-    const p = progress(tm);
-    const pend = (regCache.get(tm.id) ?? []).filter((r) => r.status === 'pending').length;
-    const reg = registrationOf(tm);
-    const helper = !owned(tm);
-    const stageKey: MessageKey = (['stage.setup', 'stage.groups', 'stage.knockout', 'stage.champion'] as MessageKey[])[stageIndex(tm)];
-    return `<article class="dash-t rise">
-      <a class="dash-cover" href="#/t/${tm.id}">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}</a>
-      <div class="dash-body">
-        <div class="row between"><h3 dir="auto"><a href="#/t/${tm.id}">${esc(tm.name)}</a></h3>${statusBadge(st, '')}</div>
-        <div class="tc-meta">
-          <span>🧭 ${t(stageKey)}</span>
-          ${tm.date ? `<span>${icon('calendar', 15)} ${dateFmt.format(new Date(tm.date))}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}</span>` : ''}
-          <span>${icon('users', 15)} ${n(tm.players.length)}${reg.maxPlayers && tm.stage === 'setup' ? ` / ${n(reg.maxPlayers)}` : ''} ${t('t.players')}</span>
-          ${helper ? `<span class="badge blue">${t('dash.helper')}</span>` : ''}
-        </div>
-        ${p.total ? `${xp(p.done, p.total)}<small class="muted">${t('dash.matchesDone', { done: n(p.done), total: n(p.total) })}</small>` : ''}
-        <div class="row dash-acts">
-          ${tm.stage === 'setup' && !helper ? `<a class="btn small ${pend ? 'gold' : 'soft'}" href="#/t/${tm.id}/register">📝 ${t('dash.requests')}${pend ? ` <span class="badge red">${n(pend)}</span>` : ''}</a>` : ''}
-          ${tm.stage !== 'setup' ? `<a class="btn small soft" href="#/t/${tm.id}/${tm.stage === 'knockout' ? 'knockout' : 'groups'}">⚔️ ${t('dash.matches')}</a>` : ''}
-          ${!helper ? `<a class="btn small soft" href="#/t/${tm.id}/settings">⚙️ ${t('dash.settings')}</a>` : ''}
-        </div>
-      </div></article>`;
-  };
-
-  return `<section class="banner b-org slim"><div><h1>${icon('trophy', 26)} ${t('dash.orgTitle')}</h1><p>${t('dash.orgHint')}</p></div>
-    <div class="row"><a class="btn gold" href="#/new">➕ ${t('home.create')}</a><a class="btn soft" href="#/players">👥 ${t('dir.link')}</a></div></section>
-  <div class="stats dash-stats">
-    <div class="stat">${icon('trophy', 22)}<b>${n(current.length)}</b><small>${t('dash.statCurrent')}</small></div>
-    <div class="stat ${waiting.length ? 'hot' : ''}">${icon('bell', 22)}<b>${loadingRegs ? '…' : n(waiting.length)}</b><small>${t('dash.statWaiting')}</small></div>
-    <div class="stat">${icon('ball', 22)}<b>${n(left)}</b><small>${t('dash.statLeft')}</small></div>
-    <div class="stat">${icon('users', 22)}<b>${n(players)}</b><small>${t('dash.statPlayers')}</small></div>
-  </div>
-  <div class="card"><h2>${icon('bell', 22)} ${t('dash.waitingTitle')}</h2>${hint('dash.waitingHint')}
-    ${waiting.length ? waiting.map(({ tm, r }) => `<div class="chip ro dash-req">${avatar(r.full_name ?? '?', content.photoOf(r.player_id), content.genderOf(r.player_id))}
-      <span><b dir="auto">${esc(r.full_name ?? '')}</b><br><small class="muted" dir="auto">${icon('trophy', 12)} ${esc(tm.name)}${r.club ? ` · ${esc(r.club)}` : ''}</small></span>
-      <span class="row" style="margin-inline-start:auto;gap:6px">
-        <button class="btn small green" data-act="decide" data-tid="${tm.id}" data-id="${r.id}" data-s="approved">${icon('check', 14)} ${t('dash.accept')}</button>
-        <button class="btn small ghost" data-act="decide" data-tid="${tm.id}" data-id="${r.id}" data-s="rejected">${icon('x', 14)}</button></span></div>`).join('')
-      : `<p class="muted">${loadingRegs ? `<span class="spin"></span> ${t('reg.loading')}` : t('dash.noWaiting')}</p>`}</div>
-  <div class="sec-head"><h2>${icon('trophy', 22)} ${t('dash.currentTitle')}</h2></div>
-  ${current.length ? `<div class="dash-list">${current.map(row).join('')}</div>`
-    : empty('trophy', t('ws.noMine'), `<a class="btn gold small" href="#/new">➕ ${t('home.create')}</a>`)}
-  ${finished.length ? `<div class="card"><h2>🏆 ${t('dash.finishedTitle')}</h2>
-    ${finished.map((tm) => { const top = topTwo(tm); return `<a class="match" href="#/t/${tm.id}/knockout" style="grid-template-columns:1fr auto">
-      <span class="p" dir="auto">${esc(tm.name)}</span><span class="small">${top ? `🥇 <span dir="auto">${esc(playerName(tm, top.first))}</span>` : ''}</span></a>`; }).join('')}</div>` : ''}`;
-}
-
 /* Registration tab */
 const regCache = new Map<string, remote.Registration[]>();
 const regLoading = new Set<string>();
@@ -2073,7 +2010,7 @@ async function commitNew(nt: Tournament): Promise<void> {
 function route(): void {
   const real = session.profile;
   const as: Preview = real?.role === 'admin' ? preview.as : 'off';
-  const onAdmin = location.hash.startsWith('#/admin');
+  const onAdmin = location.hash.startsWith('#/admin') || location.hash.startsWith('#/desk');
   rendering.preview = onAdmin ? 'off' : as;
   if (as !== 'off' && real && !onAdmin) session.profile = previewProfile(real, as);
   try { draw(); } finally { session.profile = real; rendering.preview = 'off'; }
@@ -2082,7 +2019,15 @@ function route(): void {
 
 function draw(): void {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  if (parts[0] === 'new') {
+  if (parts[0] === 'desk') {
+    // Role tools: their own frame, apart from the public site.
+    if (!online()) { shell(empty('shield', t('nav.onlineOnly'))); return; }
+    const html = desk.page(parts);
+    if (html === null) return;
+    document.body.classList.toggle('no-hints', !prefs.hints);
+    document.body.dataset.section = 'desk';
+    app.innerHTML = html;
+  } else if (parts[0] === 'new') {
     if (!isOrg()) { location.hash = '#/'; return; }
     shell(wizardPage());
   } else if (parts[0] === 'tournaments') {
@@ -2102,10 +2047,8 @@ function draw(): void {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(isAdmin() ? admin.page(parts) : usersPage());
   } else if (parts[0] === 'org' && online()) {
-    if (!session.profile) { location.hash = '#/login'; return; }
-    if (!canOrganize()) { shell(shop.becomePrompt('organizer')); return; }
-    if (prefs.view !== 'organizer') prefs.view = 'organizer';
-    shell(orgDashboard());
+    // The organizer dashboard moved into the organizer's tool.
+    location.hash = '#/desk/org';
   } else if (parts[0] === 'players' && online()) {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(playersPage());
@@ -2146,6 +2089,7 @@ document.addEventListener('click', (e) => {
   const here = current();
   const tm = el.dataset.tid ? findT(el.dataset.tid) : here.tm;
   const m = here.m;
+  if (act.startsWith('dk-')) { void desk.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
     return;
@@ -2540,6 +2484,7 @@ document.addEventListener('submit', async (e) => {
   if (!kind) return;
   e.preventDefault();
   if (kind === 'login' || kind === 'signup') { await submitAuth(kind); return; }
+  if (await desk.onSubmit(kind)) return;
   if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await training.onSubmit(kind, form) || await claim.onSubmit(kind, form)) return;
   if (kind === 'add-player') {
     const name = val('pName');
@@ -2585,6 +2530,7 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
+  if (await desk.onChange(el)) return;
   if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el) || await claim.onChange(el) || admin.onChange(el)) return;
   if (el.dataset.act === 'tl-time' || el.dataset.act === 'tl-place') {
     if (el.dataset.act === 'tl-time') listFilters.time = el.value as TimeFilter; else listFilters.place = el.value;
@@ -2767,5 +2713,11 @@ claim.setTournaments(() => data.tournaments
   .map((x) => ({ id: x.id, name: x.name, open: registrationOf(x).open })));
 claim.setAfterClaim(async () => { await refreshFromServer(); });
 admin.setUsersView(usersPage);
+desk.setHost({
+  tournaments: () => data.tournaments,
+  persist,
+  add: (nt) => { data.tournaments.unshift(nt); persist(); },
+  refresh: refreshFromServer,
+});
 admin.setAfterBulk(async () => { await refreshFromServer(); route(); });
 route();

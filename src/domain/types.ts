@@ -134,4 +134,8 @@ export interface Tournament {
   time?: string;
   /** Where it is played: club, hall or city (optional). */
   location?: string;
+  /** Entry fee per player (EGP). Missing or 0: free entry. */
+  fee?: number;
+  /** Who paid the entry fee: payment keys (account id, else player id), see domain/payments. */
+  paid?: string[];
 }

@@ -1,0 +1,5 @@
+Demo player photos (sp-01.jpg … sp-40.jpg)
+
+AI-generated portraits of people who do not exist, from https://github.com/faker-js/assets-person-portrait
+(CC0 1.0 Universal, public domain). Resized to 240×240. Used by the 40 simulation accounts
+sim01…sim40@demo.pingo.example (supabase/seed/sim_players.sql).

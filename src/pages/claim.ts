@@ -1,10 +1,9 @@
 /**
- * Batch player entry and claim codes.
- * - The admin pastes names (one per line): each new name gets a temporary account with a
- *   personal claim code to share on WhatsApp or print, and the batch can go straight onto a
- *   tournament's waiting list for the organizer to approve.
- * - #/claim/CODE lets that player set their own email, password, gender and photo;
- *   the temporary account becomes theirs (directory players from 0008 get a new account).
+ * Batch player entry (admin) and the older claim codes.
+ * - The admin imports an Excel/CSV file or pastes "name, mobile" lines: each new mobile gets an
+ *   account that signs in with that mobile and the password "pingo123" (changed at first sign-in),
+ *   to share on WhatsApp or print. The batch can go straight onto a tournament's waiting list.
+ * - #/claim/CODE still works for codes handed out before mobile sign-in (Nov 2026).
  */
 import { numberFmt, t, type MessageKey } from '../i18n/ar';
 import * as remote from '../data/remote';
@@ -12,7 +11,9 @@ import * as content from '../data/content';
 import { authErr, hint, render, session, val } from '../app/ctx';
 import { icon } from '../ui/icons';
 import { avatar, confetti, esc, toast } from '../ui/util';
-import { cleanCode, fmtCode, parseNames } from '../domain/claim';
+import { cleanCode, fmtCode } from '../domain/claim';
+import { DEFAULT_PASSWORD, demoPhoto, parseCsv, parsePasted, rowsFromTable, type ParsedRows, type PlayerRow, type RowProblem } from '../domain/mobile';
+import { readXlsx } from '../domain/xlsx';
 
 const PHOTO_KEY = 'pingo.pendingPhoto';
 export const MAX_BATCH = 300;
@@ -49,8 +50,12 @@ let batchText = '';
 let batchClub = '';
 let batchGender: remote.Gender | '' = '';
 let batchTournament = '';
+let batchPhotos = false;
 let batchBusy = false;
-let result: { rows: remote.BatchRow[]; waitlisted: number; tournament: string } | null = null;
+/** Rows read from an imported Excel or CSV file. */
+let fileRows: ParsedRows | null = null;
+let fileName = '';
+let result: { rows: remote.AddedPlayer[]; waitlisted: number; tournament: string } | null = null;
 let onAdded: () => void = () => {};
 /** Main page hook: reload the directory after a batch. */
 export const setOnAdded = (fn: () => void) => { onAdded = fn; };
@@ -63,7 +68,7 @@ export interface OpenTournament { id: string; name: string; open: boolean }
 let tournaments: () => OpenTournament[] = () => [];
 export const setTournaments = (fn: () => OpenTournament[]) => { tournaments = fn; };
 
-/* Temporary accounts (profile id → claim code), for the directory list. Admin only. */
+/* Temporary accounts from the older batch (profile id → claim code), for the directory list. Admin only. */
 let temps: Map<string, string | null> | null = null;
 let tempsBusy = false;
 export function tempCodes(): Map<string, string | null> {
@@ -100,22 +105,60 @@ function keepBatch(): void {
   if (names) batchText = names.value;
   if (document.getElementById('bClub')) batchClub = val('bClub');
   if (document.getElementById('bTour')) batchTournament = val('bTour');
+  const ph = document.getElementById('bPhotos') as HTMLInputElement | null;
+  if (ph) batchPhotos = ph.checked;
 }
+
+/** Everything that will be added: file rows first, then pasted lines (each mobile once). */
+function allRows(): ParsedRows {
+  const pasted = parsePasted(batchText);
+  const seen = new Set<string>();
+  const rows: PlayerRow[] = [];
+  const problems: RowProblem[] = [...(fileRows?.problems ?? []), ...pasted.problems];
+  for (const r of [...(fileRows?.rows ?? []), ...pasted.rows]) {
+    if (seen.has(r.mobile)) { problems.push({ line: 0, text: `${r.full_name} · ${r.mobile}`, reason: 'repeat' }); continue; }
+    seen.add(r.mobile);
+    rows.push(r);
+  }
+  return { rows, problems };
+}
+
+function preview(): string {
+  const { rows, problems } = allRows();
+  return `<p class="muted small batch-count" id="bCount">${t('batch.count', { n: numberFmt.format(rows.length) })}</p>
+    ${problems.length ? `<div class="err batch-problems"><b>${t('batch.problems', { n: numberFmt.format(problems.length) })}</b>
+      <ul>${problems.slice(0, 8).map((p) => `<li>${p.line ? `${t('batch.line', { n: numberFmt.format(p.line) })}: ` : ''}<span dir="auto">${esc(p.text || '—')}</span> · ${t(`batch.why.${p.reason}` as MessageKey)}</li>`).join('')}
+      ${problems.length > 8 ? `<li>…</li>` : ''}</ul></div>` : ''}
+    ${rows.length ? `<div class="batch-preview">${rows.slice(0, 6).map((r) => `<span class="chip ro">${avatar(r.full_name, batchPhotos ? demoPhoto(r.gender ?? (batchGender || null), hash(r.mobile)) : null, r.gender ?? (batchGender || null))}<b dir="auto">${esc(r.full_name)}</b><span class="muted small" dir="ltr">${esc(r.mobile)}</span></span>`).join('')}${rows.length > 6 ? `<span class="muted small">+${numberFmt.format(rows.length - 6)}</span>` : ''}</div>` : ''}`;
+}
+
+const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 /** The card on the players page (admin only). */
 export function batchCard(): string {
-  const count = parseNames(batchText).length;
+  const count = allRows().rows.length;
   return `<div class="card batch-card rise">
-    <h2>🎟️ ${t('batch.title')}</h2>${hint('batch.hint')}
+    <h2>📥 ${t('batch.title')}</h2>${hint('batch.hint')}
     <form data-form="batch-add" novalidate>
+      <span class="lbl">${t('batch.file')}</span>
+      <div class="row batch-file">
+        <label class="btn soft">${icon('plus', 16)} ${t(fileName ? 'batch.fileChange' : 'batch.fileChoose')}<input type="file" class="hidden" data-act="batch-file" accept=".xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
+        ${fileName ? `<span class="badge green" dir="auto">📄 ${esc(fileName)} · ${numberFmt.format(fileRows?.rows.length ?? 0)}</span>
+          <button type="button" class="btn ghost small" data-act="batch-file-clear">${icon('x', 14)}</button>` : ''}
+        <button type="button" class="btn ghost small" data-act="batch-template">⬇️ ${t('batch.template')}</button>
+      </div>
+      <p class="muted small">${t('batch.fileHint')}</p>
       <label class="field"><span>${t('batch.names')}</span>
-        <textarea class="input batch-names" id="bNames" data-act="batch-names" rows="7" dir="auto" placeholder="${esc(t('batch.placeholder'))}">${esc(batchText)}</textarea></label>
-      <p class="muted small batch-count" id="bCount">${t('batch.count', { n: numberFmt.format(count) })}</p>
+        <textarea class="input batch-names" id="bNames" data-act="batch-names" rows="6" dir="auto" placeholder="${esc(t('batch.placeholder'))}">${esc(batchText)}</textarea></label>
+      <div id="bPreview">${preview()}</div>
       ${tournamentChoice()}
       <label class="field"><span>${t('batch.club')}</span><input class="input" id="bClub" dir="auto" value="${esc(batchClub)}"></label>
       <span class="lbl">${t('batch.gender')}</span>
       ${genderChoice()}
       <p class="muted small">${t('batch.genderHint')}</p>
+      <label class="tog check-tog"><input type="checkbox" id="bPhotos" data-act="batch-photos" ${batchPhotos ? 'checked' : ''}> 🧪 ${t('batch.photos')}</label>
+      <p class="muted small">${t('batch.photosHint')}</p>
+      <div class="hint">🔑 ${t('batch.passwordNote')}</div>
       <button class="btn green block" type="submit" id="bSubmit" ${batchBusy || !count ? 'disabled' : ''}>${batchBusy ? '<span class="spin"></span>' : '➕'} ${t('batch.submit', { n: numberFmt.format(count) })}</button>
       ${batchBusy ? `<p class="muted small center">${t('batch.working')}</p>` : ''}
     </form>
@@ -123,25 +166,41 @@ export function batchCard(): string {
   ${result ? resultCard() : ''}`;
 }
 
-const KIND_BADGE: Record<remote.BatchKind, [string, MessageKey]> = {
+const KIND_BADGE: Record<remote.AddKind, [string, MessageKey]> = {
   new: ['green', 'batch.kind.new'],
-  new_many: ['gold', 'batch.kind.newMany'],
-  temp: ['', 'batch.kind.temp'],
   account: ['blue', 'batch.kind.account'],
+  bad_mobile: ['red', 'batch.kind.badMobile'],
   failed: ['red', 'batch.kind.failed'],
 };
 
+/** Link to the app's sign-in page, on whatever address it runs. */
+export const loginLink = () => `${location.origin}${location.pathname}#/login`;
+
+/** WhatsApp message for a player whose account was just made: mobile + "pingo123". */
+export function loginText(name: string, mobile: string): string {
+  return t('batch.waText', { name, mobile, password: DEFAULT_PASSWORD, link: loginLink() });
+}
+
+/** WhatsApp button (to the player's own number) + copy for one new account. */
+export function loginTools(name: string, mobile: string): string {
+  const intl = mobile.startsWith('0') ? `20${mobile.slice(1)}` : mobile;
+  const wa = `https://wa.me/${intl}?text=${encodeURIComponent(loginText(name, mobile))}`;
+  return `<span class="claim-tools">
+    <span class="claim-code" dir="ltr">📱 ${esc(mobile)} · 🔑 ${DEFAULT_PASSWORD}</span>
+    <a class="btn small wa" href="${wa}" target="_blank" rel="noopener">${icon('whatsapp', 16)} ${t('claim.whatsapp')}</a>
+  </span>`;
+}
+
 function resultCard(): string {
   const { rows, waitlisted, tournament } = result!;
-  const withCode = rows.filter((r) => r.claim_code);
-  const made = rows.filter((r) => r.kind === 'new' || r.kind === 'new_many').length;
+  const made = rows.filter((r) => r.kind === 'new');
   const tName = tournament ? tournaments().find((x) => x.id === tournament)?.name ?? '' : '';
   return `<div class="card batch-result pop" id="batchResult">
-    <div class="sec-head"><h2>🎉 ${t('batch.done', { n: numberFmt.format(made) })}</h2>
+    <div class="sec-head"><h2>🎉 ${t('batch.done', { n: numberFmt.format(made.length) })}</h2>
       <button type="button" class="btn ghost small" data-act="batch-close">${icon('x', 16)} ${t('batch.close')}</button></div>
     ${tournament ? `<div class="hint" style="background:var(--green-soft)">📝 ${esc(t('batch.waitlisted', { n: numberFmt.format(waitlisted), name: tName }))}</div>` : ''}
     ${hint('batch.doneHint')}
-    ${withCode.length ? `<div class="row" style="margin-block:8px">
+    ${made.length ? `<div class="row" style="margin-block:8px">
       <button type="button" class="btn soft small" data-act="batch-copy-all">📋 ${t('batch.copyAll')}</button>
       <button type="button" class="btn soft small" data-act="batch-print">🖨️ ${t('batch.print')}</button></div>` : ''}
     <div class="stack">${rows.map((r) => {
@@ -149,10 +208,49 @@ function resultCard(): string {
       return `<div class="chip ro batch-row">
       ${avatar(r.full_name, null, batchGender || null)}<b dir="auto">${esc(r.full_name)}</b>
       <span class="badge ${cls}">${t(key)}</span>
-      ${r.claim_code ? codeTools(r.full_name, r.claim_code) : ''}
+      ${r.kind === 'new' ? loginTools(r.full_name, r.mobile) : `<span class="muted small" dir="ltr">${esc(r.mobile)}</span>`}
     </div>`;
     }).join('')}</div>
   </div>`;
+}
+
+/** Download an example file to fill in Excel (UTF-8 with BOM so Arabic opens correctly). */
+function downloadTemplate(): void {
+  const csv = '\uFEFF' + t('batch.templateCsv');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'pingo-players.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function readFile(file: File): Promise<ParsedRows> {
+  if (/\.xlsx$/i.test(file.name) || file.type.includes('spreadsheetml')) return rowsFromTable(await readXlsx(await file.arrayBuffer()));
+  if (/\.xls$/i.test(file.name)) throw new Error('xls');
+  return rowsFromTable(parseCsv(await file.text()));
+}
+
+/** Print one card per new account (8 per A4 page): name, mobile, password and link. */
+function printLogins(items: { full_name: string; mobile: string }[]): void {
+  document.getElementById('print-sheet')?.remove();
+  const sheet = document.createElement('div');
+  sheet.id = 'print-sheet';
+  sheet.className = 'print-sheet';
+  sheet.setAttribute('dir', 'rtl');
+  sheet.innerHTML = items.map((p) => `<div class="print-card">
+    <img src="${import.meta.env.BASE_URL}brand/logo.png" alt="Pingo" class="print-logo">
+    <h3 dir="auto">${esc(p.full_name)}</h3>
+    <p>${t('batch.cardTitle')} 🏓</p>
+    <p class="small">${t('batch.cardMobile')}</p>
+    <p class="print-code" dir="ltr">${esc(p.mobile)}</p>
+    <p class="small">${t('batch.cardPassword')} <b dir="ltr">${DEFAULT_PASSWORD}</b></p>
+    <p class="print-link" dir="ltr">${esc(loginLink())}</p>
+  </div>`).join('');
+  document.body.appendChild(sheet);
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); sheet.remove(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
 }
 
 /* --------------------------------------------------------------- print */
@@ -295,11 +393,15 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
     case 'batch-close':
       result = null; render(); return true;
     case 'batch-copy-all':
-      if (result) await copy(result.rows.filter((r) => r.claim_code).map((r) => `${r.full_name}: ${claimLink(r.claim_code!)}`).join('\n'));
+      if (result) await copy(result.rows.filter((r) => r.kind === 'new').map((r) => `${r.full_name}: ${r.mobile} / ${DEFAULT_PASSWORD}`).join('\n') + `\n${loginLink()}`);
       return true;
     case 'batch-print':
-      if (result) printCards(result.rows.filter((r) => r.claim_code).map((r) => ({ full_name: r.full_name, claim_code: r.claim_code!, club: batchClub || null })));
+      if (result) printLogins(result.rows.filter((r) => r.kind === 'new'));
       return true;
+    case 'batch-template':
+      downloadTemplate(); return true;
+    case 'batch-file-clear':
+      keepBatch(); fileRows = null; fileName = ''; render(); return true;
     case 'claim-copy':
       await copy(claimLink(el.dataset.code!)); return true;
     case 'claim-make':
@@ -338,9 +440,9 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
 export function onInput(el: HTMLElement): boolean {
   if (el.dataset.act !== 'batch-names') return false;
   batchText = (el as HTMLTextAreaElement).value;
-  const n = parseNames(batchText).length;
-  const count = document.getElementById('bCount');
-  if (count) count.textContent = t('batch.count', { n: numberFmt.format(n) });
+  const n = allRows().rows.length;
+  const box = document.getElementById('bPreview');
+  if (box) box.innerHTML = preview();
   const btn = document.getElementById('bSubmit') as HTMLButtonElement | null;
   if (btn) { btn.disabled = !n || batchBusy; btn.textContent = `➕ ${t('batch.submit', { n: numberFmt.format(n) })}`; }
   return true;
@@ -348,6 +450,20 @@ export function onInput(el: HTMLElement): boolean {
 
 export async function onChange(el: HTMLInputElement): Promise<boolean> {
   if (el.name === 'cGender') { keepTyped(); render(); return true; }
+  if (el.dataset.act === 'batch-photos') { keepBatch(); render(); return true; }
+  if (el.dataset.act === 'batch-file' && el.files?.[0]) {
+    keepBatch();
+    const file = el.files[0];
+    try {
+      fileRows = await readFile(file);
+      fileName = file.name;
+      if (!fileRows.rows.length) toast(t('batch.fileEmpty'));
+    } catch (e) {
+      toast(t(e instanceof Error && e.message === 'xls' ? 'batch.fileXls' : 'batch.fileBad'));
+    }
+    render();
+    return true;
+  }
   if (el.dataset.act !== 'claim-photo' || !el.files?.[0]) return false;
   keepTyped();
   try {
@@ -360,15 +476,24 @@ export async function onChange(el: HTMLInputElement): Promise<boolean> {
 export async function onSubmit(kind: string, form: HTMLFormElement): Promise<boolean> {
   if (kind === 'batch-add') {
     keepBatch();
-    const names = parseNames(batchText);
-    if (!names.length) { toast(t('batch.empty')); return true; }
-    if (names.length > MAX_BATCH) { toast(t('batch.tooMany')); return true; }
+    const { rows } = allRows();
+    if (!rows.length) { toast(t('batch.empty')); return true; }
+    if (rows.length > MAX_BATCH) { toast(t('batch.tooMany')); return true; }
     batchBusy = true; render();
     try {
       const tournament = batchTournament;
-      const r = await remote.batchPlayers({ names, club: batchClub || null, gender: batchGender || null, tournament_id: tournament || null });
+      const send = rows.map((r) => {
+        const gender = r.gender ?? (batchGender || undefined);
+        return {
+          ...r,
+          club: r.club ?? (batchClub || undefined),
+          gender,
+          ...(batchPhotos ? { photo: demoPhoto(gender, hash(r.mobile)) } : {}),
+        };
+      });
+      const r = await remote.addPlayers(send, tournament || null);
       result = { rows: r.rows ?? [], waitlisted: r.waitlisted ?? 0, tournament };
-      batchText = '';
+      batchText = ''; fileRows = null; fileName = '';
       temps = null;
       confetti();
       onAdded();

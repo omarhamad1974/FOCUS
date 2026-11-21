@@ -8,10 +8,15 @@
 // POST JSON { action: 'claim', code, email, password, gender? } -> { ok: true }
 //   Anyone holding a player's claim code (made by batch entry, migration 0008): creates a
 //   ready-to-use account for that player and attaches their directory row and results.
-// POST JSON { action: 'batch', names: [...], club?, gender?, tournament_id? } -> { rows: [...] }   admins only.
-//   Each name without an account gets a temporary account (no real email) with a claim code
-//   (migration 0011). With tournament_id, every name is put on that tournament's waiting list.
-//   The player completes registration later with action 'claim' on the same account.
+// POST JSON { action: 'signup', full_name, mobile, password, gender?, club?, birth_year?, wants? } -> { ok: true }
+//   Anyone: a new account that signs in with its mobile number (migration 0014). No SMS, no email.
+// POST JSON { action: 'players', rows: [{ full_name, mobile, club?, gender?, birth_year?, directory_id?, photo? }], tournament_id? }
+//   -> { rows: [...], waitlisted }   organizers one row at a time, the admin any number and a waiting list.
+//   Each new mobile gets an account with the password "pingo123" (changed by the player at first sign-in);
+//   a mobile that already has an account reuses it.
+// POST JSON { action: 'set_mobile', user_id?, mobile } -> { ok: true }
+//   Change the mobile an account signs in with: your own, or anyone's for the admin.
+// POST JSON { action: 'reset_password', user_id } -> { ok: true }   admins only: password back to "pingo123".
 // POST JSON { action: 'delete_users', user_ids: [...] }   -> { deleted, skipped }   admins only.
 //   Admin accounts and the caller's own account are never deleted. Tournaments and
 //   articles of a deleted account move to the calling admin so they are not lost.
@@ -46,6 +51,8 @@ Deno.serve(async (req) => {
 
   // A player claiming their profile: no session needed, the personal code is the proof.
   if (body.action === 'claim') return claim(service, body);
+  // A new player signing themselves up with their mobile number.
+  if (body.action === 'signup') return signup(service, body);
 
   // Who is calling? Verify their session token, then their role.
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
@@ -53,6 +60,13 @@ Deno.serve(async (req) => {
   if (!caller?.user) return json({ error: 'not signed in' }, 401);
   const { data: me } = await service.from('profiles').select('role, is_organizer').eq('id', caller.user.id).maybeSingle();
   const isAdmin = me?.role === 'admin';
+
+  // Anyone signed in may change the mobile they sign in with; the admin may change anyone's.
+  if (body.action === 'set_mobile') {
+    const target = String(body.user_id ?? '') || caller.user.id;
+    if (target !== caller.user.id && !isAdmin) return json({ error: 'only an admin' }, 403);
+    return setMobile(service, target, body.mobile, target === caller.user.id);
+  }
   if (!me || !(isAdmin || me.role === 'organizer' || me.is_organizer)) return json({ error: 'only organizers' }, 403);
 
   if (body.action === 'unconfirmed') {
@@ -73,41 +87,76 @@ Deno.serve(async (req) => {
   }
 
   if (body.action === 'create') {
-    const email = String(body.email ?? '').trim();
-    const password = String(body.password ?? '');
+    // One account made by an organizer or the admin. With a mobile it signs in with the mobile
+    // (password "pingo123" unless one is given); an email still works for staff accounts.
     const full_name = String(body.full_name ?? '').trim();
-    if (!email || password.length < 6 || !full_name) return json({ error: 'email, password (6+) and full_name required' }, 400);
-    const { data, error } = await service.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name,
-        phone: String(body.phone ?? ''),
-        club: String(body.club ?? ''),
-        birth_year: String(body.birth_year ?? ''),
-      },
-    });
-    if (error) return json({ error: error.message }, 400);
+    const email = String(body.email ?? '').trim();
+    const password = String(body.password ?? '').trim();
+    if (!full_name) return json({ error: 'full_name required' }, 400);
+    if (password && password !== DEFAULT_PASSWORD && password.length < 6) return json({ error: 'Password should be at least 6 characters' }, 400);
     const roles = Array.isArray(body.roles) ? body.roles.map(String) : [];
-    if (roles.length && data.user) {
-      if (!isAdmin) return json({ id: data.user.id, warning: 'only an admin can give roles' });
+    let id: string | undefined;
+    if (body.mobile) {
+      try {
+        const r = await addPlayers(service, [{ full_name, mobile: body.mobile, club: body.club, birth_year: body.birth_year, gender: body.gender }], password && password !== DEFAULT_PASSWORD ? password : '');
+        const row = r[0];
+        if (row.kind === 'bad_mobile') return json({ error: 'bad mobile' }, 400);
+        if (row.kind === 'account') return json({ error: 'mobile already registered' }, 400);
+        if (!row.id) return json({ error: row.error ?? 'could not create account' }, 400);
+        id = row.id;
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+      }
+    } else {
+      if (!email || password.length < 6) return json({ error: 'mobile required' }, 400);
+      const { data, error } = await service.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name, phone: String(body.phone ?? ''), club: String(body.club ?? ''), birth_year: String(body.birth_year ?? '') },
+      });
+      if (error) return json({ error: error.message }, 400);
+      id = data.user?.id;
+    }
+    if (roles.length && id) {
+      if (!isAdmin) return json({ id, warning: 'only an admin can give roles' });
       await service.from('profiles').update({
         is_organizer: roles.includes('organizer'),
         is_seller: roles.includes('seller'),
         is_trainer: roles.includes('trainer'),
-      }).eq('id', data.user.id);
+      }).eq('id', id);
     }
-    return json({ id: data.user?.id });
+    return json({ id });
   }
 
-  if (body.action === 'batch') {
-    if (!isAdmin) return json({ error: 'only an admin' }, 403);
+  if (body.action === 'players') {
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    if (!rows.length) return json({ error: 'rows required' }, 400);
+    if (rows.length > 300) return json({ error: 'too many players' }, 400);
+    const tournament = String(body.tournament_id ?? '').trim() || null;
+    if (!isAdmin && (rows.length > 1 || tournament)) return json({ error: 'only an admin' }, 403);
     try {
-      return json(await batch(service, body));
+      const out = await addPlayers(service, rows, '');
+      let waitlisted = 0;
+      if (tournament) {
+        const ids = out.filter((r) => r.id).map((r) => r.id);
+        const { data: n, error: wErr } = await service.rpc('waitlist_add', { t: tournament, accounts: ids });
+        if (wErr) throw new Error(`waiting list: ${wErr.message}`);
+        waitlisted = n ?? 0;
+      }
+      return json({ rows: out, waitlisted });
     } catch (e) {
-      return json({ error: `batch failed: ${e instanceof Error ? e.message : String(e)}` }, 500);
+      return json({ error: `players failed: ${e instanceof Error ? e.message : String(e)}` }, 500);
     }
+  }
+
+  if (body.action === 'reset_password') {
+    if (!isAdmin) return json({ error: 'only an admin' }, 403);
+    const id = String(body.user_id ?? '');
+    if (!id) return json({ error: 'user_id required' }, 400);
+    const { error } = await service.rpc('reset_default_password', { account: id });
+    if (error) return json({ error: error.message }, 400);
+    return json({ ok: true });
   }
 
   if (body.action === 'delete_users') {
@@ -201,57 +250,118 @@ async function deleteUsers(service: any, adminId: string, raw: unknown) {
   return { deleted: deleted + gone, skipped: asked.length - ids.length - gone, failed };
 }
 
-const TEMP_DOMAIN = 'temp.pingo.example';
+/* ------------------------------------------------- mobile number as username */
+// Same rules as src/domain/mobile.ts and public.norm_mobile (migration 0014).
+
+const MOBILE_DOMAIN = 'phone.pingo.example';
+const DEFAULT_PASSWORD = 'pingo123';
+
+function normalizeMobile(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  let s = String(raw).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).trim();
+  if (!s || /[a-z@]/i.test(s)) return null;
+  s = s.replace(/[^\d+]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  if (/\D/.test(s)) return null;
+  if (/^201[0-9]{9}$/.test(s)) s = '0' + s.slice(2);
+  else if (/^1[0-9]{9}$/.test(s)) s = '0' + s;
+  if (s.length < 8 || s.length > 15) return null;
+  return s;
+}
+const mobileEmail = (m: string) => `${m}@${MOBILE_DOMAIN}`;
+const text = (v: unknown, max = 80) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+const genderOf = (v: unknown) => (['male', 'female'].includes(String(v)) ? String(v) : '');
+const yearOf = (v: unknown) => { const y = Number(String(v ?? '').replace(/\D/g, '')); return y >= 1920 && y <= 2025 ? y : null; };
 
 // deno-lint-ignore no-explicit-any
-async function batch(service: any, body: Record<string, unknown>) {
+async function signup(service: any, body: Record<string, unknown>): Promise<Response> {
+  const full_name = text(body.full_name);
+  const mobile = normalizeMobile(body.mobile);
+  const password = String(body.password ?? '');
+  if (!full_name) return json({ error: 'full_name required' }, 400);
+  if (!mobile) return json({ error: 'bad mobile' }, 400);
+  if (password.length < 6) return json({ error: 'Password should be at least 6 characters' }, 400);
+  const { data: existing, error: exErr } = await service.rpc('account_by_mobile', { m: mobile });
+  if (exErr) return json({ error: exErr.message }, 500);
+  if (existing) return json({ error: 'mobile already registered' }, 400);
+  const year = yearOf(body.birth_year);
+  const { error } = await service.auth.admin.createUser({
+    email: mobileEmail(mobile),
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name, phone: mobile, club: text(body.club), gender: genderOf(body.gender),
+      birth_year: year ? String(year) : '', wants: text(body.wants, 60),
+    },
+  });
+  if (error) return json({ error: /already/i.test(error.message) ? 'mobile already registered' : error.message }, 400);
+  return json({ ok: true });
+}
+
+interface PlayerOut { full_name: string; mobile: string; id: string | null; player_id: string | null; kind: 'new' | 'account' | 'bad_mobile' | 'failed'; error?: string }
+
+/** New accounts for name + mobile rows (password "pingo123", or `password` when given); existing mobiles reuse their account. */
+// deno-lint-ignore no-explicit-any
+async function addPlayers(service: any, raw: unknown[], password: string): Promise<PlayerOut[]> {
   const seen = new Set<string>();
-  const names: string[] = [];
-  for (const raw of Array.isArray(body.names) ? body.names : []) {
-    const name = String(raw ?? '').replace(/\s+/g, ' ').trim();
-    if (!name || name.length > 80 || seen.has(name.toLowerCase())) continue;
-    seen.add(name.toLowerCase());
-    names.push(name);
+  const out: PlayerOut[] = [];
+  const todo: { out: PlayerOut; club: string; gender: string; year: number | null; directory: string | null; photo: string | null }[] = [];
+  for (const r of raw as Record<string, unknown>[]) {
+    const full_name = text(r?.full_name);
+    const mobile = normalizeMobile(r?.mobile);
+    const o: PlayerOut = { full_name, mobile: mobile ?? text(r?.mobile, 30), id: null, player_id: null, kind: 'bad_mobile' };
+    out.push(o);
+    if (!full_name || !mobile || seen.has(mobile)) continue;
+    seen.add(mobile);
+    todo.push({ out: o, club: text(r.club), gender: genderOf(r.gender), year: yearOf(r.birth_year), directory: text(r.directory_id, 40) || null,
+      // Simulation: one of the demo portraits shipped with the app (public/demo/players).
+      photo: /^demo\/players\/sp-\d{2}\.jpg$/.test(String(r.photo ?? '')) ? String(r.photo) : null });
   }
-  if (!names.length) throw new Error('names required');
-  if (names.length > 300) throw new Error('too many names');
-  const club = String(body.club ?? '').trim() || null;
-  const gender = ['male', 'female'].includes(String(body.gender)) ? String(body.gender) : null;
-  const tournament = String(body.tournament_id ?? '').trim() || null;
-
-  const { data: matches, error: mErr } = await service.rpc('batch_match_names', { names });
-  if (mErr) throw new Error(`match names: ${mErr.message}`);
-  type Row = { name: string; account: string | null; kind: string; claim_code: string | null };
-  const rows: Row[] = (matches ?? []).map((m: Row) => ({ ...m }));
-
-  // New temporary accounts, a few at a time.
-  const fresh = rows.filter((r) => !r.account);
-  for (let i = 0; i < fresh.length; i += 8) {
-    await Promise.all(fresh.slice(i, i + 8).map(async (r) => {
+  for (let i = 0; i < todo.length; i += 8) {
+    await Promise.all(todo.slice(i, i + 8).map(async (x) => {
+      const o = x.out;
+      const { data: existing, error: exErr } = await service.rpc('account_by_mobile', { m: o.mobile });
+      if (exErr) { o.kind = 'failed'; o.error = exErr.message; return; }
+      if (existing) {
+        o.kind = 'account'; o.id = existing;
+        const { data: pl } = await service.from('players').select('id').eq('profile_id', existing).maybeSingle();
+        o.player_id = pl?.id ?? null;
+        return;
+      }
       const { data, error } = await service.auth.admin.createUser({
-        email: `p-${crypto.randomUUID()}@${TEMP_DOMAIN}`,
-        password: crypto.randomUUID() + crypto.randomUUID(),
+        email: mobileEmail(o.mobile),
+        password: password || crypto.randomUUID() + crypto.randomUUID(),
         email_confirm: true,
-        user_metadata: { full_name: r.name, club: club ?? '', gender: gender ?? '', temp: true },
+        user_metadata: { full_name: o.full_name, phone: o.mobile, club: x.club, gender: x.gender, birth_year: x.year ? String(x.year) : '' },
       });
-      if (error || !data.user) { r.kind = 'failed'; return; }
-      const { data: code, error: sErr } = await service.rpc('setup_temp_player', { account: data.user.id, club, gender });
-      if (sErr) { await service.auth.admin.deleteUser(data.user.id); r.kind = 'failed'; return; }
-      r.account = data.user.id;
-      r.claim_code = code;
-      r.kind = r.kind === 'many' ? 'new_many' : 'new';
+      if (error || !data.user) { o.kind = 'failed'; o.error = error?.message; return; }
+      const { data: playerId, error: sErr } = await service.rpc('setup_mobile_player', {
+        account: data.user.id, mobile: o.mobile, club: x.club || null, gender: x.gender || null,
+        birth_year: x.year, directory: x.directory, default_password: !password,
+      });
+      if (sErr) { await service.auth.admin.deleteUser(data.user.id); o.kind = 'failed'; o.error = sErr.message; return; }
+      if (x.photo) await service.from('profiles').update({ avatar_url: x.photo }).eq('id', data.user.id);
+      o.kind = 'new'; o.id = data.user.id; o.player_id = playerId ?? null;
     }));
   }
+  return out;
+}
 
-  let waitlisted = 0;
-  if (tournament) {
-    const ids = rows.filter((r) => r.account).map((r) => r.account);
-    const { data: n, error: wErr } = await service.rpc('waitlist_add', { t: tournament, accounts: ids });
-    if (wErr) throw new Error(`waiting list: ${wErr.message}`);
-    waitlisted = n ?? 0;
-  }
-  return {
-    waitlisted,
-    rows: rows.map((r) => ({ full_name: r.name, id: r.account, kind: r.kind, claim_code: r.claim_code })),
-  };
+/** Point an account's login at a mobile number. A temporary account (old batch) also gets the password "pingo123". */
+// deno-lint-ignore no-explicit-any
+async function setMobile(service: any, target: string, raw: unknown, self: boolean): Promise<Response> {
+  const mobile = normalizeMobile(raw);
+  if (!mobile) return json({ error: 'bad mobile' }, 400);
+  const { data: existing, error: exErr } = await service.rpc('account_by_mobile', { m: mobile });
+  if (exErr) return json({ error: exErr.message }, 500);
+  if (existing && existing !== target) return json({ error: 'mobile already registered' }, 400);
+  const { data: prof } = await service.from('profiles').select('is_temp').eq('id', target).maybeSingle();
+  if (!prof) return json({ error: 'account not found' }, 404);
+  const { error } = await service.auth.admin.updateUserById(target, { email: mobileEmail(mobile), email_confirm: true });
+  if (error) return json({ error: /already/i.test(error.message) ? 'mobile already registered' : error.message }, 400);
+  const { error: sErr } = await service.rpc('setup_mobile_player', {
+    account: target, mobile, club: null, gender: null, birth_year: null, directory: null,
+    default_password: !self && !!prof.is_temp,
+  });
+  if (sErr) return json({ error: sErr.message }, 500);
+  return json({ ok: true });
 }

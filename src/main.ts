@@ -2698,7 +2698,7 @@ if (online()) {
 }
 
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#/login' && /^#\/(t|news|shop|training|claim)\//.test(lastHash)) {
+  if (location.hash === '#/login' && /^#\/(t|news|shop|training|claim|desk)\//.test(lastHash)) {
     try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
   }
   lastHash = location.hash;

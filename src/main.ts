@@ -1470,6 +1470,7 @@ let busy = false;
 const authVals: Record<string, string> = {};
 
 const RETURN_KEY = 'pingo.returnTo';
+let openDeskAfterLogin = false;
 
 /** Where to go after signing in: the tournament the player came from, else home. */
 function takeReturn(): string {
@@ -1548,7 +1549,10 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
     if (kind === 'login') {
       await remote.signIn(email, password);
       for (const k of Object.keys(authVals)) delete authVals[k];
-      location.hash = takeReturn();
+      const back = takeReturn();
+      // No page to go back to: organizers, trainers, sellers and admins open in their own tool.
+      openDeskAfterLogin = back === '#/';
+      location.hash = back;
     } else {
       const year = val('aYear').replace(/[^\d]/g, '');
       const wants = EXTRA.filter((r) => (document.getElementById(`aWant-${r}`) as HTMLInputElement | null)?.checked).join(',');
@@ -2690,6 +2694,12 @@ if (online()) {
       if (session.profile && back && ['', '#', '#/', '#/login'].includes(location.hash)) {
         try { localStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
         location.hash = back;
+        return;
+      }
+      const toDesk = openDeskAfterLogin;
+      openDeskAfterLogin = false;
+      if (toDesk && session.profile && (canOrganize() || isSeller() || isTrainer()) && ['', '#', '#/'].includes(location.hash)) {
+        location.hash = '#/desk';
         return;
       }
       route();

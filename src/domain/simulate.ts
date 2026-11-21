@@ -18,16 +18,38 @@ export function waitingPlayers(t: Tournament): string[] {
   return t.players.filter((p) => !placed.has(p.id)).map((p) => p.id);
 }
 
-/** Add `count` random players to the waiting list (names not already in the tournament). Setup stage only. */
-export function addRandomPlayers(t: Tournament, count: number, seed = Date.now()): string[] {
+/** A registered demo person (account with a real-looking photo) the simulation may use. */
+export interface SimPerson { name: string; accountId: string }
+
+/**
+ * Add `count` random players to the waiting list (names not already in the tournament). Setup stage only.
+ * When `people` are given (registered demo players with photos), they are used first, in random
+ * order, so the simulated players show real faces; plain names fill the rest.
+ */
+export function addRandomPlayers(t: Tournament, count: number, seed = Date.now(), people: SimPerson[] = []): string[] {
   if (t.stage !== 'setup') throw new Error('locked');
   const taken = new Set(t.players.map((p) => p.name));
-  const names = sampleNames(count + taken.size + 8, seed).filter((x) => !taken.has(x)).slice(0, count);
-  const ids = names.map((name) => {
+  const accounts = new Set(t.players.map((p) => p.accountId ?? p.profileId).filter(Boolean));
+  const ids: string[] = [];
+  let r = seed % 2147483647 || 1;
+  const rand = () => (r = (r * 48271) % 2147483647) / 2147483647;
+  const pool = people.filter((p) => !accounts.has(p.accountId) && !taken.has(p.name))
+    .map((p) => ({ p, k: rand() })).sort((a, b) => a.k - b.k).map((x) => x.p);
+  for (const p of pool.slice(0, count)) {
     const id = uid();
-    t.players.push({ id, name });
-    return id;
-  });
+    t.players.push({ id, name: p.name, accountId: p.accountId });
+    taken.add(p.name);
+    ids.push(id);
+  }
+  const rest = count - ids.length;
+  if (rest > 0) {
+    const names = sampleNames(rest + taken.size + 8, seed).filter((x) => !taken.has(x)).slice(0, rest);
+    for (const name of names) {
+      const id = uid();
+      t.players.push({ id, name });
+      ids.push(id);
+    }
+  }
   return ids;
 }
 

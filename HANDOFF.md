@@ -55,3 +55,11 @@ Also confirmed:
 - Organizer: create a tournament (opens registration), simulate demo players joining (random count or picked by photo), approve, close and draw groups, play rounds, knockout, champion. Entry fee per tournament (`fee`) and who paid (`paid`) live in the tournament state (`src/domain/payments.ts`).
 - Trainer: week strip, add a demo week of slots, simulate bookings, paid tick per booking, totals. Seller: demo products, simulate orders, status buttons, paid tick per order, totals.
 - Database: migration 0012 (bookings.paid, orders.paid, set_*_paid, sim_players/sim_join/sim_book/sim_order/sim_clear). 40 demo accounts `sim01..sim40@demo.pingo.example` with CC0 AI portraits in `public/demo/players` (seed `supabase/seed/sim_players.sql`; removed by `demo_remove.sql`).
+
+## Tournament invitations and biographies, 2026-11-21
+- Organizer (own tournaments) or admin (any tournament) invites registered users from the desk control room, step 1 ("دعوة لاعبين"): search by name, pick several, send. Statuses: pending, accepted, declined, cancelled (organizer can take back a pending one).
+- The invited player sees a gold card on the home page, on #/me and on the tournament's registration tab, with accept/decline. Accepting enters the player as approved straight away (no second approval), within the player limit, while registration is open.
+- Simulation in the same card: invite N demo players, then "make them answer" (about 4 in 5 accept).
+- Database: migration 0013 (`invitations` table, `invite_players`, `cancel_invitation`, `answer_invitation`, `sim_answer_invitations`; `public_profiles.is_organizer`). Code: `src/pages/invites.ts`.
+- Biography (optional, `profiles.bio`, 600 chars): organizers, trainers and sellers edit it in a card at the top of their desk (or on #/me). Shown on the new public page `#/u/<id>` (linked from the organizer name on tournament pages and the seller box on products), on the trainer page and on product pages.
+- The tournament-page simulation ("محاكاة البطولة") now uses the 40 registered demo players first, so simulated players show real-looking photos.

@@ -16,6 +16,8 @@ export interface PublicProfile {
   is_trainer: boolean;
   avatar_url: string | null;
   gender?: 'male' | 'female' | null;
+  /** Organizer (or admin); from migration 0013, missing before it. */
+  is_organizer?: boolean;
 }
 
 const peopleCache = new Map<string, PublicProfile>();
@@ -30,16 +32,22 @@ export async function people(ids: string[]): Promise<Map<string, PublicProfile>>
   return peopleCache;
 }
 
+/** Keep already-known public cards (e.g. demo players) so photos show without another request. */
+export function remember(list: PublicProfile[]): void {
+  for (const r of list) if (!peopleCache.has(r.id)) peopleCache.set(r.id, r);
+}
+
 export const personName = (id: string) => peopleCache.get(id)?.full_name ?? '';
 export const person = (id: string) => peopleCache.get(id);
 export const forgetPeople = () => peopleCache.clear();
+export const forgetPerson = (id: string) => peopleCache.delete(id);
 
 export const photoOf = (id: string | undefined) => (id ? peopleCache.get(id)?.avatar_url ?? null : null);
 export const genderOf = (id: string | undefined) => (id ? peopleCache.get(id)?.gender ?? null : null);
 
 /** Everyone with an account whose name matches (for picking assistants). */
-export async function searchPeople(q: string): Promise<PublicProfile[]> {
-  const rows = check(await db().from('public_profiles').select('*').ilike('full_name', `%${q.replace(/[%_]/g, '')}%`).limit(8)) as PublicProfile[];
+export async function searchPeople(q: string, limit = 8): Promise<PublicProfile[]> {
+  const rows = check(await db().from('public_profiles').select('*').ilike('full_name', `%${q.replace(/[%_]/g, '')}%`).order('full_name').limit(limit)) as PublicProfile[];
   for (const r of rows) peopleCache.set(r.id, r);
   return rows;
 }

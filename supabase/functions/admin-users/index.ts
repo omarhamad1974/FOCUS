@@ -12,11 +12,11 @@
 //   Anyone: a new account that signs in with its mobile number (migration 0014). No SMS, no email.
 // POST JSON { action: 'players', rows: [{ full_name, mobile, club?, gender?, birth_year?, directory_id?, photo? }], tournament_id? }
 //   -> { rows: [...], waitlisted }   organizers one row at a time, the admin any number and a waiting list.
-//   Each new mobile gets an account with the password "pingo" (changed by the player at first sign-in);
+//   Each new mobile gets an account with the password "pingo123" (changed by the player at first sign-in);
 //   a mobile that already has an account reuses it.
 // POST JSON { action: 'set_mobile', user_id?, mobile } -> { ok: true }
 //   Change the mobile an account signs in with: your own, or anyone's for the admin.
-// POST JSON { action: 'reset_password', user_id } -> { ok: true }   admins only: password back to "pingo".
+// POST JSON { action: 'reset_password', user_id } -> { ok: true }   admins only: password back to "pingo123".
 // POST JSON { action: 'delete_users', user_ids: [...] }   -> { deleted, skipped }   admins only.
 //   Admin accounts and the caller's own account are never deleted. Tournaments and
 //   articles of a deleted account move to the calling admin so they are not lost.
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
   if (body.action === 'create') {
     // One account made by an organizer or the admin. With a mobile it signs in with the mobile
-    // (password "pingo" unless one is given); an email still works for staff accounts.
+    // (password "pingo123" unless one is given); an email still works for staff accounts.
     const full_name = String(body.full_name ?? '').trim();
     const email = String(body.email ?? '').trim();
     const password = String(body.password ?? '').trim();
@@ -254,7 +254,7 @@ async function deleteUsers(service: any, adminId: string, raw: unknown) {
 // Same rules as src/domain/mobile.ts and public.norm_mobile (migration 0014).
 
 const MOBILE_DOMAIN = 'phone.pingo.example';
-const DEFAULT_PASSWORD = 'pingo';
+const DEFAULT_PASSWORD = 'pingo123';
 
 function normalizeMobile(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null;
@@ -299,7 +299,7 @@ async function signup(service: any, body: Record<string, unknown>): Promise<Resp
 
 interface PlayerOut { full_name: string; mobile: string; id: string | null; player_id: string | null; kind: 'new' | 'account' | 'bad_mobile' | 'failed'; error?: string }
 
-/** New accounts for name + mobile rows (password "pingo", or `password` when given); existing mobiles reuse their account. */
+/** New accounts for name + mobile rows (password "pingo123", or `password` when given); existing mobiles reuse their account. */
 // deno-lint-ignore no-explicit-any
 async function addPlayers(service: any, raw: unknown[], password: string): Promise<PlayerOut[]> {
   const seen = new Set<string>();
@@ -346,7 +346,7 @@ async function addPlayers(service: any, raw: unknown[], password: string): Promi
   return out;
 }
 
-/** Point an account's login at a mobile number. A temporary account (old batch) also gets the password "pingo". */
+/** Point an account's login at a mobile number. A temporary account (old batch) also gets the password "pingo123". */
 // deno-lint-ignore no-explicit-any
 async function setMobile(service: any, target: string, raw: unknown, self: boolean): Promise<Response> {
   const mobile = normalizeMobile(raw);

@@ -1,7 +1,7 @@
 /**
  * Batch player entry (admin) and the older claim codes.
  * - The admin imports an Excel/CSV file or pastes "name, mobile" lines: each new mobile gets an
- *   account that signs in with that mobile and the password "pingo" (changed at first sign-in),
+ *   account that signs in with that mobile and the password "pingo123" (changed at first sign-in),
  *   to share on WhatsApp or print. The batch can go straight onto a tournament's waiting list.
  * - #/claim/CODE still works for codes handed out before mobile sign-in (Nov 2026).
  */
@@ -176,7 +176,7 @@ const KIND_BADGE: Record<remote.AddKind, [string, MessageKey]> = {
 /** Link to the app's sign-in page, on whatever address it runs. */
 export const loginLink = () => `${location.origin}${location.pathname}#/login`;
 
-/** WhatsApp message for a player whose account was just made: mobile + "pingo". */
+/** WhatsApp message for a player whose account was just made: mobile + "pingo123". */
 export function loginText(name: string, mobile: string): string {
   return t('batch.waText', { name, mobile, password: DEFAULT_PASSWORD, link: loginLink() });
 }

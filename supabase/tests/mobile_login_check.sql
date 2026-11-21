@@ -24,7 +24,7 @@ insert into auth.users (id, email, raw_user_meta_data, encrypted_password) value
  ('00000000-0000-0000-0000-0000000000d3','01005556666@phone.pingo.example','{"full_name":"Typed Player","phone":"01005556666"}', 'x');
 select setup_mobile_player('00000000-0000-0000-0000-0000000000d3', '01005556666', 'Club', 'female', 2004, '00000000-0000-0000-0000-0000000000e3') = '00000000-0000-0000-0000-0000000000e3' as linked_row;
 select phone, club, gender, birth_year, must_change_password from profiles where id = '00000000-0000-0000-0000-0000000000d3';
-select encrypted_password = extensions.crypt('pingo', encrypted_password) as password_is_pingo from auth.users where id = '00000000-0000-0000-0000-0000000000d3';
+select encrypted_password = extensions.crypt('pingo123', encrypted_password) as password_is_pingo from auth.users where id = '00000000-0000-0000-0000-0000000000d3';
 select state -> 'players' -> 0 ->> 'accountId' = '00000000-0000-0000-0000-0000000000d3' as in_tournament from tournaments where id = 't3';
 select count(*) = 1 as one_row, max(phone) as phone from players where profile_id = '00000000-0000-0000-0000-0000000000d3';
 
@@ -44,7 +44,7 @@ select password_changed();
 select must_change_password as still_must from profiles where id = '00000000-0000-0000-0000-0000000000d3';
 reset role;
 
--- Admin reset brings back "pingo" and the reminder
+-- Admin reset brings back "pingo123" and the reminder
 select reset_default_password('00000000-0000-0000-0000-0000000000d3');
 select must_change_password as must_again from profiles where id = '00000000-0000-0000-0000-0000000000d3';
 select setup_mobile_player('00000000-0000-0000-0000-0000000000d3', 'nope'); -- expect error

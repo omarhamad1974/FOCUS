@@ -6,7 +6,7 @@
 
 export const MOBILE_DOMAIN = 'phone.pingo.example';
 /** Password every account made by an organizer or the admin starts with. */
-export const DEFAULT_PASSWORD = 'pingo';
+export const DEFAULT_PASSWORD = 'pingo123';
 
 const ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
 const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';

@@ -19,7 +19,7 @@ export interface Profile {
   bio?: string | null;
   avatar_url?: string | null;
   gender?: Gender | null;
-  /** Still on the starting password "pingo" (migration 0014). */
+  /** Still on the starting password "pingo123" (migration 0014). */
   must_change_password?: boolean;
 }
 
@@ -109,7 +109,7 @@ export async function changePassword(password: string): Promise<void> {
 export const setMobile = (mobile: string, userId?: string) =>
   adminUsers<{ ok: true }>({ action: 'set_mobile', mobile, ...(userId ? { user_id: userId } : {}) });
 
-/** Admin: the account's password goes back to "pingo" and the player is asked to change it. */
+/** Admin: the account's password goes back to "pingo123" and the player is asked to change it. */
 export const resetToDefaultPassword = (userId: string) => adminUsers<{ ok: true }>({ action: 'reset_password', user_id: userId });
 
 export async function resetPassword(email: string): Promise<void> {
@@ -275,7 +275,7 @@ export interface AddedPlayer {
 }
 
 /**
- * Accounts for name + mobile rows: each new mobile signs in with password "pingo"; a mobile that
+ * Accounts for name + mobile rows: each new mobile signs in with password "pingo123"; a mobile that
  * already has an account reuses it. Organizers one row at a time, the admin any number and a
  * tournament's waiting list (Edge Function admin-users, action 'players').
  */

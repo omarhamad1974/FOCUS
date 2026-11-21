@@ -1560,7 +1560,7 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
     }
     for (const k of Object.keys(authVals)) delete authVals[k];
     const back = takeReturn();
-    // First sign-in with the starting password "pingo": offer to choose a new one right away.
+    // First sign-in with the starting password "pingo123": offer to choose a new one right away.
     const prof = await remote.myProfile().catch(() => null);
     if (prof?.must_change_password) { pwReturn = back; location.hash = '#/password'; }
     else location.hash = back;
@@ -1571,7 +1571,7 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
   route();
 }
 
-/* Password: chosen at first sign-in (accounts made with "pingo") and changeable anytime. */
+/* Password: chosen at first sign-in (accounts made with "pingo123") and changeable anytime. */
 let forgotWa = '';
 let pwReturn = '#/';
 let pwMsg = '';
@@ -1990,7 +1990,7 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
       keepAuthVals();
       const id = val('aLogin');
       forgotWa = '';
-      // Mobile accounts have no mailbox: the admin puts the password back to "pingo".
+      // Mobile accounts have no mailbox: the admin puts the password back to "pingo123".
       if (!id.includes('@')) { authMsg = '✅ ' + t('auth.forgotMobile'); forgotWa = normalizeMobile(id) ?? id; route(); return true; }
       try { await remote.resetPassword(id); authMsg = '✅ ' + t('auth.resetSent'); } catch (e) { authMsg = authErr(e); }
       route(); return true;
@@ -2072,7 +2072,7 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
       let entry: remote.DirPlayer | undefined;
       try {
         if (act === 'dir-new') {
-          // A new player needs a mobile: it becomes their username (password "pingo").
+          // A new player needs a mobile: it becomes their username (password "pingo123").
           const mobile = normalizeMobile(val('dirNewMobile'));
           if (!mobile) { toast(t(val('dirNewMobile') ? 'auth.err.badMobile' : 'dir.needMobile')); document.getElementById('dirNewMobile')?.focus(); return true; }
           const r = (await remote.addPlayers([{ full_name: el.dataset.name!, mobile }])).rows[0];
@@ -2661,7 +2661,7 @@ document.addEventListener('submit', async (e) => {
     if (!mobile) { toast(t('auth.err.badMobile')); return; }
     const year = Number(val('pYear').replace(/[^\d]/g, ''));
     try {
-      // Every player is an account that signs in with their mobile and "pingo".
+      // Every player is an account that signs in with their mobile and "pingo123".
       const r = (await remote.addPlayers([{ full_name: name, mobile, club: val('pClub') || undefined, birth_year: year >= 1920 ? year : undefined }])).rows[0];
       if (r?.kind === 'new') toast(`✅ ${t('dir.added')} · ${mobile} / ${DEFAULT_PASSWORD}`);
       else toast(authErr(new Error(r?.kind === 'account' ? 'mobile already registered' : r?.error ?? 'bad mobile')));

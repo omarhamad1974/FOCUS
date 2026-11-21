@@ -2,7 +2,7 @@
 -- * Every player has at least a name and a mobile number. The mobile is the login: the account's
 --   hidden email is <mobile>@phone.pingo.example (no SMS, no email is ever sent to it).
 -- * Accounts made by an organizer or the admin (one by one or from a file) start with the
---   password "pingo"; the player is asked to change it at first sign-in and can change it anytime.
+--   password "pingo123"; the player is asked to change it at first sign-in and can change it anytime.
 -- * Claim codes are no longer made; codes already handed out keep working.
 -- * Accounts are created by the admin-users Edge Function (actions signup, players, create,
 --   set_mobile, reset_password): redeploy it after this file.
@@ -56,7 +56,7 @@ declare
 begin
   if mob is null then raise exception 'bad mobile'; end if;
   if default_password then
-    update auth.users set encrypted_password = extensions.crypt('pingo', extensions.gen_salt('bf')) where id = account;
+    update auth.users set encrypted_password = extensions.crypt('pingo123', extensions.gen_salt('bf')) where id = account;
   end if;
   update public.profiles p set
     phone = mob,
@@ -86,11 +86,11 @@ begin
 end;
 $$;
 
--- The admin's "reset to pingo" for a player who forgot their password.
+-- The admin's "reset to pingo123" for a player who forgot their password.
 create or replace function public.reset_default_password(account uuid) returns void
 language plpgsql security definer set search_path = public, auth as $$
 begin
-  update auth.users set encrypted_password = extensions.crypt('pingo', extensions.gen_salt('bf')) where id = account;
+  update auth.users set encrypted_password = extensions.crypt('pingo123', extensions.gen_salt('bf')) where id = account;
   if not found then raise exception 'account not found'; end if;
   update public.profiles set must_change_password = true where id = account;
 end;

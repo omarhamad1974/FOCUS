@@ -49,3 +49,9 @@ Also confirmed:
 - Points of every game is an optional per-tournament setting (`Tournament.pointsPerGame`, in the wizard and the tournament settings). Entry: tap the game winner, type the loser's points; the winner's points are filled in (11, or +2 after 10-10).
 - Older tournaments without the setting keep detailed scoring if they already have game points (`recordsPoints`).
 - Tie-breaks: points difference is used only when every match among the tied players has game points; otherwise players still level on games go to the organizer.
+
+## Role tools ("مكتب بينجو"), 2026-11-21
+- Back office apart from the public site at `#/desk/org`, `#/desk/trainer`, `#/desk/seller`, `#/desk/admin` (own header and role tabs; "عرض الموقع" goes back). Code in `src/admin/` (one file per role), text in `src/i18n/ar-desk.ts`. The مساحتي bar and `#/org` now lead here.
+- Organizer: create a tournament (opens registration), simulate demo players joining (random count or picked by photo), approve, close and draw groups, play rounds, knockout, champion. Entry fee per tournament (`fee`) and who paid (`paid`) live in the tournament state (`src/domain/payments.ts`).
+- Trainer: week strip, add a demo week of slots, simulate bookings, paid tick per booking, totals. Seller: demo products, simulate orders, status buttons, paid tick per order, totals.
+- Database: migration 0012 (bookings.paid, orders.paid, set_*_paid, sim_players/sim_join/sim_book/sim_order/sim_clear). 40 demo accounts `sim01..sim40@demo.pingo.example` with CC0 AI portraits in `public/demo/players` (seed `supabase/seed/sim_players.sql`; removed by `demo_remove.sql`).

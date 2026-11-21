@@ -2,7 +2,10 @@
  * All interface text lives here so it can be reviewed in one place and an
  * English dictionary can be added later with the same keys.
  */
+import { arDesk } from './ar-desk';
+
 export const ar = {
+  ...arDesk,
   'app.name': 'بينجو',
   'app.tagline': 'بطولات تنس الطاولة بسهولة',
 

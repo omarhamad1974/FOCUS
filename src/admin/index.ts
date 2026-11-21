@@ -11,6 +11,7 @@ import * as organizer from './organizer';
 import * as trainer from './trainer';
 import * as seller from './seller';
 import * as adminDesk from './adminDesk';
+import * as bio from './bio';
 
 export { setHost } from './host';
 
@@ -30,12 +31,15 @@ export function page(parts: string[]): string | null {
     if (held.length) { location.hash = `#/desk/${held.includes('admin') && !role ? 'admin' : held[0]}`; return null; }
     return deskShell('org', empty('shield', t('desk.noRole'), `<a class="btn gold small" href="#/me">${t('desk.askRole')}</a>`));
   }
-  const body = role === 'org' ? organizer.page(parts) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page() : adminDesk.page();
+  let body = role === 'org' ? organizer.page(parts) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page() : adminDesk.page();
+  // Optional biography for organizers, trainers and sellers, on each tool's front page.
+  if (role !== 'admin' && !parts[2]) body = body.replace('</section>', () => `</section>${bio.card()}`);
   return deskShell(role, body, { org: organizer.pendingCount() });
 }
 
 export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
   const role = current();
+  if (act.startsWith('dk-bio-')) return bio.onClick(act);
   if (act === 'dk-new-open' && role !== 'org') { location.hash = '#/desk/org'; return organizer.onClick(act, el); }
   if (role === 'org') return organizer.onClick(act, el);
   if (role === 'trainer') return trainer.onClick(act, el);

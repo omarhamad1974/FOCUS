@@ -24,6 +24,7 @@ import { icon } from '../ui/icons';
 import { avatar, confetti, esc, groupColor, toast } from '../ui/util';
 import { host } from './host';
 import * as api from './api';
+import * as invites from '../pages/invites';
 import { countChips, ensureSim, payBox, paidTick, personLine, playerGrid, sample, statTile, stepper, tip } from './ui';
 
 /* ------------------------------------------------------------------ state */
@@ -38,6 +39,8 @@ let newOpen = false;
 const draft = { groups: 4, fee: 200, max: '', auto: true };
 
 export function reset(): void { regCache.clear(); picked.clear(); picking = false; }
+
+invites.setRegsChanged((id) => loadRegs(id, true));
 
 function loadRegs(id: string, force = false): void {
   if (regLoading.has(id) || (regCache.has(id) && !force)) return;
@@ -200,6 +203,7 @@ function registerPanel(tm: Tournament): string {
       <div class="row"><button class="btn green small" data-act="dk-join-picked" ${busy || !picked.size ? 'disabled' : ''}>✅ ${t('desk.org.joinPicked', { n: picked.size })}</button>
       <button class="btn ghost small" data-act="dk-pick-clear">${t('desk.sim.clearPick')}</button></div></div>` : ''}
   </div>
+  ${invites.orgCard(tm, joined)}
   <div class="card">
     <div class="row between"><h2>📝 ${t('reg.title')}</h2><span class="badge ${reg.open ? 'green' : ''}">${reg.open ? t('reg.open') : t('reg.closed')}</span></div>
     <div class="row dk-settings">

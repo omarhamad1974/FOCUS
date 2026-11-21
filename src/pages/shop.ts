@@ -106,7 +106,8 @@ function productPage(id: string): string {
       <p class="muted small">${p.stock > 0 ? t('shop.inStock', { n: p.stock }) : t('shop.soldOut')}</p>
       ${p.approved ? '' : `<div class="hint">${t('shop.waitingApproval')}</div>`}
       ${p.description ? `<div class="prose"><p dir="auto">${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
-      ${seller ? `<div class="seller">${avatarOf(seller)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}</div></div>` : ''}
+      ${seller ? `<a class="seller" href="#/u/${esc(seller.id)}">${avatarOf(seller)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}
+        ${seller.bio ? `<p class="small clamp" dir="auto" style="margin:4px 0 0">${esc(seller.bio)}</p>` : ''}</div></a>` : ''}
       ${order}
       ${own || isAdmin() ? `<a class="btn soft small" href="#/shop/p/${p.id}/edit" style="margin-block-start:10px">${icon('edit', 16)} ${t('shop.editProduct')}</a>` : ''}
     </div>

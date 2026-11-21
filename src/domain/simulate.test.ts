@@ -27,6 +27,19 @@ describe('tournament simulation', () => {
     expect(() => startGroups(t)).toThrow();
   });
 
+  it('uses registered demo people (with photos) first, then plain names', () => {
+    const t = empty();
+    const people = [1, 2, 3, 4, 5].map((i) => ({ name: `Demo ${i}`, accountId: `acc-${i}` }));
+    const first = addRandomPlayers(t, 3, 11, people);
+    expect(first).toHaveLength(3);
+    expect(t.players.every((p) => p.accountId?.startsWith('acc-'))).toBe(true);
+    addRandomPlayers(t, 6, 12, people);
+    expect(t.players).toHaveLength(9);
+    const accs = t.players.map((p) => p.accountId).filter(Boolean);
+    expect(new Set(accs).size).toBe(5);
+    expect(new Set(t.players.map((p) => p.name)).size).toBe(9);
+  });
+
   it('keeps manual moves and spreads the rest evenly at random', () => {
     const t = empty();
     const ids = addRandomPlayers(t, 15, 3);

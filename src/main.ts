@@ -26,6 +26,9 @@ import * as training from './pages/training';
 import * as faq from './pages/faq';
 import * as claim from './pages/claim';
 import * as desk from './admin';
+import * as deskApi from './admin/api';
+import * as invites from './pages/invites';
+import * as profile from './pages/profile';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
@@ -90,7 +93,8 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
-    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset();
+    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset();
+    regCache.clear();
     assisting.clear();
     if (session.profile) {
       for (const id of await content.myAssignments().catch(() => [] as string[])) assisting.add(id);
@@ -419,6 +423,7 @@ function homePage(): string {
     `<a class="feature ${cls} rise" href="${href}"><span class="f-ic">${icon(ic, 30)}</span><b>${t(title)}</b><small>${t(text)}</small></a>`;
   const more = (href: string) => `<a class="more" href="${href}">${t('home.seeAll')} ${icon('chevron', 16)}</a>`;
   return `
+  ${invites.banner()}
   ${posts === null ? '<div class="sk-row car-sk"></div>' : newsCarousel(posts)}
   ${tournamentCarousel()}
   <div class="features">
@@ -754,7 +759,7 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
   <section class="hero ${tm.cover ? 't-hero' : ''}">
     ${tm.cover ? `<div class="t-hero-bg"><img src="${esc(tm.cover)}" alt="" decoding="async"></div>` : ''}
     <div class="row between" style="align-items:flex-start"><h1 dir="auto">${esc(tm.name)}</h1>${statusBadge(publicStatus(tm), 'hero-status')}</div>
-    <p class="muted">${tm.date ? dateFmt.format(new Date(tm.date)) : ''}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}${tm.location ? ` · 📍 <span dir="auto">${esc(tm.location)}</span>` : ''} · ${n(tm.players.length)} ${t('t.players')}${org ? ` · ${t('tl.by')} <span dir="auto">${esc(org.full_name)}</span>` : ''}</p>
+    <p class="muted">${tm.date ? dateFmt.format(new Date(tm.date)) : ''}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}${tm.location ? ` · 📍 <span dir="auto">${esc(tm.location)}</span>` : ''} · ${n(tm.players.length)} ${t('t.players')}${org ? ` · ${t('tl.by')} <a href="#/u/${esc(org.id)}" dir="auto">${esc(org.full_name)}</a>` : ''}</p>
     ${tableMap(tm)}
     ${stagePath(tm)}
     <div class="row between small" style="margin-block-start:10px"><span>${t('t.progress')}</span><span>${n(p.done)} / ${n(p.total)}</span></div>
@@ -965,10 +970,15 @@ function simAction(act: string, el: HTMLElement, tm: Tournament): boolean {
       route();
       return true;
     case 'sim-add': {
-      const added = sim.addRandomPlayers(tm, simCount);
-      persist();
-      toast(`🎲 ${t('tsim.added', { n: added.length })}`);
-      go('groups');
+      // Online, use the registered demo players first so the simulation shows real-looking photos.
+      const people = online() ? deskApi.simPlayers().catch(() => [] as deskApi.SimPlayer[]) : Promise.resolve([] as deskApi.SimPlayer[]);
+      void people.then((list) => {
+        content.remember(list.map((p) => ({ ...p, bio: null, is_seller: false, is_trainer: false })));
+        const added = sim.addRandomPlayers(tm, simCount, Date.now(), list.map((p) => ({ name: p.full_name, accountId: p.id })));
+        persist();
+        toast(`🎲 ${t('tsim.added', { n: added.length })}`);
+        go('groups');
+      });
       return true;
     }
     case 'sim-distribute': {
@@ -1667,6 +1677,7 @@ function mePage(): string {
     ...EXTRA.filter(hasRole).map((r) => `<span class="badge blue">${icon(ROLE_ICON[r], 14)} ${t(`roles.${r}` as MessageKey)}</span>`)].join('');
   return `<section class="banner b-me slim rise"><div class="row"><label class="me-photo" title="${esc(t('me.photo'))}">${avatarOf(p)}<span>${icon('image', 14)}</span><input type="file" accept="image/*" class="hidden" data-act="me-photo"></label><div><h1 dir="auto">${esc(p.full_name)}</h1>
     <div class="row" style="gap:6px">${roleBadges || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
+  ${invites.banner()}
   ${training.myBookingsCard()}
   ${shop.myOrdersCard()}
   <div class="card"><h3>${icon('trophy', 20)} ${t('me.myTournaments')}</h3>
@@ -1688,7 +1699,7 @@ function mePage(): string {
       <label class="field"><span>${t('auth.phone')}</span><input class="input" id="mPhone" type="tel" value="${esc(p.phone ?? '')}" dir="ltr"></label>
       <div class="row"><label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="mYear" inputmode="numeric" value="${p.birth_year ?? ''}" dir="ltr"></label>
       <label class="field" style="flex:2"><span>${t('auth.club')}</span><input class="input" id="mClub" value="${esc(p.club ?? '')}" dir="auto"></label></div>
-      ${isTrainer() || isSeller() ? `<label class="field"><span>${t('me.bio')}</span><textarea class="input" id="mBio" dir="auto" style="min-height:90px" maxlength="600" placeholder="${esc(t('me.bioPh'))}">${esc(p.bio ?? '')}</textarea></label>` : ''}
+      ${isTrainer() || isSeller() || canOrganize() ? `<label class="field"><span>${t('me.bio')} <small class="muted">(${t('bio.optional')})</small></span><textarea class="input" id="mBio" dir="auto" style="min-height:90px" maxlength="600" placeholder="${esc(t('me.bioPh'))}">${esc(p.bio ?? '')}</textarea></label>` : ''}
       <button class="btn green" type="submit">${icon('check')} ${t('me.save')}</button>
     </form>
   </div>
@@ -1942,6 +1953,7 @@ function registerView(tm: Tournament): string {
       action = `<div class="hint" style="background:${mine.status === 'approved' ? '#eafbe3' : ''}">${t(`reg.status.${mine.status}` as MessageKey)}</div>
         ${reg.open ? `<button class="btn ghost small" data-act="withdraw">${t('reg.withdraw')}</button>` : ''}`;
     } else if (mine?.status === 'rejected') action = `<div class="err">${t('reg.status.rejected')}</div>`;
+    else if (invites.pendingFor(tm.id)) action = invites.forTournament(tm.id);
     else if (reg.open) action = `<button class="btn green block" data-act="join" ${busy ? 'disabled' : ''}>🏓 ${t('reg.join')}</button>`;
     return `<div class="card">${status}${action}
         <a class="faq-mini" href="#/faq/${mine && (mine.status === 'pending' || mine.status === 'approved') ? 'withdraw' : 'join'}">${icon('help', 16)} ${t(mine && (mine.status === 'pending' || mine.status === 'approved') ? 'faq.withdraw.q' : 'faq.join.q')}</a></div>
@@ -1952,7 +1964,8 @@ function registerView(tm: Tournament): string {
   const decide = (r: remote.Registration, opts: ('approved' | 'rejected' | 'pending')[]) => opts.map((s) =>
     `<button class="btn ${s === 'approved' ? 'green' : s === 'rejected' ? 'red' : 'soft'} small" data-act="decide" data-id="${r.id}" data-s="${s}">${t(s === 'approved' ? 'reg.approve' : s === 'rejected' ? 'reg.reject' : 'reg.undo')}</button>`).join('');
   return `<div class="card">${status}
-    ${reg.open ? hint('reg.shareHint') + `<button class="btn soft small" data-act="copy-link">🔗 ${t('reg.copyLink')}</button>` : ''}
+    ${reg.open ? hint('reg.shareHint') + `<div class="row"><button class="btn soft small" data-act="copy-link">🔗 ${t('reg.copyLink')}</button>
+      <a class="btn gold small" href="#/desk/org/${tm.id}">📨 ${t('inv.orgTitle')}</a></div>` : ''}
     <label class="row" style="margin-block-start:10px"><input type="checkbox" data-act="reg-auto" ${reg.autoAccept ? 'checked' : ''}> ${t('reg.autoAccept')}</label>
     ${hint('reg.autoAcceptHint')}
     <label class="field"><span>${t('reg.maxPlayers')}</span>
@@ -2207,6 +2220,8 @@ function draw(): void {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(playersPage());
     if (parts[1] === 'batch') document.getElementById('bNames')?.focus();
+  } else if (parts[0] === 'u' && parts[1] && online()) {
+    shell(profile.page(parts[1]));
   } else if (parts[0] === 'claim' && online()) {
     shell(claim.page(parts));
   } else if (parts[0] === 't') {
@@ -2243,6 +2258,7 @@ document.addEventListener('click', (e) => {
   const here = current();
   const tm = el.dataset.tid ? findT(el.dataset.tid) : here.tm;
   const m = here.m;
+  if (act.startsWith('inv-')) { void invites.onClick(act, el); return; }
   if (act.startsWith('dk-')) { void desk.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
@@ -2580,7 +2596,7 @@ function syncInputs(): void {
 let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
-  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el)) return;
+  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el)) return;
   if (admin.onInput(el as HTMLInputElement)) return;
   if (el.dataset.act === 'assist-q') {
     const q = (el as HTMLInputElement).value.trim();
@@ -2671,16 +2687,26 @@ document.addEventListener('submit', async (e) => {
     return;
   }
   if (kind === 'create-account') {
+    // Read the form before redrawing: route() rebuilds the page and empties the fields.
+    const form = { name: val('cName'), mobile: val('cMobile'), pass: val('cPass'), club: val('cClub') };
+    const roles = EXTRA.filter((r) => (document.getElementById(`cRole-${r}`) as HTMLInputElement | null)?.checked);
+    let ok = false;
     busy = true; route();
     try {
-      const roles = EXTRA.filter((r) => (document.getElementById(`cRole-${r}`) as HTMLInputElement | null)?.checked);
-      const mobile = normalizeMobile(val('cMobile'));
-      if (!val('cName') || !mobile) throw new Error(val('cName') ? 'bad mobile' : 'required');
-      await remote.createAccount({ full_name: val('cName'), mobile, password: val('cPass'), club: val('cClub'), birth_year: '', roles });
-      toast(`✅ ${t('users.created')}`);
+      const mobile = normalizeMobile(form.mobile);
+      if (!form.name || !mobile) throw new Error(form.name ? 'bad mobile' : 'required');
+      await remote.createAccount({ full_name: form.name, mobile, password: form.pass, club: form.club, birth_year: '', roles });
+      toast(`✅ ${t('users.created')} · ${mobile} / ${form.pass || DEFAULT_PASSWORD}`);
       people = null;
+      ok = true;
     } catch (err) { toast(authErr(err)); }
     busy = false; route();
+    if (!ok) {
+      // Keep what was typed so only the wrong part needs fixing.
+      const put = (id: string, v: string) => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) el.value = v; };
+      put('cName', form.name); put('cMobile', form.mobile); put('cPass', form.pass); put('cClub', form.club);
+      for (const r of roles) { const el = document.getElementById(`cRole-${r}`) as HTMLInputElement | null; if (el) el.checked = true; }
+    }
     return;
   }
   if (kind === 'me' && session.profile) {

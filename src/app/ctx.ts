@@ -50,7 +50,17 @@ export const money = (x: number) => `${numberFmt.format(Math.round(x * 100) / 10
 export const hint = (key: MessageKey) => `<p class="hint">${esc(t(key))}</p>`;
 export const val = (id: string) => ((document.getElementById(id) as HTMLInputElement | null)?.value ?? '').trim();
 export const checked = (id: string) => !!(document.getElementById(id) as HTMLInputElement | null)?.checked;
-export const authErr = (e: unknown) => t(`auth.err.${remote.errorCode(e)}` as MessageKey);
+/**
+ * Arabic message for a failed call. When the reason is not one we know, the
+ * server's own words are added in brackets so problems can be reported and fixed.
+ */
+export const authErr = (e: unknown): string => {
+  const code = remote.errorCode(e);
+  if (code !== 'unknown') return t(`auth.err.${code}` as MessageKey);
+  const raw = (e instanceof Error ? e.message : String(e ?? '')).trim();
+  if (/password \(6\+\)|at least 6/i.test(raw)) return t('auth.err.weakPassword');
+  return raw ? `${t('auth.err.unknown')} (${raw.slice(0, 160)})` : t('auth.err.unknown');
+};
 export const loading = () => `<div class="card center muted"><span class="spin"></span> ${t('reg.loading')}</div>`;
 
 /** Ask a signed-out visitor to sign in, then bring them back here. */

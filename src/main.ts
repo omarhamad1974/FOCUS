@@ -12,7 +12,8 @@ import * as sim from './domain/simulate';
 import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
 import { championCelebration } from './ui/champion';
-import { online } from './config';
+import { online, SUPPORT_WHATSAPP } from './config';
+import { DEFAULT_PASSWORD, loginEmail, normalizeMobile } from './domain/mobile';
 import * as remote from './data/remote';
 import { addExtraPlayer, addPlayerToSetup, closeRegistration, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
@@ -282,6 +283,8 @@ function shell(body: string): void {
     ${isAdmin() ? `<a class="helpbtn adminbtn" href="#/admin" title="${esc(t('adm.title'))}" aria-label="${esc(t('adm.title'))}">${icon('shield', 18)}</a>` : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
+  ${session.profile?.must_change_password && rendering.preview === 'off' && !location.hash.startsWith('#/password') ? `<div class="pw-bar" role="status">🔑 <span>${t('pw.banner')}</span>
+    <a class="btn small gold" href="#/password">${t('pw.bannerBtn')}</a></div>` : ''}
   ${rendering.preview !== 'off' ? `<div class="preview-bar" role="status">${icon('eye', 18)}
     <span>${t('sim.viewingAs')} <b>${t(`sim.role.${rendering.preview}` as MessageKey)}</b></span>
     <span class="pv-roles">${PREVIEWS.map((r) => `<button data-act="pv-set" data-v="${r}" ${r === rendering.preview ? 'aria-pressed="true"' : ''}>${t(`sim.role.${r}` as MessageKey)}</button>`).join('')}</span>
@@ -1508,10 +1511,10 @@ function loginPage(): string {
     <a class="faq-mini" href="#/claim">🎟️ ${t('claim.menu')}</a>
     <form data-form="${signup ? 'signup' : 'login'}" novalidate>
       ${signup ? field('aName', 'auth.fullName', 'text', 'autocomplete="name" dir="auto" required') + `<p class="muted small" style="margin-block-start:-6px">${t('auth.fullNameHint')}</p>` : ''}
-      ${field('aEmail', 'auth.email', 'email', 'autocomplete="email" dir="ltr" required')}
+      ${signup ? field('aMobile', 'auth.mobile', 'tel', 'autocomplete="tel" inputmode="tel" dir="ltr" required placeholder="01001234567"') + `<p class="muted small" style="margin-block-start:-6px">${t('auth.mobileHint')}</p>`
+        : field('aLogin', 'auth.loginId', 'text', 'autocomplete="username" inputmode="text" dir="ltr" required placeholder="01001234567"')}
       ${field('aPass', 'auth.password', 'password', `autocomplete="${signup ? 'new-password' : 'current-password'}" dir="ltr" required minlength="6"`)}
       ${signup ? `<p class="muted small" style="margin-block-start:-6px">${t('auth.passwordHint')}</p>
-        ${field('aPhone', 'auth.phone', 'tel', 'autocomplete="tel" dir="ltr"')}
         <div class="row"><div style="flex:1">${field('aYear', 'auth.birthYear', 'text', 'inputmode="numeric" maxlength="4" dir="ltr"')}</div>
         <div style="flex:2">${field('aClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
         <span class="lbl">${t('auth.gender')}</span>
@@ -1526,6 +1529,7 @@ function loginPage(): string {
       ${authMsg ? `<div class="${authMsg.startsWith('✅') ? 'hint' : 'err'}" role="alert">${esc(authMsg)}</div>` : ''}
       <button class="btn green block" type="submit" ${busy ? 'disabled' : ''}>${signup ? '🚀 ' + t('auth.submitSignup') : '🔑 ' + t('auth.submitLogin')}</button>
       ${signup ? '' : `<button class="btn ghost small block" type="button" data-act="forgot" style="margin-block-start:8px">${t('auth.forgot')}</button>`}
+      ${!signup && forgotWa ? `<a class="btn small wa block" style="margin-block-start:8px" target="_blank" rel="noopener" href="https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(t('auth.forgotWa', { mobile: forgotWa }))}">${icon('whatsapp', 16)} ${t('claim.whatsapp')}</a>` : ''}
     </form>
   </div>`;
 }
@@ -1537,7 +1541,7 @@ const genderVal = (name: string) => (document.querySelector<HTMLInputElement>(`i
 
 /** Keep what the person typed in the sign-in form before it is drawn again. */
 function keepAuthVals(withPassword = false): void {
-  for (const id of ['aName', 'aEmail', 'aPhone', 'aYear', 'aClub', ...(withPassword ? ['aPass'] : [])]) if (document.getElementById(id)) authVals[id] = val(id);
+  for (const id of ['aName', 'aLogin', 'aMobile', 'aYear', 'aClub', ...(withPassword ? ['aPass'] : [])]) if (document.getElementById(id)) authVals[id] = val(id);
   if (document.querySelector('input[name="aGender"]')) authVals.aGender = genderVal('aGender');
 }
 
@@ -1550,28 +1554,92 @@ function genderPick(name: string, current: string, fullName: string): string {
 async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
   keepAuthVals(true);
   for (const r of ['organizer', 'seller', 'trainer']) { const c = document.getElementById(`aWant-${r}`) as HTMLInputElement | null; if (c) authVals[`aWant-${r}`] = c.checked ? '1' : ''; }
-  const email = val('aEmail'), password = val('aPass');
-  if (!email || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
+  const login = kind === 'login' ? val('aLogin') : val('aMobile'), password = val('aPass');
+  if (!login || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
+  if (!loginEmail(login) || (kind === 'signup' && !normalizeMobile(login))) { authMsg = t('auth.err.badMobile'); route(); return; }
+  if (kind === 'signup' && password.length < 6) { authMsg = t('auth.err.weakPassword'); route(); return; }
   if (kind === 'signup' && !genderVal('aGender')) { authMsg = t('auth.err.gender'); route(); return; }
-  busy = true; authMsg = ''; route();
+  busy = true; authMsg = ''; forgotWa = ''; route();
   try {
     if (kind === 'login') {
-      await remote.signIn(email, password);
-      for (const k of Object.keys(authVals)) delete authVals[k];
-      location.hash = takeReturn();
+      await remote.signIn(login, password);
     } else {
       const year = val('aYear').replace(/[^\d]/g, '');
       const wants = EXTRA.filter((r) => (document.getElementById(`aWant-${r}`) as HTMLInputElement | null)?.checked).join(',');
-      const needsConfirm = await remote.signUp({ email, password, full_name: val('aName'), phone: val('aPhone'), birth_year: year, club: val('aClub'), gender: genderVal('aGender'), wants });
-      delete authVals.aPass;
-      if (needsConfirm) { authMsg = '✅ ' + t('auth.checkEmail'); authTab = 'login'; }
-      else location.hash = takeReturn();
+      await remote.signUp({ mobile: login, password, full_name: val('aName'), birth_year: year, club: val('aClub'), gender: genderVal('aGender'), wants });
     }
+    for (const k of Object.keys(authVals)) delete authVals[k];
+    const back = takeReturn();
+    // First sign-in with the starting password "pingo123": offer to choose a new one right away.
+    const prof = await remote.myProfile().catch(() => null);
+    if (prof?.must_change_password) { pwReturn = back; location.hash = '#/password'; }
+    else location.hash = back;
   } catch (e) {
     authMsg = authErr(e);
   }
   busy = false;
   route();
+}
+
+/* Password: chosen at first sign-in (accounts made with "pingo123") and changeable anytime. */
+let forgotWa = '';
+let pwReturn = '#/';
+let pwMsg = '';
+let pwBusy = false;
+
+function passwordForm(first: boolean): string {
+  return `<form data-form="password" novalidate>
+      <label class="field"><span>${t('pw.new')}</span><input class="input" id="pwNew" type="password" autocomplete="new-password" dir="ltr" minlength="6"></label>
+      <label class="field"><span>${t('pw.again')}</span><input class="input" id="pwAgain" type="password" autocomplete="new-password" dir="ltr" minlength="6"></label>
+      ${pwMsg ? `<div class="${pwMsg.startsWith('✅') ? 'hint' : 'err'}" role="alert">${esc(pwMsg)}</div>` : ''}
+      <div class="row"><button class="btn green" type="submit" ${pwBusy ? 'disabled' : ''}>${pwBusy ? '<span class="spin"></span>' : icon('check')} ${t('pw.save')}</button>
+      ${first ? `<button class="btn ghost" type="button" data-act="pw-later">${t('pw.later')}</button>` : ''}</div>
+    </form>`;
+}
+
+/** #/password: the first-sign-in screen. */
+function passwordPage(): string {
+  const p = session.profile!;
+  return `<div class="card pw-card pop" style="max-width:480px;margin-inline:auto">
+    <div class="row">${avatarOf(p)}<h2 dir="auto">${esc(t('auth.welcome', { name: p.full_name }))}</h2></div>
+    <h3>🔑 ${t(p.must_change_password ? 'pw.firstTitle' : 'pw.title')}</h3>
+    ${p.must_change_password ? `<p>${t('pw.firstHint')}</p>` : hint('pw.hint')}
+    ${passwordForm(true)}
+  </div>`;
+}
+
+async function submitPassword(): Promise<void> {
+  const a = val('pwNew'), b = val('pwAgain');
+  if (a.length < 6) { pwMsg = t('auth.err.weakPassword'); route(); return; }
+  if (a !== b) { pwMsg = t('auth.err.mismatch'); route(); return; }
+  if (a === DEFAULT_PASSWORD) { pwMsg = t('auth.err.samePassword'); route(); return; }
+  pwBusy = true; pwMsg = ''; route();
+  try {
+    await remote.changePassword(a);
+    session.profile = await remote.myProfile();
+    toast(`✅ ${t('pw.saved')}`);
+    if (location.hash.startsWith('#/password')) { const back = pwReturn; pwReturn = '#/'; location.hash = back === '#/password' ? '#/' : back; }
+  } catch (e) { pwMsg = authErr(e); }
+  pwBusy = false;
+  route();
+}
+
+/* The mobile number an account signs in with (on the profile page). */
+let loginMobile: string | null | undefined;
+let loginEdit = false;
+function loginCard(): string {
+  if (loginMobile === undefined) { loginMobile = null; remote.myLoginMobile().then((m) => { loginMobile = m; route(); }).catch(() => undefined); }
+  return `<div class="card"><h3>📱 ${t('login.title')}</h3>
+    <p>${loginMobile ? esc(t('login.mobileNow', { mobile: loginMobile })) : t('login.emailNow')}</p>
+    ${loginEdit ? `<form data-form="login-mobile" class="row" novalidate>
+        <input class="input" id="lmMobile" type="tel" inputmode="tel" dir="ltr" style="flex:1" placeholder="01001234567" value="${esc(loginMobile ?? session.profile?.phone ?? '')}">
+        <button class="btn green small" type="submit">${t('common.save')}</button>
+        <button class="btn ghost small" type="button" data-act="login-edit">${icon('x', 14)}</button></form>`
+      : `<button class="btn soft small" data-act="login-edit">📱 ${t(loginMobile ? 'login.change' : 'login.set')}</button>`}
+    <hr class="sep">
+    <h3>🔑 ${t('pw.title')}</h3>${hint('pw.hint')}
+    ${passwordForm(false)}
+  </div>`;
 }
 
 const EXTRA: content.ExtraRole[] = ['organizer', 'seller', 'trainer'];
@@ -1616,6 +1684,7 @@ function mePage(): string {
     ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
   </div>
   ${rolesCard()}
+  ${loginCard()}
   <div class="card">
     <h3>${icon('user', 20)} ${t('me.title')}</h3>
     <span class="lbl">${t('me.photo')}</span>
@@ -1669,6 +1738,41 @@ function loadUsers(): void {
     .finally(route);
 }
 
+/* Admin: edit another account's details and the mobile it signs in with. */
+let editingUser: string | null = null;
+function userEditForm(p: remote.Profile): string {
+  return `<form data-form="user-edit" data-id="${p.id}" class="user-edit" style="flex-basis:100%" novalidate>
+    <div class="row"><label class="field" style="flex:2"><span>${t('auth.fullName')}</span><input class="input" id="ueName" dir="auto" value="${esc(p.full_name)}"></label>
+      <label class="field" style="flex:2"><span>${t('auth.mobile')}</span><input class="input" id="ueMobile" type="tel" dir="ltr" value="${esc(p.phone ?? '')}"></label></div>
+    <div class="row"><label class="field" style="flex:2"><span>${t('auth.club')}</span><input class="input" id="ueClub" dir="auto" value="${esc(p.club ?? '')}"></label>
+      <label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="ueYear" inputmode="numeric" dir="ltr" value="${p.birth_year ?? ''}"></label></div>
+    ${genderPick('ueGender', p.gender ?? '', p.full_name)}
+    <div class="row"><button class="btn green small" type="submit">${icon('check', 14)} ${t('common.save')}</button>
+      <button class="btn ghost small" type="button" data-act="user-edit" data-id="${p.id}">${t('common.cancel')}</button></div>
+  </form>`;
+}
+
+async function saveUserEdit(): Promise<void> {
+  const p = people?.find((x) => x.id === editingUser);
+  if (!p) return;
+  const year = Number(val('ueYear').replace(/[^\d]/g, ''));
+  const raw = val('ueMobile');
+  const mobile = raw ? normalizeMobile(raw) : null;
+  if (raw && !mobile) { toast(t('auth.err.badMobile')); return; }
+  try {
+    await remote.updateProfile(p.id, {
+      full_name: val('ueName') || p.full_name, club: val('ueClub') || null,
+      birth_year: year >= 1920 ? year : null,
+      ...(genderVal('ueGender') ? { gender: genderVal('ueGender') as remote.Gender } : {}),
+    });
+    // A new mobile also becomes the account's username.
+    if (mobile && mobile !== normalizeMobile(p.phone ?? '')) await remote.setMobile(mobile, p.id);
+    toast(`✅ ${t('users.saved')}`);
+    editingUser = null; people = null; dir = null;
+  } catch (e) { toast(authErr(e)); }
+  route();
+}
+
 function usersPage(): string {
   if (!people) { loadUsers(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
   if (isAdmin() && roleReqs === null) {
@@ -1700,16 +1804,19 @@ function usersPage(): string {
   <div class="card"><h2>➕ ${t('users.create')}</h2>${hint('users.createHint')}
     <form data-form="create-account" novalidate>
       ${f('cName', 'auth.fullName', 'text', 'dir="auto"')}
-      ${f('cEmail', 'auth.email', 'email', 'dir="ltr" autocomplete="off"')}
-      ${f('cPass', 'auth.password', 'text', 'dir="ltr" autocomplete="off"')}
-      <div class="row"><div style="flex:1">${f('cPhone', 'auth.phone', 'tel', 'dir="ltr"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+      <div class="row"><div style="flex:1">${f('cMobile', 'auth.mobile', 'tel', 'dir="ltr" inputmode="tel" placeholder="01001234567"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+      ${f('cPass', 'users.passwordOptional', 'text', `dir="ltr" autocomplete="off" placeholder="${DEFAULT_PASSWORD}"`)}
       ${isAdmin() ? `<span class="lbl">${t('roles.give')}</span><div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="cRole-${r}"> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>` : ''}
       <button class="btn green" type="submit" ${busy ? 'disabled' : ''}>➕ ${t('users.create')}</button>
     </form>
   </div>
   <div class="card"><h2>🛡️ ${t('users.all')}</h2>${hint('admin.hint')}
     ${people.map((p) => `<div class="chip ro user-row">${avatarOf(p)}<span><span dir="auto">${esc(p.full_name)}</span>
-      ${p.phone ? `<br><span class="muted small" dir="ltr">${esc(p.phone)}</span>` : ''}</span>
+      ${p.phone ? `<br><span class="muted small" dir="ltr">📱 ${esc(p.phone)}</span>` : ''}
+      ${p.must_change_password ? ` <span class="badge gold">${t('users.mustChange')}</span>` : ''}</span>
+      ${isAdmin() ? `<span class="row" style="gap:4px"><button class="btn soft small" data-act="user-edit" data-id="${p.id}">✏️ ${t('users.edit')}</button>
+        ${p.id === session.profile?.id ? '' : `<button class="btn ghost small" data-act="user-reset" data-id="${p.id}">🔑 ${t('users.reset')}</button>`}</span>` : ''}
+      ${editingUser === p.id ? userEditForm(p) : ''}
       <span class="flags">${flags.map(([flag, label, on]) => isAdmin()
         ? `<label class="flag ${on(p) ? 'on' : ''}"><input type="checkbox" data-act="role-flag" data-id="${p.id}" data-flag="${flag}" ${on(p) ? 'checked' : ''} ${p.id === session.profile?.id && flag === 'admin' ? 'disabled' : ''}> ${t(label)}</label>`
         : on(p) ? `<span class="badge">${t(label)}</span>` : '').join('')}</span></div>`).join('')}
@@ -1740,7 +1847,8 @@ function dirResults(query: string, exclude: Set<string>): string {
       <span class="badge ${d.profile_id ? 'green' : ''}" style="margin-inline-start:auto">${inT ? t('dir.inTournament') : d.profile_id ? t('dir.account') : t('dir.noAccount')}</span></button>`;
   }).join('')}
   ${hits.length ? '' : `<p class="muted small">${t('dir.none')}</p>`}
-  ${exact ? '' : `<button type="button" class="btn soft small" data-act="dir-new" data-name="${esc(q)}">➕ ${esc(t('dir.addNew', { name: q }))}</button>`}`;
+  ${exact ? '' : `<div class="row dir-new"><input class="input" id="dirNewMobile" type="tel" inputmode="tel" dir="ltr" style="flex:1;min-width:150px" placeholder="${esc(t('dir.mobileFor', { name: q }))}">
+    <button type="button" class="btn soft small" data-act="dir-new" data-name="${esc(q)}">➕ ${esc(t('dir.addNew', { name: q }))}</button></div>`}`;
 }
 
 /** Search box + live results; `exclude` = directory ids already chosen. */
@@ -1754,6 +1862,8 @@ function dirPicker(exclude: Set<string>, title: MessageKey): string {
 }
 
 let linking: string | null = null;
+/** Directory player (without an account) getting a mobile number and an account. */
+let mobileFor: string | null = null;
 /** Players with a claim code shown on the players page, for "print all". */
 let printable: claim.PrintItem[] = [];
 function playersPage(): string {
@@ -1777,9 +1887,11 @@ function playersPage(): string {
       ${d.profile_id && temps.has(d.profile_id) ? `<span class="badge gold">${t('batch.temp')}</span>`
         : `<span class="badge ${d.profile_id ? 'green' : ''}">${d.profile_id ? t('dir.account') : t('dir.noAccount')}</span>`}
       ${d.profile_id ? '' : `<button class="btn soft small" data-act="link-open" data-id="${d.id}">🔗 ${t('dir.linkTo')}</button>`}
-      ${!adm || d.profile_id || d.claim_code ? '' : `<button class="btn soft small" data-act="claim-make" data-id="${d.id}">🎟️ ${t('claim.make')}</button>`}
+      ${d.profile_id ? '' : `<button class="btn soft small" data-act="dir-mobile" data-id="${d.id}">📱 ${t('dir.giveMobile')}</button>`}
     </span>
     ${codeOf(d) ? `<div style="flex-basis:100%;display:flex">${claim.codeTools(d.full_name, codeOf(d)![0], codeOf(d)![1])}</div>` : ''}
+    ${mobileFor === d.id ? `<div class="row" style="flex-basis:100%"><input class="input" id="dmMobile" type="tel" inputmode="tel" dir="ltr" style="flex:1" placeholder="${esc(t('dir.mobileFor', { name: d.full_name }))}">
+      <button class="btn green small" data-act="dir-mobile-save" data-id="${d.id}">${t('common.save')}</button></div>` : ''}
     ${linking === d.id ? `<div style="flex-basis:100%">${hint('dir.linkHint')}
       ${people ? `<div class="row"><select class="input" id="linkSel" style="flex:1"><option value="">${t('dir.choose')}</option>
         ${people.filter((p) => !linkedProfiles.has(p.id)).map((p) => `<option value="${p.id}">${esc(p.full_name)}${p.phone ? ' · ' + esc(p.phone) : ''}</option>`).join('')}
@@ -1797,7 +1909,7 @@ function playersPage(): string {
     <form data-form="add-player" novalidate>
       <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="pName" dir="auto"></label>
       <div class="row">
-        <label class="field" style="flex:1"><span>${t('auth.phone')}</span><input class="input" id="pPhone" type="tel" dir="ltr"></label>
+        <label class="field" style="flex:1"><span>${t('auth.mobile')}</span><input class="input" id="pPhone" type="tel" inputmode="tel" dir="ltr" placeholder="01001234567"></label>
         <label class="field" style="flex:1"><span>${t('auth.club')}</span><input class="input" id="pClub" dir="auto"></label>
         <label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="pYear" inputmode="numeric" dir="ltr"></label>
       </div>
@@ -1888,12 +2000,43 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
       keepAuthVals();
       authTab = el.dataset.v as typeof authTab; authMsg = ''; route(); return true;
     case 'forgot': {
-      const email = val('aEmail');
-      if (!email) { authMsg = t('auth.err.required'); route(); return true; }
-      try { await remote.resetPassword(email); authMsg = '✅ ' + t('auth.resetSent'); } catch (e) { authMsg = authErr(e); }
+      keepAuthVals();
+      const id = val('aLogin');
+      forgotWa = '';
+      // Mobile accounts have no mailbox: the admin puts the password back to "pingo123".
+      if (!id.includes('@')) { authMsg = '✅ ' + t('auth.forgotMobile'); forgotWa = normalizeMobile(id) ?? id; route(); return true; }
+      try { await remote.resetPassword(id); authMsg = '✅ ' + t('auth.resetSent'); } catch (e) { authMsg = authErr(e); }
+      route(); return true;
+    }
+    case 'pw-later':
+      location.hash = pwReturn === '#/password' ? '#/' : pwReturn; pwReturn = '#/'; pwMsg = '';
+      return true;
+    case 'login-edit':
+      loginEdit = !loginEdit; route(); return true;
+    case 'user-edit':
+      editingUser = editingUser === el.dataset.id ? null : el.dataset.id!; route(); return true;
+    case 'user-reset': {
+      if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = `🔑 ${t('users.resetConfirm')}`; return true; }
+      try { await remote.resetToDefaultPassword(el.dataset.id!); toast(`✅ ${t('users.resetDone')}`); people = null; } catch (e) { toast(authErr(e)); }
+      route(); return true;
+    }
+    case 'dir-mobile':
+      mobileFor = mobileFor === el.dataset.id ? null : el.dataset.id!; route(); return true;
+    case 'dir-mobile-save': {
+      const d = dir?.find((x) => x.id === el.dataset.id);
+      const m = normalizeMobile(val('dmMobile'));
+      if (!d) return true;
+      if (!m) { toast(t('auth.err.badMobile')); return true; }
+      try {
+        const r = (await remote.addPlayers([{ full_name: d.full_name, mobile: m, directory_id: d.id }])).rows[0];
+        if (r?.kind === 'new') toast(`✅ ${t('dir.added')}`);
+        else toast(authErr(new Error(r?.kind === 'account' ? 'mobile already registered' : r?.error ?? 'unknown')));
+        mobileFor = null; dir = null;
+      } catch (e) { toast(authErr(e)); }
       route(); return true;
     }
     case 'logout':
+      loginMobile = undefined; loginEdit = false;
       await remote.signOut();
       location.hash = '#/';
       return true;
@@ -1942,9 +2085,14 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
       let entry: remote.DirPlayer | undefined;
       try {
         if (act === 'dir-new') {
-          entry = await remote.addPlayer({ full_name: el.dataset.name! });
-          dir?.push(entry);
-          toast(t('dir.added'));
+          // A new player needs a mobile: it becomes their username (password "pingo123").
+          const mobile = normalizeMobile(val('dirNewMobile'));
+          if (!mobile) { toast(t(val('dirNewMobile') ? 'auth.err.badMobile' : 'dir.needMobile')); document.getElementById('dirNewMobile')?.focus(); return true; }
+          const r = (await remote.addPlayers([{ full_name: el.dataset.name!, mobile }])).rows[0];
+          if (!r?.player_id) throw new Error(r?.error ?? 'unknown');
+          dir = await remote.listPlayers();
+          entry = dir.find((d) => d.id === r.player_id);
+          toast(r.kind === 'new' ? `✅ ${t('dir.added')} · ${mobile} / ${DEFAULT_PASSWORD}` : t('batch.kind.account'));
         } else entry = dir?.find((d) => d.id === el.dataset.id);
       } catch (e) { toast(authErr(e)); return true; }
       if (!entry) return true;
@@ -2053,6 +2201,12 @@ function draw(): void {
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
   } else if (parts[0] === 'login' && online()) {
     shell(loginPage());
+  } else if (session.loading && online() && ['password', 'me', 'admin', 'players'].includes(parts[0])) {
+    // Signed-in pages wait for the account to load instead of sending the visitor away.
+    shell(`<div class="card center muted"><span class="spin"></span> ${t('sync.loading')}</div>`);
+  } else if (parts[0] === 'password' && online()) {
+    if (!session.profile) { location.hash = '#/login'; return; }
+    shell(passwordPage());
   } else if (parts[0] === 'me' && online()) {
     if (!session.profile) { location.hash = '#/login'; return; }
     shell(mePage());
@@ -2500,31 +2654,59 @@ document.addEventListener('submit', async (e) => {
   if (!kind) return;
   e.preventDefault();
   if (kind === 'login' || kind === 'signup') { await submitAuth(kind); return; }
+  if (kind === 'password') { await submitPassword(); return; }
+  if (kind === 'login-mobile') {
+    const m = normalizeMobile(val('lmMobile'));
+    if (!m) { toast(t('auth.err.badMobile')); return; }
+    try {
+      await remote.setMobile(m);
+      loginMobile = m; loginEdit = false;
+      session.profile = await remote.myProfile();
+      toast(`✅ ${t('login.saved', { mobile: m })}`);
+    } catch (err) { toast(authErr(err)); }
+    route();
+    return;
+  }
+  if (kind === 'user-edit') { await saveUserEdit(); return; }
   if (await desk.onSubmit(kind)) return;
   if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await training.onSubmit(kind, form) || await claim.onSubmit(kind, form)) return;
   if (kind === 'add-player') {
     const name = val('pName');
-    if (!name) return;
-    if (dir && exactDirectoryMatch(dir, name)) { toast(t('dir.possibleDup')); return; }
+    const mobile = normalizeMobile(val('pPhone'));
+    if (!name || !val('pPhone')) { toast(t('auth.err.required')); return; }
+    if (!mobile) { toast(t('auth.err.badMobile')); return; }
     const year = Number(val('pYear').replace(/[^\d]/g, ''));
     try {
-      const row = await remote.addPlayer({ full_name: name, phone: val('pPhone') || null, club: val('pClub') || null, birth_year: year >= 1920 ? year : null });
-      dir?.push(row);
-      dir?.sort((a, b) => a.full_name.localeCompare(b.full_name, 'ar'));
-      toast(t('dir.added'));
+      // Every player is an account that signs in with their mobile and "pingo123".
+      const r = (await remote.addPlayers([{ full_name: name, mobile, club: val('pClub') || undefined, birth_year: year >= 1920 ? year : undefined }])).rows[0];
+      if (r?.kind === 'new') toast(`✅ ${t('dir.added')} · ${mobile} / ${DEFAULT_PASSWORD}`);
+      else toast(authErr(new Error(r?.kind === 'account' ? 'mobile already registered' : r?.error ?? 'bad mobile')));
+      dir = null;
     } catch (err) { toast(authErr(err)); }
     route();
     return;
   }
   if (kind === 'create-account') {
+    // Read the form before redrawing: route() rebuilds the page and empties the fields.
+    const form = { name: val('cName'), mobile: val('cMobile'), pass: val('cPass'), club: val('cClub') };
+    const roles = EXTRA.filter((r) => (document.getElementById(`cRole-${r}`) as HTMLInputElement | null)?.checked);
+    let ok = false;
     busy = true; route();
     try {
-      const roles = EXTRA.filter((r) => (document.getElementById(`cRole-${r}`) as HTMLInputElement | null)?.checked);
-      await remote.createAccount({ full_name: val('cName'), email: val('cEmail'), password: val('cPass'), phone: val('cPhone'), club: val('cClub'), birth_year: '', roles });
-      toast(`✅ ${t('users.created')}`);
+      const mobile = normalizeMobile(form.mobile);
+      if (!form.name || !mobile) throw new Error(form.name ? 'bad mobile' : 'required');
+      await remote.createAccount({ full_name: form.name, mobile, password: form.pass, club: form.club, birth_year: '', roles });
+      toast(`✅ ${t('users.created')} · ${mobile} / ${form.pass || DEFAULT_PASSWORD}`);
       people = null;
+      ok = true;
     } catch (err) { toast(authErr(err)); }
     busy = false; route();
+    if (!ok) {
+      // Keep what was typed so only the wrong part needs fixing.
+      const put = (id: string, v: string) => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) el.value = v; };
+      put('cName', form.name); put('cMobile', form.mobile); put('cPass', form.pass); put('cClub', form.club);
+      for (const r of roles) { const el = document.getElementById(`cRole-${r}`) as HTMLInputElement | null; if (el) el.checked = true; }
+    }
     return;
   }
   if (kind === 'me' && session.profile) {

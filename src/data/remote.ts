@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient, type Session } from '@supabase/supab
 import { SUPABASE_ANON_KEY, SUPABASE_URL, online } from '../config';
 import { registrationOf, remoteStatus } from '../domain/tournament';
 import type { Tournament } from '../domain/types';
+import { loginEmail, mobileOfEmail, type PlayerRow } from '../domain/mobile';
 
 export type Role = 'player' | 'organizer' | 'admin';
 
@@ -18,6 +19,8 @@ export interface Profile {
   bio?: string | null;
   avatar_url?: string | null;
   gender?: Gender | null;
+  /** Still on the starting password "pingo123" (migration 0014). */
+  must_change_password?: boolean;
 }
 
 export type Gender = 'male' | 'female';
@@ -63,10 +66,10 @@ export function onAuthChange(cb: () => void): void {
 }
 
 export interface SignUpInput {
-  email: string;
+  /** The username: the player's mobile number. */
+  mobile: string;
   password: string;
   full_name: string;
-  phone: string;
   birth_year: string;
   club: string;
   /** 'male' or 'female': picks the default avatar. */
@@ -75,22 +78,39 @@ export interface SignUpInput {
   wants?: string;
 }
 
-/** Returns true when the account still needs email confirmation. */
-export async function signUp(input: SignUpInput): Promise<boolean> {
-  const { email, password, ...meta } = input;
-  const res = await db().auth.signUp({
-    email,
-    password,
-    options: { data: meta, emailRedirectTo: location.origin + location.pathname },
-  });
-  if (res.error) throw new Error(res.error.message);
-  return !res.data.session;
+/** A new account that signs in with its mobile number (no email, no SMS), then signed in. */
+export async function signUp(input: SignUpInput): Promise<void> {
+  await adminUsers<{ ok: true }>({ action: 'signup', ...input });
+  await signIn(input.mobile, input.password);
 }
 
-export async function signIn(email: string, password: string): Promise<void> {
+/** Sign in with a mobile number (or, for older accounts, an email). */
+export async function signIn(identifier: string, password: string): Promise<void> {
+  const email = loginEmail(identifier);
+  if (!email) throw new Error('bad mobile');
   const res = await db().auth.signInWithPassword({ email, password });
   if (res.error) throw new Error(res.error.message);
 }
+
+/** The mobile the signed-in account uses as its username, or null when it signs in with an email. */
+export async function myLoginMobile(): Promise<string | null> {
+  const s = await getSession();
+  return mobileOfEmail(s?.user.email);
+}
+
+/** The signed-in user picks a new password; the "change your password" reminder stops. */
+export async function changePassword(password: string): Promise<void> {
+  const res = await db().auth.updateUser({ password });
+  if (res.error) throw new Error(res.error.message);
+  check(await db().rpc('password_changed'));
+}
+
+/** Change the mobile an account signs in with (your own; the admin: anyone's). */
+export const setMobile = (mobile: string, userId?: string) =>
+  adminUsers<{ ok: true }>({ action: 'set_mobile', mobile, ...(userId ? { user_id: userId } : {}) });
+
+/** Admin: the account's password goes back to "pingo123" and the player is asked to change it. */
+export const resetToDefaultPassword = (userId: string) => adminUsers<{ ok: true }>({ action: 'reset_password', user_id: userId });
 
 export async function resetPassword(email: string): Promise<void> {
   const res = await db().auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
@@ -240,23 +260,27 @@ export async function linkPlayer(playerId: string, profileId: string): Promise<v
 
 /* ------------------------------------------------ batch entry and claim codes */
 
-/** How a pasted name was handled by the admin batch. */
-export type BatchKind = 'new' | 'new_many' | 'temp' | 'account' | 'failed';
+/** How a name + mobile row was handled. */
+export type AddKind = 'new' | 'account' | 'bad_mobile' | 'failed';
 
-export interface BatchRow {
-  /** Account id (temporary or real); null when it could not be made. */
-  id: string | null;
+export interface AddedPlayer {
   full_name: string;
-  kind: BatchKind;
-  claim_code: string | null;
+  mobile: string;
+  /** Account id; null when it could not be made. */
+  id: string | null;
+  /** Directory row (players.id) of that account. */
+  player_id: string | null;
+  kind: AddKind;
+  error?: string;
 }
 
 /**
- * Admin only: names without an account get a temporary account with a claim code; with a
- * tournament, every name goes on its waiting list (Edge Function admin-users, action 'batch').
+ * Accounts for name + mobile rows: each new mobile signs in with password "pingo123"; a mobile that
+ * already has an account reuses it. Organizers one row at a time, the admin any number and a
+ * tournament's waiting list (Edge Function admin-users, action 'players').
  */
-export const batchPlayers = (a: { names: string[]; club: string | null; gender: Gender | null; tournament_id: string | null }) =>
-  adminUsers<{ rows: BatchRow[]; waitlisted: number }>({ action: 'batch', ...a });
+export const addPlayers = (rows: (PlayerRow & { directory_id?: string; photo?: string })[], tournament_id: string | null = null) =>
+  adminUsers<{ rows: AddedPlayer[]; waitlisted: number }>({ action: 'players', rows, tournament_id });
 
 /** Temporary accounts and their claim codes (admin). */
 export async function tempAccounts(): Promise<{ id: string; claim_code: string | null }[]> {
@@ -309,7 +333,7 @@ async function adminUsers<T>(body: Record<string, unknown>): Promise<T> {
 
 export const unconfirmedUsers = () => adminUsers<{ users: PendingUser[] }>({ action: 'unconfirmed' }).then((r) => r.users ?? []);
 export const confirmUser = (userId: string) => adminUsers<{ ok: true }>({ action: 'confirm', user_id: userId });
-export const createAccount = (a: { email: string; password: string; full_name: string; phone: string; club: string; birth_year: string; roles?: string[] }) =>
+export const createAccount = (a: { mobile: string; password: string; full_name: string; club: string; birth_year: string; roles?: string[] }) =>
   adminUsers<{ id: string }>({ action: 'create', ...a });
 /** Admins only: deletes the accounts (never admins or yourself). Their tournaments and articles move to you. */
 export const deleteAccounts = (userIds: string[]) =>
@@ -328,6 +352,10 @@ export function errorCode(e: unknown): string {
   if (/tournament full/i.test(m)) return 'full';
   if (/invitation not found/i.test(m)) return 'inviteGone';
   if (/Invalid login credentials/i.test(m)) return 'badLogin';
+  if (/mobile already registered/i.test(m)) return 'mobileTaken';
+  if (/bad mobile/i.test(m)) return 'badMobile';
+  if (/^required$/.test(m)) return 'required';
+  if (/same_password|should be different/i.test(m)) return 'samePassword';
   if (/Email not confirmed/i.test(m)) return 'notConfirmed';
   if (/already registered|already been registered/i.test(m)) return 'exists';
   if (/Password should be/i.test(m)) return 'weakPassword';

@@ -1,0 +1,15 @@
+# Supabase CLI settings for Pingo. Only what differs from the CLI defaults is listed.
+# The live project is xjfttraweunhwxlgeagz; GitHub Actions links to it with secrets.
+project_id = "pingo"
+
+[db]
+# Same Postgres major version as the live project.
+major_version = 17
+
+[db.seed]
+# Demo content is never loaded automatically. Run supabase/seed/*.sql by hand if wanted.
+enabled = false
+
+[functions.admin-users]
+# The function checks the caller's session and role itself (the claim action has no session).
+verify_jwt = false

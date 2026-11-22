@@ -29,6 +29,7 @@ import * as desk from './admin';
 import * as deskApi from './admin/api';
 import * as invites from './pages/invites';
 import * as profile from './pages/profile';
+import * as join from './pages/join';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
@@ -432,6 +433,8 @@ function homePage(): string {
     ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
     ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
   </div>
+  <a class="card faq-cta jn-home rise" href="#/join"><span class="faq-ic">${icon('spark', 26)}</span>
+    <span><b>بينجو لمين؟</b><br><small class="muted">لاعب، منظم بطولات، مدرب أو بائع: اعرف مزاياك وأسعار الإطلاق</small></span>${icon('chevron', 18)}</a>
   <a class="card faq-cta rise" href="#/faq"><span class="faq-ic">${icon('help', 26)}</span>
     <span><b>${t('faq.title')}</b><br><small class="muted">${t('faq.homeText')}</small></span>${icon('chevron', 18)}</a>
   <div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
@@ -1996,6 +1999,9 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
         toast(t('me.photoRemoved'));
       } catch (e) { toast(authErr(e)); }
       route(); return true;
+    case 'jn-scroll':
+      document.getElementById('jn-features')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
     case 'auth-tab':
       keepAuthVals();
       authTab = el.dataset.v as typeof authTab; authMsg = ''; route(); return true;
@@ -2199,7 +2205,15 @@ function draw(): void {
   } else if (parts[0] === 'faq') {
     shell(faq.route(parts) ?? '');
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
+  } else if (parts[0] === 'join') {
+    shell(join.route(parts) ?? '');
   } else if (parts[0] === 'login' && online()) {
+    // #/login/signup/organizer: the landing pages open sign-up with the role ticked.
+    if (parts[1] === 'signup' && !session.profile) {
+      authTab = 'signup';
+      if ((EXTRA as string[]).includes(parts[2])) authVals[`aWant-${parts[2]}`] = '1';
+      history.replaceState(null, '', '#/login');
+    }
     shell(loginPage());
   } else if (session.loading && online() && ['password', 'me', 'admin', 'players'].includes(parts[0])) {
     // Signed-in pages wait for the account to load instead of sending the visitor away.

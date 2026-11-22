@@ -1,4 +1,5 @@
 import { db, getSession } from './remote';
+import * as cats from './categories';
 
 function check<T>(res: { data: T; error: { message: string } | null }): T {
   if (res.error) throw new Error(res.error.message);
@@ -109,13 +110,10 @@ export function chunks<T>(ids: T[], size = 100): T[][] {
 
 /* -------------------------------------------------------------- news */
 
-export type PostCategory = 'news' | 'learn' | 'tips' | 'events' | 'gear' | 'other' | 'rules' | 'training';
-export const POST_CATEGORIES: PostCategory[] = ['news', 'events', 'gear', 'other', 'rules', 'training', 'tips', 'learn'];
-/** Categories shown in the news section. */
-export const NEWS_CATEGORIES: PostCategory[] = ['news', 'events', 'gear', 'other'];
-/** Categories of the Pingo Academy (education): rules, training, tips and tricks, basics. */
-export const ACADEMY_CATEGORIES: PostCategory[] = ['rules', 'training', 'tips', 'learn'];
-export const isAcademy = (c: PostCategory): boolean => ACADEMY_CATEGORIES.includes(c);
+/** A category key from the admin's list (news or academy section), see data/categories. */
+export type PostCategory = string;
+/** True when the category belongs to the Pingo Academy rather than the news. */
+export const isAcademy = (c: PostCategory): boolean => cats.isAcademy(c);
 
 export type PostLevel = 'beginner' | 'intermediate' | 'advanced';
 export const POST_LEVELS: PostLevel[] = ['beginner', 'intermediate', 'advanced'];
@@ -154,8 +152,8 @@ export async function deletePosts(ids: string[]): Promise<void> {
 
 /* -------------------------------------------------------------- shop */
 
-export type ProductCategory = 'rackets' | 'rubbers' | 'balls' | 'tables' | 'clothing' | 'shoes' | 'bags' | 'accessories' | 'other';
-export const PRODUCT_CATEGORIES: ProductCategory[] = ['rackets', 'rubbers', 'balls', 'tables', 'clothing', 'shoes', 'bags', 'accessories', 'other'];
+/** A category key from the admin's shop list, see data/categories. */
+export type ProductCategory = string;
 
 export interface Product {
   id: string;

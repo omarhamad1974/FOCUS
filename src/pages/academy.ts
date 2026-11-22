@@ -1,6 +1,7 @@
 /** Pingo Academy: lessons about the rules, training, tips and tricks. Articles are admin-written posts. */
 import { dateFmt, t, type MessageKey } from '../i18n/ar';
 import * as content from '../data/content';
+import * as cats from '../data/categories';
 import type { Post, PostCategory, PostLevel } from '../data/content';
 import { canWriteNews, hint, isAdmin, loading, render } from '../app/ctx';
 import { academyArt, academyHero, empty, skeleton } from '../ui/art';
@@ -50,7 +51,15 @@ export function levelBadge(l: PostLevel | null | undefined): string {
   return `<span class="lvl lvl-${l}" title="${esc(t('acad.fLevel'))}"><i class="${n >= 1 ? 'on' : ''}"></i><i class="${n >= 2 ? 'on' : ''}"></i><i class="${n >= 3 ? 'on' : ''}"></i>${t(`acad.level.${l}` as MessageKey)}</span>`;
 }
 
-const catBadge = (c: PostCategory) => `<span class="badge acad-c acad-${c}">${icon(news.CAT_ICON[c], 14)} ${news.catLabel(c)}</span>`;
+const BUILT_IN = ['rules', 'training', 'tips', 'learn'];
+/** Colour class of an academy category: the four original ones keep their colours, new ones take turns in a palette. */
+function acadClass(c: string): string {
+  if (BUILT_IN.includes(c)) return `acad-${c}`;
+  const i = cats.list('academy').findIndex((x) => x.slug === c);
+  return `acad-p${Math.max(0, i) % 4}`;
+}
+
+const catBadge = (c: PostCategory) => `<span class="badge acad-c ${acadClass(c)}">${icon(news.catIcon(c), 14)} ${news.catLabel(c)}</span>`;
 const minutes = (p: Post) => `<span class="muted small">${icon('clock', 14)} ${t('acad.minutes', { n: news.readMinutes(p) })}</span>`;
 
 export function lessonCard(p: Post, done = doneSet()): string {
@@ -107,14 +116,14 @@ function listPage(): string {
   const path = pub.filter((p) => p.level === 'beginner').reverse().slice(0, 6);
   const done = doneSet();
   const tile = (c: Cat) => {
-    const ic = c === 'all' ? 'grid' : news.CAT_ICON[c];
-    return `<button class="acad-tile acad-${c} ${cat === c ? 'on' : ''}" data-act="learn-cat" data-v="${c}" aria-pressed="${cat === c}">
+    const ic = c === 'all' ? 'grid' : news.catIcon(c);
+    return `<button class="acad-tile ${c === 'all' ? 'acad-all' : acadClass(c)} ${cat === c ? 'on' : ''}" data-act="learn-cat" data-v="${esc(c)}" aria-pressed="${cat === c}">
       <span class="at-ic">${icon(ic, 26)}</span><b>${c === 'all' ? t('acad.allLessons') : news.catLabel(c)}</b>
-      <small>${t(`acad.catText.${c}` as MessageKey)}</small><span class="at-n">${c === 'all' ? pub.length : count(c)}</span></button>`;
+      <small>${c === 'all' ? t('acad.catText.all') : esc(cats.blurb(c))}</small><span class="at-n">${c === 'all' ? pub.length : count(c)}</span></button>`;
   };
   return `${head(list)}
   ${hint('acad.hint')}
-  <div class="acad-tiles">${(['all', ...content.ACADEMY_CATEGORIES] as Cat[]).map(tile).join('')}</div>
+  <div class="acad-tiles">${['all', ...cats.list('academy').map((x) => x.slug)].map(tile).join('')}</div>
   ${path.length && cat === 'all' && level === 'all' && !query ? `<section class="card acad-path rise">
     <div class="sec-head"><h2>${icon('pin', 22)} ${t('acad.pathTitle')}</h2><span class="muted small">${t('acad.pathText')}</span></div>
     <ol class="path-steps">${path.map((p, i) => `<li class="${done.has(p.id) ? 'done' : ''}"><a href="#/learn/${p.id}">

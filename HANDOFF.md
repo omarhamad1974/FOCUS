@@ -78,3 +78,12 @@ Also confirmed:
 - Enforced in the database (migration 0016): trigger on `registrations` raises `player blocked` for any path to pending/approved; trigger on `invitations` skips blocked players; `waitlist_add` and `sim_join` skip them. Players get only `my_blocks()` (whose tournaments), never reasons.
 - Favourites (⭐ on the same page, plus "players from your tournaments" suggestions). In a tournament's invitation card the favourites appear as photos: pick all in one tap, then "invite" or "add directly" (`org_add_players`: approved straight away, within the player limit).
 - Not enforced: players typed by hand into a tournament's own player list (names without accounts) are not checked.
+
+## Notifications, 2026-11-22
+- Omar's scope: in-app bell + phone push for the alerts below, one-tap WhatsApp messages for organizers, per-type on/off. No "your next match" calls and no email reminders.
+- Alerts are made by database triggers (migration 0020), so every path (site, desk, simulations) alerts the same way: invites, join approved/rejected/added, draw out / match result / tournament finished, payment sent/approved/rejected, hall and training bookings, orders, product awaiting/approved, role requests and decisions, subscriptions ending within 7 days, new promotion of a followed shop (⭐ on the shop page), join requests/withdrawals/declined invites and "nearly full / full" for organizers. Repeats fold into one unread row with a count. Demo (sim) players never get alerts.
+- Bell in both headers (site and desk), `#/alerts` (list) and `#/alerts/settings` (phone push on/off for this device, and each type on/off in the app and on the phone). Card on #/me, one nudge card on the home page.
+- Phone push: Edge Function `send-push` (deployed by the Supabase workflow, `verify_jwt = false`). It makes its VAPID keys itself on first use and stores them in `push_config` (service role only), so there are no secrets to set. The database calls it through pg_net with a secret from the same table. iPhone needs Pingo installed on the home screen (iOS 16.4+).
+- Subscription reminders: pg_cron job `pingo-daily-alerts` at 07:00 UTC when pg_cron is available; the bell also runs it at most every 3 hours.
+- WhatsApp: card «رسائل واتساب جاهزة» on the organizer's tournament page in the desk: templates, editable text, send to a group (wa.me without number) or to each player (`tournament_contacts()`), filter unpaid/pending.
+- Check: `supabase/tests/notifications_check.sql`.

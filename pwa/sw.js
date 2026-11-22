@@ -105,3 +105,43 @@ self.addEventListener('fetch', (event) => {
   }
   event.respondWith(staleWhileRevalidate(req, FILES));
 });
+
+/* ------------------------------------------------------------ notifications
+ * The send-push Edge Function sends { title, body, link, tag, id } for each new alert.
+ * Every push shows a notification (iPhone requires it). Open app windows refresh their bell.
+ */
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch { d = { body: event.data ? event.data.text() : '' }; }
+  const icon = new URL('brand/icon-192.png', SCOPE).href;
+  event.waitUntil((async () => {
+    await self.registration.showNotification(d.title || 'بينجو', {
+      body: d.body || '',
+      icon,
+      badge: icon,
+      tag: d.tag || undefined,
+      renotify: !!d.tag,
+      dir: 'rtl',
+      lang: 'ar',
+      data: { link: d.link || '#/alerts' },
+    });
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    wins.forEach((w) => w.postMessage({ type: 'pingo-alert' }));
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const raw = (event.notification.data && event.notification.data.link) || '#/alerts';
+  const link = raw.startsWith('#/') ? raw : '#/alerts';
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find((w) => w.url.startsWith(SCOPE.href));
+    if (win) {
+      await win.focus();
+      win.postMessage({ type: 'pingo-open', link });
+      return;
+    }
+    await self.clients.openWindow(new URL(`./${link}`, SCOPE).href);
+  })());
+});

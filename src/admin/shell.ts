@@ -6,6 +6,7 @@ import { t, type MessageKey } from '../i18n/ar';
 import { canOrganize, isAdmin, isHall, isSeller, isTrainer, session } from '../app/ctx';
 import { icon } from '../ui/icons';
 import { avatarOf, esc } from '../ui/util';
+import { bell } from '../pages/alerts';
 
 export type DeskRole = 'org' | 'trainer' | 'seller' | 'hall' | 'admin';
 
@@ -35,6 +36,7 @@ export function deskShell(active: DeskRole, body: string, badges: Partial<Record
     <nav class="dk-tabs" aria-label="${esc(t('desk.tabsLabel'))}">${tabs}</nav>
     <span class="spacer"></span>
     <a class="btn small soft dk-site" href="#/" title="${esc(t('desk.toSiteTip'))}">${icon('home', 16)} <span class="hide-xs">${t('desk.toSite')}</span></a>
+    ${bell()}
     ${session.profile ? `<a class="acct" href="#/me" title="${esc(session.profile.full_name)}">${avatarOf(session.profile)}</a>` : ''}
     <button class="helpbtn" data-act="hints" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>

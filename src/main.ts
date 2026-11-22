@@ -36,6 +36,7 @@ import * as join from './pages/join';
 import * as hallsPage from './pages/halls';
 import * as payUi from './ui/pay';
 import * as pwa from './pwa';
+import * as alertsUi from './pages/alerts';
 import * as pay from './data/pay';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
@@ -101,13 +102,14 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
-    news.reset(); shop.reset(); shops.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); lists.reset(); hallsPage.reset(); payUi.forget();
+    news.reset(); shop.reset(); shops.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); lists.reset(); hallsPage.reset(); payUi.forget(); alertsUi.reset();
     regCache.clear();
     assisting.clear();
     if (session.profile) {
       for (const id of await content.myAssignments().catch(() => [] as string[])) assisting.add(id);
       await uploadPendingPhoto();
     }
+    alertsUi.start();
   } catch {
     toast(t('auth.err.network'));
   }
@@ -255,7 +257,7 @@ function section(): Section {
   if (p === 'news' || p === 'learn' || p === 'shop' || p === 'training' || p === 'halls') return p;
   if (p === 'shops') return 'shop';
   if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org') return 'tournaments';
-  if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
+  if (p === 'me' || p === 'login' || p === 'admin' || p === 'players' || p === 'alerts') return 'me';
   return 'home';
 }
 
@@ -282,6 +284,7 @@ function shell(body: string): void {
     <nav class="topnav" aria-label="${esc(t('nav.label'))}">${nav.filter(([k]) => k !== 'me').map(([k, href, ic, label]) =>
       `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>
     <span class="spacer"></span>
+    ${alertsUi.bell()}
     ${online() ? (session.profile
       ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatarOf(session.profile)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
       : `<a class="btn small" href="#/login">${t('auth.login')}</a>`) : ''}
@@ -446,6 +449,7 @@ function homePage(): string {
   ${posts === null ? '<div class="sk-row car-sk"></div>' : newsCarousel(posts)}
   ${tournamentCarousel()}
   ${pwa.homeCard()}
+  ${alertsUi.homeNudge()}
   <div class="features">
     ${feature('#/tournaments', 'trophy', 'nav.tournaments', 'home.fTournaments', 'f1')}
     ${feature('#/training', 'coach', 'nav.training', 'home.fTraining', 'f2')}
@@ -1709,6 +1713,7 @@ function mePage(): string {
   <div class="card"><h3>${icon('trophy', 20)} ${t('me.myTournaments')}</h3>
     ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
   </div>
+  ${alertsUi.meCard()}
   ${rolesCard()}
   ${loginCard()}
   <div class="card">
@@ -2081,6 +2086,7 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
     }
     case 'logout':
       loginMobile = undefined; loginEdit = false;
+      await alertsUi.forgetDevice();
       await remote.signOut();
       location.hash = '#/';
       return true;
@@ -2240,6 +2246,10 @@ function draw(): void {
   } else if (['news', 'learn', 'shop', 'shops', 'training', 'halls'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
     shell(news.route(parts) ?? academy.route(parts) ?? shop.route(parts) ?? shops.route(parts) ?? training.route(parts) ?? hallsPage.route(parts) ?? '');
+  } else if (parts[0] === 'alerts' && online()) {
+    if (session.loading) { shell(`<div class="card center muted"><span class="spin"></span> ${t('sync.loading')}</div>`); return; }
+    if (!session.profile) { location.hash = '#/login'; return; }
+    shell(alertsUi.page(parts));
   } else if (parts[0] === 'install') {
     shell(pwa.installPage());
   } else if (parts[0] === 'faq') {
@@ -2328,6 +2338,7 @@ document.addEventListener('click', (e) => {
   if (act.startsWith('shp-')) { void shops.onClick(act, el); return; }
   if (act.startsWith('pay-')) { void payUi.onClick(act, el); return; }
   if (act.startsWith('pwa-')) { void pwa.onClick(act, el); return; }
+  if (act.startsWith('al-')) { void alertsUi.onClick(act, el); return; }
   if (act.startsWith('hl-')) { void hallsPage.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));

@@ -12,6 +12,7 @@ import { empty } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatar, esc, toast } from '../ui/util';
 import * as api from './api';
+import * as shops from '../pages/shops';
 import { countChips, ensureSim, payBox, paidTick, personLine, playerGrid, statTile, tip } from './ui';
 
 const whenFmt = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -64,6 +65,7 @@ export function page(): string {
   const base = import.meta.env.BASE_URL;
   return `<section class="banner b-shop slim"><div><h1>${icon('shop', 26)} ${t('desk.sh.title')}</h1><p>${t('desk.sh.hint')}</p></div>
     <a class="btn gold" href="#/shop/new">${icon('plus')} ${t('shop.add')}</a></section>
+  ${shops.deskCard()}
   <div class="stats dash-stats">
     ${statTile('box', n(products.length), 'desk.sh.statProducts')}
     ${statTile('bell', n(open.length), 'desk.sh.statOpen', open.length > 0)}

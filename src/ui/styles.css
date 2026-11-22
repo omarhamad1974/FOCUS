@@ -1573,3 +1573,64 @@ body[data-section="poster"], body[data-section="soon"] { padding: 0; }
 .pst-soon-ball { position: absolute; top: 24px; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #dfe6ef); animation: pst-bounce 1.6s ease-in-out infinite; }
 @keyframes pst-bounce { 0%, 100% { transform: translate(-40px, 0); } 25% { transform: translate(-20px, 40px); } 50% { transform: translate(0, 0); } 75% { transform: translate(20px, 40px); } }
 html:not([dir="rtl"]) .pst-scale { transform-origin: top left; }
+
+/* ---------------------------------------------------- sports shops (0018) */
+.shop-tabs { display: flex; gap: 6px; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 4px; margin-block: 12px; width: fit-content; max-width: 100%; }
+.shop-tabs a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 999px; text-decoration: none; color: var(--muted); font-weight: 800; white-space: nowrap; }
+.shop-tabs a[aria-current='page'] { background: var(--navy); color: #fff; box-shadow: 0 4px 10px #0c1f4a30; }
+.b-shops { background: linear-gradient(135deg, var(--navy), var(--blue) 60%, #2f8a22); }
+.grid.shops { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.shop-card { position: relative; display: block; padding: 0; overflow: hidden; text-decoration: none; color: inherit; transition: transform .2s, box-shadow .2s; }
+.shop-card:hover { transform: translateY(-4px); box-shadow: 0 14px 28px #0f1f3d1a; }
+.shop-card.featured { border-color: #f5d76e; box-shadow: 0 0 0 2px #f5b30133; }
+.shop-card-cover { position: relative; }
+.shop-card-cover .ph { aspect-ratio: 16 / 7; border-radius: 0; }
+.shop-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+.shop-promo-tag { position: absolute; bottom: 10px; inset-inline-end: 10px; display: inline-flex; gap: 4px; align-items: center; background: var(--green); color: var(--navy); font-weight: 900; font-size: 13px; padding: 4px 12px; border-radius: 999px; box-shadow: 0 4px 12px #0004; animation: promoPulse 2.4s ease-in-out infinite; }
+@keyframes promoPulse { 50% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .shop-promo-tag { animation: none; } }
+.shop-card-body { display: flex; gap: 12px; align-items: flex-start; padding: 0 14px 14px; }
+.shop-card-body .shop-logo { margin-top: -26px; }
+.shop-card-body h3 { margin: 8px 0 2px; font-size: 17px; }
+.shop-card-body p { margin: 0 0 4px; }
+.grow { flex: 1; min-width: 0; }
+.shop-logo { display: inline-grid; place-items: center; flex: none; border-radius: 50%; object-fit: cover; background: #fff; border: 3px solid #fff; box-shadow: 0 4px 14px #0f1f3d33; position: relative; z-index: 1; }
+.ph-logo { background: linear-gradient(135deg, var(--navy), var(--blue)); color: #fff; }
+.shop-hero { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-block-end: 12px; }
+.shop-hero-cover .ph { aspect-ratio: 16 / 5; border-radius: 0; min-height: 140px; }
+.shop-hero-cover img { width: 100%; height: 100%; object-fit: cover; }
+.shop-hero-body { display: flex; gap: 14px; align-items: flex-end; padding: 0 16px 12px; }
+.shop-hero-body .shop-logo { margin-top: -46px; }
+.shop-hero-body h1 { margin: 10px 0 2px; font-size: clamp(22px, 4vw, 30px); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.shop-hero-body p { margin: 0 0 4px; }
+.shop-contact { padding: 0 16px 16px; gap: 8px; flex-wrap: wrap; }
+.admin-row { align-items: center; gap: 8px; margin-block: 8px; color: var(--blue); }
+.promo-card { position: relative; overflow: hidden; background: linear-gradient(135deg, #0c1f4a, #0b55a8); color: #fff; border: none; }
+.promo-card::after { content: ''; position: absolute; width: 220px; height: 220px; border-radius: 50%; background: #7ed95722; inset-inline-start: -60px; bottom: -110px; pointer-events: none; }
+.promo-head { display: flex; gap: 14px; align-items: center; }
+.promo-head h2 { margin: 6px 0 2px; color: #fff; }
+.promo-pct { display: grid; place-items: center; flex: none; width: 92px; height: 92px; border-radius: 50%; background: var(--green); color: var(--navy); box-shadow: 0 0 0 6px #7ed95744; line-height: 1; text-align: center; }
+.promo-pct b { font-size: 30px; font-weight: 900; }
+.promo-pct small { font-weight: 800; }
+.promo-details { opacity: .95; }
+.promo-auto { color: var(--green); font-weight: 800; }
+.promo-locked { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: #ffffff14; border: 1px dashed #ffffff66; border-radius: 14px; padding: 12px; margin-top: 10px; }
+.pingo-pass { position: relative; z-index: 1; background: #fff; color: var(--ink); border-radius: 16px; padding: 14px; margin-top: 12px; max-width: 420px; box-shadow: 0 10px 24px #0005; border-top: 6px solid var(--green); }
+.pass-top { display: flex; align-items: center; gap: 8px; color: var(--navy); }
+.pass-body { display: flex; align-items: center; gap: 10px; margin-block: 10px; }
+.pass-body .avatar { width: 52px; height: 52px; }
+.pass-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: var(--green-soft); border: 2px dashed var(--green-press); border-radius: 12px; padding: 8px 12px; }
+.pass-code b { font-size: 22px; letter-spacing: 2px; color: var(--green-ink); font-family: ui-monospace, monospace; }
+.pass-code small { color: var(--muted); }
+.shop-info p { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+.pprice { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.pingo-off { display: inline-flex; align-items: center; gap: 3px; background: var(--green-soft); color: var(--green-ink); font-weight: 900; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+.pingo-save { color: var(--green-ink); font-weight: 800; margin: 0 0 8px; }
+.shop-link { color: inherit; text-decoration: none; }
+.shop-link > svg:last-child { margin-inline-start: auto; }
+.pickers { gap: 16px; align-items: flex-start; }
+.pickers > .field { flex: 1; min-width: 200px; }
+.logo-pick { display: flex; align-items: center; gap: 12px; }
+.promo-fields { border: 2px dashed var(--green-press); border-radius: 16px; padding: 10px 14px; margin-block: 12px; background: var(--green-soft); }
+.promo-fields legend { font-weight: 900; color: var(--green-ink); padding-inline: 6px; display: inline-flex; gap: 6px; align-items: center; }
+.shop-desk { border-inline-start: 5px solid var(--green); }

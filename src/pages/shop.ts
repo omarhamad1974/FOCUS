@@ -8,6 +8,7 @@ import { icon } from '../ui/icons';
 import { avatarOf, esc, toast } from '../ui/util';
 import { nameKey } from '../domain/tournament';
 import { imagePicker } from './news';
+import * as shops from './shops';
 
 export const CAT_ICON: Record<ProductCategory, string> = {
   rackets: 'racket', rubbers: 'grid', balls: 'ball', tables: 'table', clothing: 'user', shoes: 'bolt', bags: 'shop', accessories: 'tag', other: 'box',
@@ -33,6 +34,24 @@ export function load(force = false): void {
     .finally(() => { busy = false; render(); });
 }
 
+/** Approved, active products of one seller (for the shop page); null while loading. */
+export function productsOf(sellerId: string): Product[] | null {
+  if (!products) { load(); return null; }
+  return products.filter((p) => p.seller_id === sellerId && p.active && p.approved)
+    .sort((a, b) => Number(b.featured) - Number(a.featured));
+}
+
+/** Price line: with a Pingo discount, the old price struck through and the Pingo price. */
+function priceTag(p: Product, big = false): string {
+  const pct = shops.discountFor(p.seller_id);
+  if (!pct) return `<b class="price ${big ? 'big' : ''}">${money(p.price)}</b>`;
+  if (!session.profile) {
+    return `<span class="pprice"><b class="price ${big ? 'big' : ''}">${money(p.price)}</b><span class="pingo-off">${icon('tag', 12)} ${t('shops.promoOff', { n: pct })}</span></span>`;
+  }
+  return `<span class="pprice"><s class="muted small">${money(p.price)}</s> <b class="price ${big ? 'big' : ''}">${money(shops.discounted(p.price, pct))}</b>
+    <span class="pingo-off">${icon('tag', 12)} ${t('shops.pingoPrice')} −${n(pct)}%</span></span>`;
+}
+
 /** For the home page: featured products first, then the newest. */
 export const featured = (count: number): Product[] | null => products && products.filter((p) => p.active && p.approved && p.stock > 0)
   .sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, count);
@@ -49,7 +68,7 @@ export function productCard(p: Product): string {
     <div class="product-body">
       <span class="muted small">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
       <h3 dir="auto" class="clamp1">${esc(p.name)}</h3>
-      <div class="row between"><b class="price">${money(p.price)}</b>
+      <div class="row between">${priceTag(p)}
         ${out ? `<span class="badge red">${t('shop.soldOut')}</span>` : !p.approved ? `<span class="badge gold">${t('adm.waiting')}</span>` : p.active ? '' : `<span class="badge">${t('shop.hidden')}</span>`}</div>
     </div>
   </a>`;
@@ -63,11 +82,11 @@ function banner(): string {
 }
 
 function listPage(): string {
-  if (!products) { load(); return banner() + skeleton(6); }
+  if (!products) { load(); return banner() + shops.tabs('products') + skeleton(6); }
   const q = nameKey(query);
   const shown = products.filter((p) => p.active && p.approved && (filter === 'all' || p.category === filter) && (!q || nameKey(p.name).includes(q)))
     .sort((a, b) => Number(b.featured) - Number(a.featured));
-  return `${banner()}
+  return `${banner()}${shops.tabs('products')}
   <div class="searchbar">${icon('search', 18)}<input class="input" id="shopQ" data-act="shop-q" placeholder="${esc(t('shop.search'))}" value="${esc(query)}" dir="auto"></div>
   <div class="chips-row">${(['all', ...content.PRODUCT_CATEGORIES] as const).map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="shop-filter" data-v="${c}">
     ${icon(c === 'all' ? 'grid' : CAT_ICON[c], 16)} ${c === 'all' ? t('news.all') : catLabel(c)}</button>`).join('')}</div>
@@ -83,6 +102,9 @@ function productPage(id: string): string {
   const own = p.seller_id === session.profile?.id;
   const max = Math.max(0, Math.min(p.stock, 99));
   qty = Math.min(Math.max(1, qty), Math.max(1, max));
+  const pct = shops.discountFor(p.seller_id);
+  const store = shops.shopOf(p.seller_id);
+  const unit = pct ? shops.discounted(p.price, pct) : p.price;
   const order = !session.profile ? needLogin('shop.loginToOrder')
     : own ? `<p class="muted">${t('shop.ownProduct')}</p>`
     : max === 0 ? `<div class="err">${t('shop.soldOut')}</div>`
@@ -90,7 +112,8 @@ function productPage(id: string): string {
     : `<form data-form="shop-order" data-id="${p.id}" novalidate>
       <div class="row between"><span class="lbl">${t('shop.qty')}</span>
         <div class="stepper"><button type="button" data-act="shop-qty" data-d="-1" aria-label="-">−</button><b>${n(qty)}</b><button type="button" data-act="shop-qty" data-d="1" data-max="${max}" aria-label="+">+</button></div></div>
-      <div class="row between total"><span>${t('shop.total')}</span><b>${money(p.price * qty)}</b></div>
+      <div class="row between total"><span>${t('shop.total')}</span><b>${pct ? `<s class="muted small">${money(p.price * qty)}</s> ` : ''}${money(unit * qty)}</b></div>
+      ${pct ? `<p class="small pingo-save">${icon('tag', 14)} ${t('shops.orderSaved', { m: money((p.price - unit) * qty) })}</p>` : ''}
       <label class="field"><span>${t('auth.phone')}</span><input class="input" id="oPhone" type="tel" dir="ltr" value="${esc(session.profile.phone ?? '')}"></label>
       <label class="field"><span>${t('shop.note')}</span><input class="input" id="oNote" dir="auto" placeholder="${esc(t('shop.notePh'))}"></label>
       <button class="btn green block" type="submit">${icon('cart')} ${t('shop.order')}</button>
@@ -102,11 +125,14 @@ function productPage(id: string): string {
     <div class="card">
       <span class="badge blue">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
       <h1 dir="auto" style="margin-block:8px">${esc(p.name)}</h1>
-      <div class="price big">${money(p.price)}</div>
+      <div>${priceTag(p, true)}</div>
+      ${pct && !session.profile ? `<p class="small"><a href="#/login" data-return="${esc(location.hash)}">${t('shops.loginForPrice')}</a></p>` : ''}
       <p class="muted small">${p.stock > 0 ? t('shop.inStock', { n: p.stock }) : t('shop.soldOut')}</p>
       ${p.approved ? '' : `<div class="hint">${t('shop.waitingApproval')}</div>`}
       ${p.description ? `<div class="prose"><p dir="auto">${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
-      ${seller ? `<a class="seller" href="#/u/${esc(seller.id)}">${avatarOf(seller)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}
+      ${store && (store.active && !store.hidden) ? `<a class="seller shop-link" href="#/shops/${esc(store.owner_id)}">${store.logo_url ? `<img class="shop-logo" src="${esc(store.logo_url)}" alt="" width="44" height="44">` : `<span class="shop-logo ph-logo" style="width:44px;height:44px">${icon('shop', 22)}</span>`}
+        <div><span class="muted small">${t('shops.soldBy')}</span><br><b dir="auto">${esc(store.name)}</b>${store.city ? ` <span class="muted small" dir="auto">· ${esc(store.city)}</span>` : ''}</div>${icon('chevron', 16)}</a>`
+      : seller ? `<a class="seller" href="#/u/${esc(seller.id)}">${avatarOf(seller)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}
         ${seller.bio ? `<p class="small clamp" dir="auto" style="margin:4px 0 0">${esc(seller.bio)}</p>` : ''}</div></a>` : ''}
       ${order}
       ${own || isAdmin() ? `<a class="btn soft small" href="#/shop/p/${p.id}/edit" style="margin-block-start:10px">${icon('edit', 16)} ${t('shop.editProduct')}</a>` : ''}
@@ -130,7 +156,7 @@ function orderRow(o: Order, asSeller: boolean): string {
     : (o.status === 'pending' ? ['cancelled'] : []);
   return `<div class="order">
     <div class="row between"><b dir="auto">${esc(o.product_name)} × ${n(o.qty)}</b><span class="badge ${STATUS_BADGE[o.status]}">${statusLabel(o.status)}</span></div>
-    <div class="row small muted"><span>${money(o.total)}</span><span>${dateTimeFmt.format(new Date(o.created_at))}</span>
+    <div class="row small muted"><span>${money(o.total)}</span>${o.promo_pct ? `<span class="badge green">${icon('tag', 12)} ${t('shops.orderPromo', { n: o.promo_pct })}</span>` : ''}<span>${dateTimeFmt.format(new Date(o.created_at))}</span>
       ${who ? `<span dir="auto">${icon('user', 14)} ${esc(who.full_name)}</span>${who.phone ? `<a href="tel:${esc(who.phone)}" dir="ltr">${icon('phone', 14)} ${esc(who.phone)}</a>` : ''}` : ''}
       ${sellerName ? `<span dir="auto">${icon('shop', 14)} ${esc(sellerName)}</span>` : ''}</div>
     ${o.note ? `<p class="small" dir="auto">💬 ${esc(o.note)}</p>` : ''}

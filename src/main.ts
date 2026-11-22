@@ -29,6 +29,7 @@ import * as desk from './admin';
 import * as deskApi from './admin/api';
 import * as invites from './pages/invites';
 import * as profile from './pages/profile';
+import * as pstats from './pages/stats';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
@@ -152,6 +153,12 @@ function pAvatar(tm: Tournament, pid: string | null): string {
   return avatar(playerName(tm, pid), pl ? content.photoOf(accountOf(pl)) : null, pl ? content.genderOf(accountOf(pl)) : null);
 }
 
+/** Wrap a player's name/photo in a link to their profile (with stats) when they have an account. */
+function pLink(tm: Tournament, pid: string | null, inner: string): string {
+  const acc = online() ? accountOf(tm.players.find((x) => x.id === pid) ?? {}) : undefined;
+  return acc ? `<a class="plink" href="#/u/${esc(acc)}" title="${esc(t('ps.title'))}">${inner}</a>` : inner;
+}
+
 /** Cartoon celebration with the champion's photo (or drawn face) for a finished tournament's card. */
 function champCelebration(tm: Tournament, pid: string | null): string {
   const pl = tm.players.find((x) => x.id === pid);
@@ -244,7 +251,7 @@ type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'me';
 function section(): Section {
   const p = location.hash.replace(/^#\/?/, '').split('/')[0];
   if (p === 'news' || p === 'shop' || p === 'training') return p;
-  if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org') return 'tournaments';
+  if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org' || p === 'ranking') return 'tournaments';
   if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
   return 'home';
 }
@@ -544,6 +551,8 @@ function tournamentsPage(filterArg?: string): string {
       ${online() && session.profile ? `<a class="btn soft" href="#/players">👥 ${t('dir.link')}</a><a class="btn soft" href="#/admin">🛡️ ${t('users.link')}</a>` : ''}
     </div>` : ''}
   </section>
+  <a class="card faq-cta rise ps-cta" href="#/ranking"><span class="faq-ic">🏅</span>
+    <span><b>${t('ps.rankingTitle')}</b><br><small class="muted">${t('ps.rankingText')}</small></span>${icon('chevron', 18)}</a>
   <div class="stats" style="margin-block:14px">
     <div class="stat"><b>${n(ts.length)}</b><small>${t('home.statTournaments')}</small></div>
     <div class="stat"><b>${n(players)}</b><small>${t('home.statPlayers')}</small></div>
@@ -1036,7 +1045,7 @@ function standingsTable(tm: Tournament, gi: number): string {
     const tb = r.tiebreak !== 'none' ? `<span class="badge ${r.tiebreak === 'unresolved' ? 'red' : 'blue'}" style="font-size:10px">${t(`tiebreak.${r.tiebreak}` as MessageKey)}</span>` : '';
     return `<tr class="${cls}">
       <td><span class="rank r${r.rank}">${n(r.rank)}</span></td>
-      <td class="name"><div class="row" style="gap:6px;flex-wrap:nowrap">${pAvatar(tm, r.playerId)}<span dir="auto">${esc(playerName(tm, r.playerId))}</span> ${tb}${extra ? `<span class="badge extra-badge" style="font-size:10px" title="${esc(t('extra.badgeTitle'))}">🧩 ${t('extra.badge')}</span>` : ''}</div>
+      <td class="name"><div class="row" style="gap:6px;flex-wrap:nowrap">${pLink(tm, r.playerId, `${pAvatar(tm, r.playerId)}<span dir="auto">${esc(playerName(tm, r.playerId))}</span>`)} ${tb}${extra ? `<span class="badge extra-badge" style="font-size:10px" title="${esc(t('extra.badgeTitle'))}">🧩 ${t('extra.badge')}</span>` : ''}</div>
         <div class="winbar" title="${t('stats.winRate')} ${pct}%"><span style="width:${pct}%"></span></div></td>
       <td>${n(r.played)}</td><td>${n(r.wins)}</td><td>${n(r.losses)}</td>
       <td class="hide-sm">${pair(n(r.gamesWon), n(r.gamesLost), ':')}</td>
@@ -1177,7 +1186,7 @@ function bracketView(tm: Tournament, b: Bracket): string {
   const step = (p: 1 | 2 | 3) => {
     const x = who(p);
     const medal = ['🥇', '🥈', '🥉'][p - 1];
-    return `<div class="step p${p}"><span class="medal">${medal}</span>${x ? `<div class="podium-photo">${pAvatar(tm, x.playerId)}</div>` : ''}<div class="nm" dir="auto">${x ? esc(playerName(tm, x.playerId)) : '…'}</div><div class="block">${n(p)}</div></div>`;
+    return `<div class="step p${p}"><span class="medal">${medal}</span>${x ? pLink(tm, x.playerId, `<div class="podium-photo">${pAvatar(tm, x.playerId)}</div><div class="nm" dir="auto">${esc(playerName(tm, x.playerId))}</div>`) : '<div class="nm">…</div>'}<div class="block">${n(p)}</div></div>`;
   };
   const podium = places.length ? `<h3 style="margin-block-start:14px">🏆 ${t('ko.podium')}</h3>
     <div class="podium">${step(2)}${step(1)}${step(3)}</div>
@@ -1677,6 +1686,8 @@ function mePage(): string {
     ...EXTRA.filter(hasRole).map((r) => `<span class="badge blue">${icon(ROLE_ICON[r], 14)} ${t(`roles.${r}` as MessageKey)}</span>`)].join('');
   return `<section class="banner b-me slim rise"><div class="row"><label class="me-photo" title="${esc(t('me.photo'))}">${avatarOf(p)}<span>${icon('image', 14)}</span><input type="file" accept="image/*" class="hidden" data-act="me-photo"></label><div><h1 dir="auto">${esc(p.full_name)}</h1>
     <div class="row" style="gap:6px">${roleBadges || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
+  <a class="card faq-cta rise" href="#/u/${esc(p.id)}"><span class="faq-ic">📊</span>
+    <span><b>${t('ps.myProfile')}</b><br><small class="muted">${t('ps.rankingRuleShort')}</small></span>${icon('chevron', 18)}</a>
   ${invites.banner()}
   ${training.myBookingsCard()}
   ${shop.myOrdersCard()}
@@ -2220,6 +2231,8 @@ function draw(): void {
     if (!canOrganize() || !session.profile) { location.hash = '#/'; return; }
     shell(playersPage());
     if (parts[1] === 'batch') document.getElementById('bNames')?.focus();
+  } else if (parts[0] === 'ranking') {
+    shell(pstats.rankingPage());
   } else if (parts[0] === 'u' && parts[1] && online()) {
     shell(profile.page(parts[1]));
   } else if (parts[0] === 'claim' && online()) {

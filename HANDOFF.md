@@ -87,3 +87,10 @@ Also confirmed:
 - Subscription reminders: pg_cron job `pingo-daily-alerts` at 07:00 UTC when pg_cron is available; the bell also runs it at most every 3 hours.
 - WhatsApp: card «رسائل واتساب جاهزة» on the organizer's tournament page in the desk: templates, editable text, send to a group (wa.me without number) or to each player (`tournament_contacts()`), filter unpaid/pending.
 - Check: `supabase/tests/notifications_check.sql`.
+
+## Group editing on phones, 2026-11-22
+- Setup board (#/t/<id>/groups): on phones two groups per row, each player a small tile with the photo above the name.
+- Summary bar above the groups (sticky): places in groups (a player who also fills another group counts twice), how many are different players, waiting list count, a pill per group (short groups in orange).
+- Tap a player: bottom sheet to move to another group (drop-down), also fill another group while staying in their own, back to the waiting list, or delete from the tournament (two taps). Drag and drop still works.
+- «نشر المجموعات»: `Tournament.groupsPublished`. During setup players see a "groups being prepared" card instead of the draw until the organizer (or admin) publishes; once groups start they are always visible. Hiding is in the app only (the state JSON is still readable).
+- Quick add card: name + mobile puts a new player straight on the waiting list (online: temporary account through admin-users 'players', password pingo123). No SQL.

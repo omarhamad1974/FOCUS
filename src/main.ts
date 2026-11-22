@@ -1993,7 +1993,8 @@ function usersPage(): string {
       ${p.phone ? `<br><span class="muted small" dir="ltr">📱 ${esc(p.phone)}</span>` : ''}
       ${p.must_change_password ? ` <span class="badge gold">${t('users.mustChange')}</span>` : ''}</span>
       ${isAdmin() ? `<span class="row" style="gap:4px"><button class="btn soft small" data-act="user-edit" data-id="${p.id}">✏️ ${t('users.edit')}</button>
-        ${p.id === session.profile?.id ? '' : `<button class="btn ghost small" data-act="user-reset" data-id="${p.id}">🔑 ${t('users.reset')}</button>`}</span>` : ''}
+        ${p.id === session.profile?.id ? '' : `<button class="btn ghost small" data-act="user-reset" data-id="${p.id}">🔑 ${t('users.reset')}</button>`}
+        ${p.id === session.profile?.id || p.role === 'admin' ? '' : `<a class="btn ghost small" href="#/admin/people/del/${p.id}" aria-label="${esc(t('ppl.profileDelete'))}">${icon('trash', 14)}</a>`}</span>` : ''}
       ${editingUser === p.id ? userEditForm(p) : ''}
       <span class="flags">${flags.map(([flag, label, on]) => isAdmin()
         ? `<label class="flag ${on(p) ? 'on' : ''}"><input type="checkbox" data-act="role-flag" data-id="${p.id}" data-flag="${flag}" ${on(p) ? 'checked' : ''} ${p.id === session.profile?.id && flag === 'admin' ? 'disabled' : ''}> ${t(label)}</label>`

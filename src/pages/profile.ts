@@ -5,7 +5,7 @@
  */
 import { dateFmt, t } from '../i18n/ar';
 import * as content from '../data/content';
-import { n, render, session } from '../app/ctx';
+import { isAdmin, n, render, session } from '../app/ctx';
 import { host } from '../admin/host';
 import { empty } from '../ui/art';
 import { icon } from '../ui/icons';
@@ -39,6 +39,8 @@ export function page(id: string): string {
   if (provider && set === undefined) pay.settingsOf([id]).then(render, () => undefined);
   const wa = set ? payUi.waButton(set, t('prof.waText'), 'pay.waChat') : '';
   const own = session.profile?.id === id;
+  // Admin only: delete this account (never another admin, never yourself).
+  const canDelete = isAdmin() && !own;
   return `<section class="banner b-me slim rise prof-head"><div class="row">${avatarOf(p)}<div><h1 dir="auto">${esc(p.full_name)}</h1>
     ${p.club ? `<p dir="auto">${icon('pin', 14)} ${esc(p.club)}</p>` : ''}
     <div class="row" style="gap:6px;margin-block-start:6px">${roles || `<span class="badge">${t('role.player')}</span>`}</div>${wa ? `<div class="row" style="margin-block-start:8px">${wa}</div>` : ''}</div></div></section>
@@ -52,5 +54,7 @@ export function page(id: string): string {
     <span><b>${t('prof.bookHall')}</b><br><small class="muted">${t('halls.tagline')}</small></span>${icon('chevron', 18)}</a>` : ''}
   ${tours.length ? `<div class="card"><h3>${icon('trophy', 20)} ${t('prof.tournaments')} <span class="badge">${n(tours.length)}</span></h3>
     ${tours.map((x) => `<a class="match" href="#/t/${esc(x.id)}" style="grid-template-columns:1fr auto">
-      <span class="p" dir="auto">${esc(x.name)}</span><small class="muted">${x.date ? dateFmt.format(new Date(x.date)) : ''}</small></a>`).join('')}</div>` : ''}`;
+      <span class="p" dir="auto">${esc(x.name)}</span><small class="muted">${x.date ? dateFmt.format(new Date(x.date)) : ''}</small></a>`).join('')}</div>` : ''}
+  ${canDelete ? `<div class="card prof-admin"><a class="btn red" href="#/admin/people/del/${esc(id)}">${icon('trash', 16)} ${t('ppl.profileDelete')}</a>
+    <small class="muted">${t('ppl.profileDeleteHint')}</small></div>` : ''}`;
 }

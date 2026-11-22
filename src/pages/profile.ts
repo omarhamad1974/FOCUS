@@ -2,6 +2,7 @@
  * Public page of a person (#/u/<id>): photo, name, club, roles and the optional
  * biography that organizers, trainers and sellers write in their tools.
  * Organizers' tournaments are listed; trainers link to their booking page.
+ * Players get their statistics: wins, losses, win rate, ranking and finishes (pages/stats).
  */
 import { dateFmt, t } from '../i18n/ar';
 import * as content from '../data/content';
@@ -10,6 +11,7 @@ import { host } from '../admin/host';
 import { empty } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc } from '../ui/util';
+import { profileStats } from './stats';
 
 const asked = new Set<string>();
 
@@ -32,13 +34,16 @@ export function page(id: string): string {
     p.is_seller ? `<span class="badge blue">${icon('shop', 14)} ${t('roles.seller')}</span>` : '',
   ].join('');
   const own = session.profile?.id === id;
+  const stats = profileStats(id);
+  const showBio = !!p.bio || isOrg || p.is_trainer || p.is_seller || !stats;
   return `<section class="banner b-me slim rise prof-head"><div class="row">${avatarOf(p)}<div><h1 dir="auto">${esc(p.full_name)}</h1>
     ${p.club ? `<p dir="auto">${icon('pin', 14)} ${esc(p.club)}</p>` : ''}
     <div class="row" style="gap:6px;margin-block-start:6px">${roles || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
-  <div class="card prof-bio"><h3>✍️ ${t('bio.title')}</h3>
+  ${stats}
+  ${showBio ? `<div class="card prof-bio"><h3>✍️ ${t('bio.title')}</h3>
     ${p.bio ? `<p dir="auto">${esc(p.bio).replace(/\n/g, '<br>')}</p>` : `<p class="muted">${t(own ? 'bio.emptyOwn' : 'bio.emptyOther')}</p>`}
     ${own && (isOrg || p.is_trainer || p.is_seller) ? `<a class="btn soft small" href="#/desk">${icon('edit', 14)} ${t('bio.editInDesk')}</a>` : ''}
-  </div>
+  </div>` : ''}
   ${p.is_trainer ? `<a class="card faq-cta rise" href="#/training/t/${esc(id)}"><span class="faq-ic">${icon('coach', 26)}</span>
     <span><b>${t('prof.bookTrainer')}</b><br><small class="muted">${t('prof.bookTrainerText')}</small></span>${icon('chevron', 18)}</a>` : ''}
   ${tours.length ? `<div class="card"><h3>${icon('trophy', 20)} ${t('prof.tournaments')} <span class="badge">${n(tours.length)}</span></h3>

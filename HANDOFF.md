@@ -63,3 +63,10 @@ Also confirmed:
 - Database: migration 0013 (`invitations` table, `invite_players`, `cancel_invitation`, `answer_invitation`, `sim_answer_invitations`; `public_profiles.is_organizer`). Code: `src/pages/invites.ts`.
 - Biography (optional, `profiles.bio`, 600 chars): organizers, trainers and sellers edit it in a card at the top of their desk (or on #/me). Shown on the new public page `#/u/<id>` (linked from the organizer name on tournament pages and the seller box on products), on the trainer page and on product pages.
 - The tournament-page simulation ("محاكاة البطولة") now uses the 40 registered demo players first, so simulated players show real-looking photos.
+
+## Player statistics and ranking, 2026-11-22
+- Every player's public page (`#/u/<id>`) shows wins, losses, matches, games, win-rate ring, last 10 results, streak, trophy shelf (titles, runner-up, podiums, tournaments), the finish in each tournament and the latest matches with opponents' profiles. `#/me` links to it.
+- `#/ranking` ranks every account with at least one match. Ranking points (assumption, easy to change in `src/domain/stats.ts`): 1 per match win, plus +10 champion, +6 runner-up, +4 third, +3 fourth in the main draw (half in the consolation draw). Ties: win rate, then wins.
+- Walkovers count as a straight-games win for the winner and a loss for the other player; byes are not matches.
+- Computed in the browser from the tournaments already loaded (`src/domain/stats.ts`, `src/pages/stats.ts`): no SQL. Typed players without an account have no profile stats.
+- Names and photos in group tables and the podium link to the player's page.

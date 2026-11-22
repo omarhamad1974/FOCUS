@@ -1,15 +1,16 @@
 /** News: a simple blog for table tennis news, lessons and tips. */
 import { dateFmt, t, type MessageKey } from '../i18n/ar';
 import * as content from '../data/content';
+import * as cats from '../data/categories';
 import type { Post, PostCategory, PostLevel } from '../data/content';
 import { authErr, canWriteNews, checked, hint, isAdmin, loading, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc, toast, zone } from '../ui/util';
 
-export const CAT_ICON: Record<PostCategory, string> = {
-  news: 'news', learn: 'book', tips: 'bulb', events: 'calendar', gear: 'racket', other: 'spark', rules: 'gavel', training: 'target',
-};
+/** Icon and name of an article category (from the admin's category list). */
+export const catIcon = (c: PostCategory): string => cats.postIcon(c);
+export const catLabel = (c: PostCategory): string => esc(cats.postLabel(c));
 
 /** Where an article lives: academy lessons open under #/learn, everything else under #/news. */
 export const postHref = (p: Post): string => `#/${content.isAcademy(p.category) ? 'learn' : 'news'}/${p.id}`;
@@ -33,15 +34,14 @@ export const latest = (count: number): Post[] | null => posts && posts.filter((p
 /** All loaded articles, for the academy (null while loading). */
 export const all = (): Post[] | null => posts;
 
-export const catLabel = (c: PostCategory) => t(`news.cat.${c}` as MessageKey);
 const when = (iso: string) => dateFmt.format(new Date(iso));
 const canEdit = (p: Post) => isAdmin() || p.author_id === session.profile?.id;
 
 export function postCard(p: Post, big = false): string {
   return `<a class="card post ${big ? 'big' : ''} rise" href="${postHref(p)}">
-    ${cover(p.cover_url, p.id, CAT_ICON[p.category], esc(p.title))}
+    ${cover(p.cover_url, p.id, catIcon(p.category), esc(p.title))}
     <div class="post-body">
-      <div class="row small"><span class="badge blue">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
+      <div class="row small"><span class="badge blue">${icon(catIcon(p.category), 14)} ${catLabel(p.category)}</span>
         ${p.published ? '' : `<span class="badge gold">${t('news.draft')}</span>`}<span class="muted">${when(p.created_at)}</span></div>
       <h3 dir="auto">${esc(p.title)}</h3>
       ${p.summary ? `<p class="muted clamp" dir="auto">${esc(p.summary)}</p>` : ''}
@@ -54,8 +54,8 @@ function listPage(): string {
   const shown = posts.filter((p) => !content.isAcademy(p.category) && (filter === 'all' || p.category === filter));
   const [first, ...rest] = shown;
   return `${pageHead()}
-  <div class="chips-row">${(['all', ...content.NEWS_CATEGORIES] as const).map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="news-filter" data-v="${c}">
-    ${c === 'all' ? icon('grid', 16) : icon(CAT_ICON[c], 16)} ${c === 'all' ? t('news.all') : catLabel(c)}</button>`).join('')}</div>
+  <div class="chips-row">${['all', ...cats.list('news').map((x) => x.slug)].map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="news-filter" data-v="${c}">
+    ${c === 'all' ? icon('grid', 16) : icon(catIcon(c), 16)} ${c === 'all' ? t('news.all') : catLabel(c)}</button>`).join('')}</div>
   ${first ? `${postCard(first, true)}<div class="grid">${rest.map((p) => postCard(p)).join('')}</div>`
     : empty('news', t('news.empty'), canWriteNews() ? `<a class="btn" href="#/news/new">${icon('plus')} ${t('news.write')}</a>` : '')}`;
 }
@@ -110,8 +110,8 @@ function postPage(id: string): string {
   const more = posts.filter((x) => x.id !== id && x.published && x.category === p.category).slice(0, 3);
   return `<a class="backlink" href="#/news">${icon('back', 18)} ${t('news.back')}</a>
   <article class="card article rise">
-    ${cover(p.cover_url, p.id, CAT_ICON[p.category], esc(p.title))}
-    <div class="row small" style="margin-block:12px 4px"><span class="badge blue">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span><span class="muted">${when(p.created_at)}</span></div>
+    ${cover(p.cover_url, p.id, catIcon(p.category), esc(p.title))}
+    <div class="row small" style="margin-block:12px 4px"><span class="badge blue">${icon(catIcon(p.category), 14)} ${catLabel(p.category)}</span><span class="muted">${when(p.created_at)}</span></div>
     <h1 dir="auto">${esc(p.title)}</h1>
     ${author ? `<div class="row author">${avatarOf(author)}<b dir="auto">${esc(author.full_name)}</b></div>` : ''}
     ${p.summary ? `<p class="lead" dir="auto">${esc(p.summary)}</p>` : ''}
@@ -130,21 +130,22 @@ export function editorPage(id?: string, academy = false): string {
   const p = id ? posts.find((x) => x.id === id) : undefined;
   if (id && (!p || !canEdit(p))) return empty('news', t('news.notFound'));
   if (coverDraft === undefined) coverDraft = p?.cover_url ?? null;
-  const cat = p?.category ?? (academy ? 'rules' : 'news');
+  const cat = p?.category ?? cats.list(academy ? 'academy' : 'news')[0]?.slug ?? 'news';
   const lvl = p?.level ?? '';
-  const group = (label: string, cats: PostCategory[]) => `<optgroup label="${esc(label)}">${cats.map((c) => `<option value="${c}" ${c === cat ? 'selected' : ''}>${catLabel(c)}</option>`).join('')}</optgroup>`;
+  const group = (label: string, list: cats.Category[]) => `<optgroup label="${esc(label)}">${list.map((c) => `<option value="${esc(c.slug)}" ${c.slug === cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>`;
   return `<a class="backlink" href="${p ? postHref(p) : academy ? '#/learn' : '#/news'}">${icon('back', 18)} ${t('common.cancel')}</a>
   <form class="card" data-form="news-save" data-id="${p?.id ?? ''}" novalidate>
     <h2>${icon('edit', 22)} ${t(p ? 'news.edit' : 'news.write')}</h2>
     ${hint('news.editorHint')}
     <label class="field"><span>${t('news.fTitle')}</span><input class="input" id="nTitle" value="${esc(p?.title ?? '')}" dir="auto" maxlength="160" required></label>
     <label class="field"><span>${t('news.fCategory')}</span>
-      <select class="input" id="nCat">${group(t('nav.news'), content.NEWS_CATEGORIES)}${group(t('acad.title'), content.ACADEMY_CATEGORIES)}</select></label>
+      <select class="input" id="nCat">${group(t('nav.news'), cats.list('news'))}${group(t('acad.title'), cats.list('academy'))}</select>
+      ${isAdmin() ? `<small class="muted">${t('cat.manageHint')} <a href="#/admin/categories">${t('cat.manageLink')}</a></small>` : ''}</label>
     <label class="field"><span>${t('acad.fLevel')}</span>
       <select class="input" id="nLevel"><option value="">${t('acad.levelNone')}</option>${content.POST_LEVELS.map((l) => `<option value="${l}" ${l === lvl ? 'selected' : ''}>${t(`acad.level.${l}` as MessageKey)}</option>`).join('')}</select>
       <small class="muted">${t('acad.fLevelHint')}</small></label>
     <label class="field"><span>${t('news.fSummary')}</span><input class="input" id="nSummary" value="${esc(p?.summary ?? '')}" dir="auto" maxlength="300"></label>
-    ${imagePicker('news-cover', coverDraft, p?.id ?? 'new', CAT_ICON[cat])}
+    ${imagePicker('news-cover', coverDraft, p?.id ?? 'new', catIcon(cat))}
     <label class="field"><span>${t('news.fBody')}</span><textarea class="input" id="nBody" dir="auto">${esc(p?.body ?? '')}</textarea></label>
     <label class="check"><input type="checkbox" id="nPub" ${p?.published === false ? '' : 'checked'}> ${t('news.fPublished')}</label>
     <button class="btn green block" type="submit">${icon('check')} ${t('common.save')}</button>

@@ -1,6 +1,7 @@
 /** Shop: sellers list gear; players send order requests and pay on delivery or pickup. */
 import { dateTimeFmt, t, type MessageKey } from '../i18n/ar';
 import * as content from '../data/content';
+import * as cats from '../data/categories';
 import type { Order, OrderStatus, Product, ProductCategory } from '../data/content';
 import { authErr, checked, hint, isAdmin, isSeller, loading, money, n, needLogin, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
@@ -12,9 +13,8 @@ import { nameKey } from '../domain/tournament';
 import { imagePicker } from './news';
 import * as shops from './shops';
 
-export const CAT_ICON: Record<ProductCategory, string> = {
-  rackets: 'racket', rubbers: 'grid', balls: 'ball', tables: 'table', clothing: 'user', shoes: 'bolt', bags: 'shop', accessories: 'tag', other: 'box',
-};
+/** Icon of a product category (from the admin's shop category list). */
+export const catIcon = (c: ProductCategory): string => cats.productIcon(c);
 
 let products: Product[] | null = null;
 let busy = false;
@@ -58,7 +58,7 @@ function priceTag(p: Product, big = false): string {
 export const featured = (count: number): Product[] | null => products && products.filter((p) => p.active && p.approved && p.stock > 0)
   .sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, count);
 
-const catLabel = (c: ProductCategory) => t(`shop.cat.${c}` as MessageKey);
+const catLabel = (c: ProductCategory) => esc(cats.productLabel(c));
 const statusLabel = (s: OrderStatus) => t(`shop.status.${s}` as MessageKey);
 const STATUS_BADGE: Record<OrderStatus, string> = { pending: 'gold', confirmed: 'blue', delivered: 'green', cancelled: '' };
 
@@ -66,9 +66,9 @@ export function productCard(p: Product): string {
   const out = p.stock <= 0;
   return `<a class="card product rise ${out ? 'out' : ''} ${p.featured ? 'featured' : ''}" href="#/shop/p/${p.id}">
     ${p.featured ? `<span class="ribbon">${icon('star', 12)} ${t('shop.featured')}</span>` : ''}
-    ${cover(p.image_url, p.id, CAT_ICON[p.category], esc(p.name))}
+    ${cover(p.image_url, p.id, catIcon(p.category), esc(p.name))}
     <div class="product-body">
-      <span class="muted small">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
+      <span class="muted small">${icon(catIcon(p.category), 14)} ${catLabel(p.category)}</span>
       <h3 dir="auto" class="clamp1">${esc(p.name)}</h3>
       <div class="row between">${priceTag(p)}
         ${out ? `<span class="badge red">${t('shop.soldOut')}</span>` : !p.approved ? `<span class="badge gold">${t('adm.waiting')}</span>` : p.active ? '' : `<span class="badge">${t('shop.hidden')}</span>`}</div>
@@ -90,8 +90,8 @@ function listPage(): string {
     .sort((a, b) => Number(b.featured) - Number(a.featured));
   return `${banner()}${shops.tabs('products')}
   <div class="searchbar">${icon('search', 18)}<input class="input" id="shopQ" data-act="shop-q" placeholder="${esc(t('shop.search'))}" value="${esc(query)}" dir="auto"></div>
-  <div class="chips-row">${(['all', ...content.PRODUCT_CATEGORIES] as const).map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="shop-filter" data-v="${c}">
-    ${icon(c === 'all' ? 'grid' : CAT_ICON[c], 16)} ${c === 'all' ? t('news.all') : catLabel(c)}</button>`).join('')}</div>
+  <div class="chips-row">${['all', ...cats.list('shop').map((x) => x.slug)].map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="shop-filter" data-v="${c}">
+    ${icon(c === 'all' ? 'grid' : catIcon(c), 16)} ${c === 'all' ? t('news.all') : catLabel(c)}</button>`).join('')}</div>
   ${hint('shop.payHint')}
   ${shown.length ? `<div class="grid products">${shown.map(productCard).join('')}</div>` : empty('shop', t('shop.empty'))}`;
 }
@@ -123,9 +123,9 @@ function productPage(id: string): string {
     </form>`;
   return `<a class="backlink" href="#/shop">${icon('back', 18)} ${t('shop.back')}</a>
   <div class="product-page rise">
-    <div class="card">${cover(p.image_url, p.id, CAT_ICON[p.category], esc(p.name))}</div>
+    <div class="card">${cover(p.image_url, p.id, catIcon(p.category), esc(p.name))}</div>
     <div class="card">
-      <span class="badge blue">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
+      <span class="badge blue">${icon(catIcon(p.category), 14)} ${catLabel(p.category)}</span>
       <h1 dir="auto" style="margin-block:8px">${esc(p.name)}</h1>
       <div>${priceTag(p, true)}</div>
       ${pct && !session.profile ? `<p class="small"><a href="#/login" data-return="${esc(location.hash)}">${t('shops.loginForPrice')}</a></p>` : ''}
@@ -205,18 +205,19 @@ function editorPage(id?: string): string {
   const p = id ? products.find((x) => x.id === id) : undefined;
   if (id && (!p || !(p.seller_id === session.profile.id || isAdmin()))) return empty('shop', t('shop.notFound'));
   if (imageDraft === undefined) imageDraft = p?.image_url ?? null;
-  const cat = p?.category ?? 'rackets';
+  const cat = p?.category ?? '';
   return `<a class="backlink" href="${p ? `#/shop/p/${p.id}` : '#/shop/manage'}">${icon('back', 18)} ${t('common.cancel')}</a>
   <form class="card" data-form="shop-save" data-id="${p?.id ?? ''}" novalidate>
     <h2>${icon(p ? 'edit' : 'plus', 22)} ${t(p ? 'shop.editProduct' : 'shop.add')}</h2>
     ${hint('shop.approvalHint')}
     <label class="field"><span>${t('shop.fName')}</span><input class="input" id="pdName" value="${esc(p?.name ?? '')}" dir="auto" maxlength="120"></label>
+    <label class="field"><span>${t('shop.fCategory')} <i class="req">*</i></span><select class="input" id="pdCat" required>
+        ${cat ? '' : `<option value="" selected disabled>${t('cat.pick')}</option>`}${cats.list('shop').map((c) => `<option value="${esc(c.slug)}" ${c.slug === cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
     <div class="row">
-      <label class="field" style="flex:2"><span>${t('shop.fCategory')}</span><select class="input" id="pdCat">${content.PRODUCT_CATEGORIES.map((c) => `<option value="${c}" ${c === cat ? 'selected' : ''}>${catLabel(c)}</option>`).join('')}</select></label>
-      <label class="field" style="flex:1"><span>${t('shop.fPrice')}</span><input class="input" id="pdPrice" inputmode="decimal" dir="ltr" value="${p ? p.price : ''}"></label>
+      <label class="field" style="flex:1"><span>${t('shop.fPrice')} <i class="req">*</i></span><input class="input" id="pdPrice" inputmode="decimal" dir="ltr" required value="${p && p.price > 0 ? p.price : ''}" placeholder="0"></label>
       <label class="field" style="flex:1"><span>${t('shop.fStock')}</span><input class="input" id="pdStock" inputmode="numeric" dir="ltr" value="${p ? p.stock : 1}"></label>
     </div>
-    ${imagePicker('shop-image', imageDraft, p?.id ?? 'new', CAT_ICON[cat])}
+    ${imagePicker('shop-image', imageDraft, p?.id ?? 'new', catIcon(cat))}
     <label class="field"><span>${t('shop.fDesc')}</span><textarea class="input" id="pdDesc" dir="auto" style="min-height:120px">${esc(p?.description ?? '')}</textarea></label>
     <label class="check"><input type="checkbox" id="pdActive" ${p?.active === false ? '' : 'checked'}> ${t('shop.fActive')}</label>
     <button class="btn green block" type="submit">${icon('check')} ${t('common.save')}</button>
@@ -293,6 +294,9 @@ export function onInput(el: HTMLInputElement): boolean {
   return true;
 }
 
+/** Arabic-Indic digits (٠-٩) and the Arabic decimal mark typed on phone keyboards, as Latin digits. */
+const toLatin = (s: string) => s.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[٫]/g, '.');
+
 let saved: Record<string, string> = {};
 function keepForm(): void { for (const id of ['pdName', 'pdCat', 'pdPrice', 'pdStock', 'pdDesc']) saved[id] = (document.getElementById(id) as HTMLInputElement | null)?.value ?? ''; }
 function restoreForm(): void {
@@ -320,12 +324,15 @@ export async function onSubmit(kind: string, form: HTMLFormElement): Promise<boo
   }
   if (kind !== 'shop-save') return false;
   const name = val('pdName');
-  const price = Number(val('pdPrice').replace(',', '.'));
-  const stock = Math.floor(Number(val('pdStock')));
-  if (!name || !(price >= 0) || val('pdPrice') === '' || !(stock >= 0)) { toast(t('shop.needFields')); return true; }
+  const price = Number(toLatin(val('pdPrice')).replace(',', '.'));
+  const stock = Math.floor(Number(toLatin(val('pdStock'))));
+  const category = val('pdCat');
+  if (!(price > 0)) { toast(t('shop.needPrice')); document.getElementById('pdPrice')?.focus(); return true; }
+  if (!category) { toast(t('cat.needPick')); return true; }
+  if (!name || !(stock >= 0)) { toast(t('shop.needFields')); return true; }
   try {
     const p = await content.saveProduct({
-      id: form.dataset.id || undefined, name, price, stock, category: val('pdCat') as ProductCategory,
+      id: form.dataset.id || undefined, name, price, stock, category,
       description: (document.getElementById('pdDesc') as HTMLTextAreaElement).value.trim() || null,
       image_url: imageDraft ?? null, active: checked('pdActive'),
     });

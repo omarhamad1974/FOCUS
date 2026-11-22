@@ -38,6 +38,7 @@ import * as payUi from './ui/pay';
 import * as pwa from './pwa';
 import * as alertsUi from './pages/alerts';
 import * as pay from './data/pay';
+import * as categories from './data/categories';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
@@ -102,6 +103,7 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
+    void categories.load(true);
     news.reset(); shop.reset(); shops.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); lists.reset(); hallsPage.reset(); payUi.forget(); alertsUi.reset();
     regCache.clear();
     assisting.clear();
@@ -318,8 +320,8 @@ function newsCarousel(posts: content.Post[]): string {
   }
   return `<section class="carousel rise" data-carousel data-fade aria-roledescription="carousel" aria-label="${esc(t('nav.news'))}">
     <div class="car-track">${posts.map((p, i) => `<a class="car-slide${i ? '' : ' on'}" href="#/news/${p.id}" aria-label="${esc(p.title)}" data-i="${i}" draggable="false"${i ? ' inert' : ''}>
-      ${cover(p.cover_url, p.id, news.CAT_ICON[p.category], esc(p.title))}
-      <div class="car-text"><span class="badge gold">${icon(news.CAT_ICON[p.category], 14)} ${t(`news.cat.${p.category}` as MessageKey)}</span>
+      ${cover(p.cover_url, p.id, news.catIcon(p.category), esc(p.title))}
+      <div class="car-text"><span class="badge gold">${icon(news.catIcon(p.category), 14)} ${news.catLabel(p.category)}</span>
         <h2 dir="auto">${esc(p.title)}</h2>${p.summary ? `<p dir="auto">${esc(p.summary)}</p>` : ''}
         <span class="car-more">${t('home.readMore')} ${icon('chevron', 16)}</span></div></a>`).join('')}</div>
     ${posts.length > 1 ? carLogo(import.meta.env.BASE_URL) : ''}
@@ -3151,6 +3153,7 @@ window.addEventListener('hashchange', () => {
 });
 setRender(route);
 pwa.init();
+categories.onChange(() => route());
 claim.setOnAdded(() => { dir = null; regCache.clear(); route(); });
 claim.setTournaments(() => data.tournaments
   .filter((x) => x.stage === 'setup')

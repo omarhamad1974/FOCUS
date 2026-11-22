@@ -9,13 +9,14 @@ import { CONFIRM_WORD, confirmed, holdsRole, isTempAccount, planRoleRemoval, rol
 import { cover } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc, toast } from '../ui/util';
-import { CAT_ICON as NEWS_ICON } from './news';
-import { CAT_ICON as SHOP_ICON } from './shop';
+import * as catsAdmin from './categoriesAdmin';
+import { catIcon as newsIcon, catLabel as newsLabel } from './news';
+import { catIcon as shopIcon } from './shop';
 
-type Tab = 'home' | 'approvals' | 'users' | 'news' | 'shop' | 'tournaments' | 'bulk' | 'sim';
+type Tab = 'home' | 'approvals' | 'users' | 'news' | 'shop' | 'categories' | 'tournaments' | 'bulk' | 'sim';
 const TABS: [Tab, string, MessageKey][] = [
   ['home', 'grid', 'adm.tab.home'], ['approvals', 'check', 'adm.tab.approvals'], ['users', 'users', 'adm.tab.users'],
-  ['news', 'news', 'adm.tab.news'], ['shop', 'shop', 'adm.tab.shop'], ['tournaments', 'trophy', 'adm.tab.tournaments'],
+  ['news', 'news', 'adm.tab.news'], ['shop', 'shop', 'adm.tab.shop'], ['categories', 'tag', 'adm.tab.categories'], ['tournaments', 'trophy', 'adm.tab.tournaments'],
   ['bulk', 'trash', 'adm.tab.bulk'], ['sim', 'eye', 'adm.tab.sim'],
 ];
 
@@ -69,6 +70,7 @@ export function page(parts: string[]): string {
   else if (tab === 'approvals') body = approvalsView();
   else if (tab === 'news') body = newsView();
   else if (tab === 'shop') body = shopView();
+  else if (tab === 'categories') body = catsAdmin.view(posts ?? [], products ?? []);
   else if (tab === 'bulk') body = bulkView(parts[2]);
   else body = tournamentsView();
   return head + nav + body;
@@ -94,6 +96,7 @@ function homeView(): string {
       <a class="qa" href="#/new">${icon('trophy', 22)}<span>${t('home.create')}</span></a>
       <a class="qa" href="#/admin/users">${icon('user', 22)}<span>${t('users.create')}</span></a>
       <a class="qa" href="#/admin/approvals">${icon('check', 22)}<span>${t('adm.tab.approvals')}</span></a>
+      <a class="qa" href="#/admin/categories">${icon('tag', 22)}<span>${t('adm.tab.categories')}</span></a>
       <a class="qa" href="#/admin/bulk">${icon('trash', 22)}<span>${t('adm.tab.bulk')}</span></a>
       <a class="qa" href="#/admin/sim">${icon('eye', 22)}<span>${t('adm.tab.sim')}</span></a>
       <a class="qa" href="#/players">${icon('users', 22)}<span>${t('dir.link')}</span></a>
@@ -116,7 +119,7 @@ function approvalsView(): string {
 }
 
 function productRow(p: Product): string {
-  return `<div class="adm-row">${cover(p.image_url, p.id, SHOP_ICON[p.category], esc(p.name))}
+  return `<div class="adm-row">${cover(p.image_url, p.id, shopIcon(p.category), esc(p.name))}
     <div class="adm-row-main"><a href="#/shop/p/${p.id}"><b dir="auto">${esc(p.name)}</b></a>
       <span class="muted small" dir="auto">${icon('shop', 12)} ${esc(content.personName(p.seller_id))} · ${money(p.price)} · ${t('shop.inStock', { n: p.stock })}</span>
       <span class="row" style="gap:6px">${p.approved ? `<span class="badge green">${t('adm.approved')}</span>` : `<span class="badge gold">${t('adm.waiting')}</span>`}
@@ -139,9 +142,9 @@ function shopView(): string {
 function newsView(): string {
   return `<div class="card"><div class="row between"><h2>${icon('news', 22)} ${t('adm.tab.news')}</h2>
     <a class="btn gold small" href="#/news/new">${icon('edit', 16)} ${t('news.write')}</a></div>${hint('adm.newsHint')}
-    ${posts!.length ? posts!.map((p) => `<div class="adm-row">${cover(p.cover_url, p.id, NEWS_ICON[p.category], esc(p.title))}
+    ${posts!.length ? posts!.map((p) => `<div class="adm-row">${cover(p.cover_url, p.id, newsIcon(p.category), esc(p.title))}
       <div class="adm-row-main"><a href="#/news/${p.id}"><b dir="auto">${esc(p.title)}</b></a>
-        <span class="muted small">${t(`news.cat.${p.category}` as MessageKey)} · ${dateFmt.format(new Date(p.created_at))}</span>
+        <span class="muted small">${newsLabel(p.category)} · ${dateFmt.format(new Date(p.created_at))}</span>
         <span>${p.published ? `<span class="badge green">${t('adm.published')}</span>` : `<span class="badge gold">${t('news.draft')}</span>`}</span></div>
       <div class="adm-row-actions"><a class="btn soft small" href="#/news/${p.id}/edit">${icon('edit', 14)} ${t('news.edit')}</a>
         <button class="btn ghost small" data-act="adm-post-pub" data-id="${p.id}" data-v="${p.published ? '0' : '1'}">${t(p.published ? 'adm.unpublish' : 'adm.publish')}</button></div></div>`).join('')
@@ -181,8 +184,8 @@ interface BulkItem { id: string; title: string; sub: string; pic: string }
 
 function bulkItems(kind: BulkKind): BulkItem[] {
   if (kind === 'tournaments') return tournaments!.map((x) => ({ id: x.id, title: x.name, sub: `${esc(content.personName(x.organizer_id) || '—')} · ${n(x.players)} ${t('t.players')}`, pic: cover(x.cover ? esc(x.cover) : null, x.id, 'trophy', esc(x.name)) }));
-  if (kind === 'products') return products!.map((p) => ({ id: p.id, title: p.name, sub: `${esc(content.personName(p.seller_id))} · ${money(p.price)}`, pic: cover(p.image_url, p.id, SHOP_ICON[p.category], esc(p.name)) }));
-  if (kind === 'posts') return posts!.map((p) => ({ id: p.id, title: p.title, sub: `${t(`news.cat.${p.category}` as MessageKey)} · ${dateFmt.format(new Date(p.created_at))}`, pic: cover(p.cover_url, p.id, NEWS_ICON[p.category], esc(p.title)) }));
+  if (kind === 'products') return products!.map((p) => ({ id: p.id, title: p.name, sub: `${esc(content.personName(p.seller_id))} · ${money(p.price)}`, pic: cover(p.image_url, p.id, shopIcon(p.category), esc(p.name)) }));
+  if (kind === 'posts') return posts!.map((p) => ({ id: p.id, title: p.title, sub: `${newsLabel(p.category)} · ${dateFmt.format(new Date(p.created_at))}`, pic: cover(p.cover_url, p.id, newsIcon(p.category), esc(p.title)) }));
   const me = session.profile?.id;
   return (profiles ?? []).filter((p) => p.id !== me && holdsRole(p, kind)).map((p) => ({
     id: p.id, title: p.full_name || '—',
@@ -318,6 +321,7 @@ function simView(): string {
 }
 
 export async function onClick(act: string, el: HTMLElement): Promise<void> {
+  if (act.startsWith('adm-cat-') && await catsAdmin.onClick(act, el)) return;
   switch (act) {
     case 'pv-set':
       preview.as = el.dataset.v as Preview;

@@ -358,17 +358,23 @@ function tournamentCard(tm: Tournament): string {
   const top = st === 'finished' ? topTwo(tm) : null;
   const p = progress(tm);
   const reg = registrationOf(tm);
+  const dateLine = tm.date ? `${dateFmt.format(new Date(tm.date))}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}` : '';
   return `<article class="tcard st-${st} rise">
-    <div class="tc-media">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}
-      ${statusBadge(st)}${when && (st === 'open' || st === 'upcoming') ? `<span class="tc-when">${icon('clock', 14)} ${when}</span>` : ''}
-      ${top ? `${champCelebration(tm, top.first)}<div class="tc-champ"><span><small>🥇 ${t('stage.champion')}</small><b dir="auto">${esc(playerName(tm, top.first))}</b></span></div>` : ''}
+    <div class="tc-media${top ? ' has-champ' : ''}">${cover(tm.cover ? esc(tm.cover) : null, tm.id, 'trophy', esc(tm.name))}
+      ${top ? champCelebration(tm, top.first) : ''}
+      <div class="tc-top">${statusBadge(st)}${when && (st === 'open' || st === 'upcoming') ? `<span class="tc-when">${icon('clock', 14)} ${when}</span>` : ''}</div>
+      <div class="tc-over">
+        ${top ? `<div class="tc-champ"><small>🥇 ${t('stage.champion')}</small><b dir="auto">${esc(playerName(tm, top.first))}</b></div>` : ''}
+        <h3 class="tc-title" dir="auto"><a class="tc-link" href="#/t/${tm.id}">${esc(tm.name)}</a></h3>
+        ${dateLine || tm.location ? `<div class="tc-facts">
+          ${dateLine ? `<span>${icon('calendar', 16)} ${dateLine}</span>` : ''}
+          ${tm.location ? `<span dir="auto">${icon('pin', 16)} ${esc(tm.location)}</span>` : ''}
+        </div>` : ''}
+      </div>
     </div>
     <div class="tc-body">
-      <h3 dir="auto"><a class="tc-link" href="#/t/${tm.id}">${esc(tm.name)}</a></h3>
       ${online() && tm.organizerId ? `<div class="tc-org">${avatarOf(org)}<span class="muted small">${t('tl.by')} <b dir="auto">${esc(org?.full_name || t('tl.organizer'))}</b></span></div>` : ''}
       <div class="tc-meta">
-        ${tm.date ? `<span>${icon('calendar', 15)} ${dateFmt.format(new Date(tm.date))}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}</span>` : ''}
-        ${tm.location ? `<span dir="auto">${icon('pin', 15)} ${esc(tm.location)}</span>` : ''}
         <span>${icon('users', 15)} ${n(tm.players.length)}${reg.maxPlayers && st === 'open' ? ` / ${n(reg.maxPlayers)}` : ''} ${t('t.players')}</span>
       </div>
       ${st === 'running' ? xp(p.done, p.total) : ''}

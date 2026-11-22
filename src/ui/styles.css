@@ -1834,3 +1834,141 @@ button.hg-cell:hover { transform: scale(1.06); }
 .fav-star { position: absolute; top: 2px; inset-inline-start: 6px; font-style: normal; font-size: 13px; }
 .inv-go { display: flex; gap: 8px; flex-wrap: wrap; }
 .inv-go .btn { flex: 1; }
+
+/* ---------- Installable app (PWA): header button, home card, #/install guide ---------- */
+.installbtn {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--green-press); background: var(--green-soft); color: var(--navy);
+  font: 800 13px 'Cairo', system-ui, sans-serif; cursor: pointer; animation: pwa-nudge 3.2s ease-in-out 1.5s 2;
+}
+.installbtn:hover { background: var(--green); }
+@media (max-width: 420px) { .installbtn { width: 34px; padding: 0; justify-content: center; } }
+@keyframes pwa-nudge { 0%, 80%, 100% { transform: none; } 85% { transform: translateY(-3px); } 90% { transform: none; } 95% { transform: translateY(-2px); } }
+
+.pwa-card {
+  position: relative; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-block: 16px;
+  background: linear-gradient(120deg, #ffffff 0, var(--green-soft) 100%); border: 1px solid #cdeebe;
+}
+.pwa-card-ic { width: 64px; height: 64px; border-radius: 16px; box-shadow: 0 6px 16px #0c1f4a26; flex: none; animation: pwa-float 3s ease-in-out infinite; }
+.pwa-card-text { flex: 1 1 200px; display: grid; gap: 2px; }
+.pwa-card-text b { font-size: 17px; color: var(--navy); }
+.pwa-card .row { gap: 8px; }
+.pwa-x {
+  position: absolute; top: 8px; inset-inline-end: 8px; width: 28px; height: 28px; border-radius: 50%;
+  border: 0; background: #0c1f4a10; color: var(--muted); display: grid; place-items: center; cursor: pointer;
+}
+.pwa-card .pwa-card-text { padding-inline-end: 22px; }
+@keyframes pwa-float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-4px) rotate(2deg); } }
+
+.pwa-update {
+  position: fixed; z-index: 210; inset-inline: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); margin-inline: auto; max-width: 440px;
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px;
+  background: var(--navy); color: #fff; font-weight: 700; box-shadow: 0 10px 30px #0c1f4a55;
+}
+.pwa-update span { flex: 1; }
+.pwa-update .pwa-x { position: static; background: #ffffff1f; color: #fff; }
+
+.pwa-hero {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px; padding: 24px; border-radius: 24px;
+  background: radial-gradient(circle at 15% 20%, #1c3a7a 0, var(--navy) 60%); color: #fff; overflow: hidden;
+  box-shadow: 0 14px 30px #0c1f4a40;
+}
+.pwa-hero h1 { font-size: clamp(24px, 6vw, 32px); margin-block: 10px 6px; }
+.pwa-hero p { color: #d7e2f5; line-height: 1.7; margin: 0 0 16px; }
+.pwa-hero .kicker { color: var(--green); }
+.pwa-hero .btn.big { font-size: 17px; padding: 12px 22px; }
+.pwa-hero-art { transform: rotate(-6deg); }
+.pwa-hero-art .mk { width: 150px; box-shadow: 0 18px 40px #00000066, 0 0 0 4px #ffffff22; }
+@media (max-width: 560px) {
+  .pwa-hero { grid-template-columns: 1fr; text-align: center; }
+  .pwa-hero-art { order: -1; justify-self: center; }
+  .pwa-hero-art .mk { width: 120px; }
+}
+
+.pwa-perks { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-block: 16px 8px; }
+.pwa-perk { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 4px; animation-delay: calc(var(--i) * 70ms); }
+.pwa-perk > span { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--green-soft); color: var(--green-ink); margin-block-end: 4px; }
+.pwa-perk small { color: var(--muted); line-height: 1.6; }
+
+.pwa-tabs { display: flex; gap: 8px; overflow-x: auto; padding-block-end: 4px; margin-block-end: 12px; }
+.pwa-tabs button {
+  flex: 1 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 14px; cursor: pointer;
+  border: 2px solid var(--line); background: var(--card); color: var(--navy); font: inherit; text-align: start;
+}
+.pwa-tabs button span { display: grid; line-height: 1.3; }
+.pwa-tabs button small { color: var(--muted); font-size: 12px; }
+.pwa-tabs button[aria-selected='true'] { border-color: var(--green-press); background: var(--green-soft); box-shadow: inset 0 -3px 0 var(--green); }
+
+.pwa-steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.pwa-step {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px;
+  display: grid; gap: 12px; align-content: start; animation-delay: calc(var(--i) * 90ms);
+}
+.pwa-step .mk { justify-self: center; }
+.pwa-step b { font-size: 16px; color: var(--navy); }
+.pwa-step p { margin: 4px 0 0; color: var(--muted); line-height: 1.7; font-size: 14px; }
+.pwa-num {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; margin-inline-end: 6px;
+  background: var(--green); color: var(--navy); font-weight: 900; font-size: 14px;
+}
+.pwa-note { display: flex; gap: 6px; align-items: flex-start; margin-block: 12px 16px; }
+
+/* Mini phone drawings used by the guide (pure HTML/CSS). */
+.mk { width: 132px; aspect-ratio: 9 / 16; border-radius: 20px; padding: 5px; background: #1a2233; flex: none; direction: rtl; }
+.mk.mk-wide { width: 200px; aspect-ratio: 16 / 11; border-radius: 10px; padding: 4px; }
+.mk-screen { position: relative; height: 100%; border-radius: 16px; background: #f6f8fb; overflow: hidden; font-size: 8px; color: #1a2233; display: flex; flex-direction: column; }
+.mk-wide .mk-screen { border-radius: 6px; }
+.mk-wall .mk-screen { background: linear-gradient(160deg, #9ad97e, #3b79c4); }
+.mk-url { display: flex; align-items: center; gap: 3px; margin: 6px; padding: 3px 6px; border-radius: 8px; background: #e4e8ef; color: #5b6576; font-size: 7px; direction: ltr; }
+.mk-url .mk-round { margin-inline-start: auto; }
+.mk-page { flex: 1; display: grid; align-content: start; gap: 5px; padding: 8px; }
+.mk-page i { display: block; height: 7px; border-radius: 4px; background: #dde3ec; }
+.mk-page i:first-child { height: 28px; background: linear-gradient(90deg, var(--green), #c7efb4); }
+.mk-page i.s { width: 60%; }
+.mk-bar { display: flex; justify-content: space-around; align-items: center; padding: 6px 4px 9px; background: #eef1f5; border-top: 1px solid #d9dee6; color: #2a6be0; }
+.mk-sheet, .mk-menu, .mk-pop { background: #fff; display: grid; gap: 1px; box-shadow: 0 -6px 16px #0003; }
+.mk-sheet { position: absolute; inset-inline: 0; bottom: 0; border-radius: 12px 12px 0 0; padding: 8px 6px; }
+.mk-menu { position: absolute; top: 6px; inset-inline-start: 4px; width: 78%; border-radius: 8px; padding: 4px; z-index: 1; box-shadow: 0 6px 18px #0004; }
+.mk-pop { position: absolute; top: 22px; inset-inline-start: 8px; width: 62%; border-radius: 8px; padding: 6px; box-shadow: 0 6px 18px #0004; }
+.mk-row { display: flex; align-items: center; gap: 4px; padding: 5px 6px; border-radius: 6px; background: #f2f4f7; font-weight: 700; white-space: nowrap; }
+.mk-dialog { display: grid; gap: 6px; padding: 6px; height: 100%; align-content: start; background: #f2f2f7; }
+.mk-dhead { display: flex; justify-content: space-between; align-items: center; color: #2a6be0; padding: 4px 2px; }
+.mk-dhead b { color: #1a2233; }
+.mk-dbody { display: flex; align-items: center; gap: 6px; background: #fff; border-radius: 8px; padding: 6px; }
+.mk-dbody > div { display: grid; }
+.mk-dbody small { color: #8a93a3; font-size: 7px; }
+.mk-toggle { display: flex; justify-content: space-between; align-items: center; background: #fff; border-radius: 8px; padding: 6px; font-weight: 700; }
+.mk-toggle i { width: 20px; height: 12px; border-radius: 6px; background: #34c759; position: relative; }
+.mk-toggle i::after { content: ''; position: absolute; width: 10px; height: 10px; top: 1px; left: 9px; border-radius: 50%; background: #fff; }
+.mk-btns { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 4px 2px; color: #2a6be0; font-weight: 800; }
+.mk-app { display: grid; justify-items: center; gap: 2px; }
+.mk-app img { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 2px 5px #0003; }
+.mk-app small { font-size: 7px; color: #fff; font-weight: 700; text-shadow: 0 1px 2px #0006; }
+.mk-dbody .mk-app img { width: 22px; height: 22px; }
+.mk-home { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; padding: 18px 8px; justify-items: center; }
+.mk-blank { width: 22px; height: 22px; border-radius: 7px; background: #ffffff55; }
+.mk-win { display: flex; align-items: center; justify-content: space-between; padding: 3px 6px; background: var(--navy); color: #fff; font-weight: 800; }
+.mk-win > span { display: flex; align-items: center; gap: 4px; }
+.mk-win .mk-app img { width: 12px; height: 12px; border-radius: 3px; }
+/* The part to tap: green ring that pulses. */
+.mk-hit { position: relative; z-index: 1; border-radius: 8px; outline: 2px solid var(--green-press); outline-offset: 1px; background: #eafbe3; color: var(--navy); animation: mk-tap 1.6s ease-in-out infinite; }
+.mk-hit.mk-round { border-radius: 50%; display: inline-grid; place-items: center; padding: 2px; }
+.mk-word { padding: 1px 5px; font-weight: 900; }
+.mk-bar .mk-hit { padding: 3px; display: grid; place-items: center; }
+.mk-home .mk-hit { background: transparent; padding: 2px; border-radius: 9px; }
+@keyframes mk-tap { 0%, 100% { box-shadow: 0 0 0 0 #7ed95799; } 50% { box-shadow: 0 0 0 6px #7ed95700; } }
+#pwa-steps { scroll-margin-top: 90px; }
+.mk-dhead { white-space: nowrap; font-size: 7px; gap: 4px; }
+@media (max-width: 560px) {
+  .pwa-steps { grid-template-columns: 1fr; }
+  .pwa-step { grid-template-columns: 104px 1fr; align-items: center; gap: 14px; }
+  .pwa-step .mk { width: 104px; }
+  .pwa-step .mk.mk-wide { width: 104px; aspect-ratio: 4 / 3; }
+}
+.pwa-step .mk b, .pwa-hero .mk b { font-size: inherit; }
+.mk-u { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-row { overflow: hidden; }
+@media (max-width: 560px) {
+  .pwa-step .mk-screen { font-size: 6.5px; }
+  .pwa-step .mk-row { padding: 4px; }
+}

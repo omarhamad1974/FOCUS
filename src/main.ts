@@ -35,6 +35,7 @@ import * as profile from './pages/profile';
 import * as join from './pages/join';
 import * as hallsPage from './pages/halls';
 import * as payUi from './ui/pay';
+import * as pwa from './pwa';
 import * as pay from './data/pay';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
@@ -284,6 +285,7 @@ function shell(body: string): void {
     ${online() ? (session.profile
       ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatarOf(session.profile)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
       : `<a class="btn small" href="#/login">${t('auth.login')}</a>`) : ''}
+    ${pwa.headerButton()}
     ${isAdmin() ? `<a class="helpbtn adminbtn" href="#/admin" title="${esc(t('adm.title'))}" aria-label="${esc(t('adm.title'))}">${icon('shield', 18)}</a>` : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
@@ -443,6 +445,7 @@ function homePage(): string {
   ${invites.banner()}
   ${posts === null ? '<div class="sk-row car-sk"></div>' : newsCarousel(posts)}
   ${tournamentCarousel()}
+  ${pwa.homeCard()}
   <div class="features">
     ${feature('#/tournaments', 'trophy', 'nav.tournaments', 'home.fTournaments', 'f1')}
     ${feature('#/training', 'coach', 'nav.training', 'home.fTraining', 'f2')}
@@ -2237,6 +2240,8 @@ function draw(): void {
   } else if (['news', 'learn', 'shop', 'shops', 'training', 'halls'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
     shell(news.route(parts) ?? academy.route(parts) ?? shop.route(parts) ?? shops.route(parts) ?? training.route(parts) ?? hallsPage.route(parts) ?? '');
+  } else if (parts[0] === 'install') {
+    shell(pwa.installPage());
   } else if (parts[0] === 'faq') {
     shell(faq.route(parts) ?? '');
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
@@ -2322,6 +2327,7 @@ document.addEventListener('click', (e) => {
   if (act.startsWith('learn-')) { academy.onClick(act, el); return; }
   if (act.startsWith('shp-')) { void shops.onClick(act, el); return; }
   if (act.startsWith('pay-')) { void payUi.onClick(act, el); return; }
+  if (act.startsWith('pwa-')) { void pwa.onClick(act, el); return; }
   if (act.startsWith('hl-')) { void hallsPage.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
@@ -2962,6 +2968,7 @@ window.addEventListener('hashchange', () => {
   route();
 });
 setRender(route);
+pwa.init();
 claim.setOnAdded(() => { dir = null; regCache.clear(); route(); });
 claim.setTournaments(() => data.tournaments
   .filter((x) => x.stage === 'setup')

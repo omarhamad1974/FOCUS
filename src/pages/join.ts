@@ -4,6 +4,7 @@
  * Each poster's QR code opens its role's page. The pages are static: they
  * work without an account and without Supabase.
  */
+import * as pwa from '../pwa';
 import { icon } from '../ui/icons';
 import { esc } from '../ui/util';
 import { session } from '../app/ctx';
@@ -244,7 +245,8 @@ export function soonPage(): string {
       <p>سجّل الآن وجهّز حسابك قبل الإطلاق، أو كلّمنا على واتساب.</p>
       <div class="row"><a class="btn gold" href="${session.profile ? '#/me' : '#/login/signup'}">${icon('user')} سجّل الآن</a>
         ${wa ? `<a class="btn green" href="${wa}" target="_blank" rel="noopener">${icon('whatsapp')} تواصل معنا</a>` : ''}
-        <a class="btn ghost" href="#/">${icon('home')} ادخل الموقع</a></div>
+        <a class="btn ghost" href="#/">${icon('home')} ادخل الموقع</a>
+        ${pwa.linkButton()}</div>
     </section>
   </div>`;
 }

@@ -70,7 +70,7 @@ Players join through the `join_tournament` database function, which checks that 
 - **Batch players** (admin only, `#/players`): import an Excel (.xlsx) or CSV file, or paste "name, mobile" lines. Columns are found by Arabic or English headers (name, mobile, club, gender, birth year) or guessed. Each new mobile gets an account with the password `pingo123`, shared on WhatsApp or printed as cards; optional realistic demo photos for simulations; optional tournament waiting list. Claim codes are no longer made (old codes still work on `#/claim`).
 - **Accounts page** (organizers): confirm a sign-up without email in special cases, or create a ready-to-use account for a player (through the `admin-users` Edge Function); admins also change roles.
 - After signing up from a tournament page, the player returns to that tournament.
-- **Organizer / player switch** in the header (shown to organizers). Player view is read-only.
+- **No player/organizer switch** (removed). Organizer tools show on a tournament page only for its own organizer and the admin; everyone else sees the player view. Organizers reach their tools from the مساحتي bar and their desk (`#/desk/org`).
 - **Help hints** (💡) beside each feature; the **؟** button hides or shows them.
 - **Tournament wizard** in 4 steps: name and date, players (one per line, strongest first), number of groups with a live preview, match format per stage and the consolation tournament.
 - **Groups board** with drag and drop (mouse and touch), or tap a player then tap a group. Snake seeding spreads the strongest players.

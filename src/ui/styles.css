@@ -58,16 +58,6 @@ h1, h2, h3 { line-height: 1.3; margin: 0; }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 .spacer { flex: 1; }
 
-.switch {
-  display: inline-flex; background: var(--green-soft); border-radius: 999px; padding: 3px;
-  border: 1px solid #c9efb6;
-}
-.switch button {
-  border: 0; background: transparent; color: var(--green-ink); padding: 6px 12px; border-radius: 999px;
-  font-weight: 700; font-size: 13px; display: inline-flex; gap: 4px; align-items: center;
-}
-.switch button[aria-pressed='true'] { background: var(--green); color: var(--navy); box-shadow: 0 2px 0 var(--green-press); }
-
 .helpbtn {
   border: 1px solid var(--line); background: #f4f7fb; color: var(--navy); width: 34px; height: 34px;
   border-radius: 50%; font-weight: 900;
@@ -375,7 +365,6 @@ a.match:hover { border-color: var(--blue); }
 @media (max-width: 420px) {
   .top { padding: 10px 12px; gap: 8px; }
   .brand { font-size: 19px; }
-  .switch button { padding: 6px 9px; }
   .scoreboard .big { font-size: 34px; }
   .hide-sm { display: none; }
 }

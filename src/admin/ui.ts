@@ -23,7 +23,7 @@ export function payBox(tt: PayTotals, unit: MessageKey = 'desk.pay.people'): str
 }
 
 /** The "paid" tick for one line. */
-export function paidTick(kind: 'fee' | 'booking' | 'order', id: string, paid: boolean, extra = ''): string {
+export function paidTick(kind: 'fee' | 'booking' | 'order' | 'hall', id: string, paid: boolean, extra = ''): string {
   return `<label class="paid-tick ${paid ? 'on' : ''}" title="${esc(t('desk.pay.tickTip'))}">
     <input type="checkbox" data-act="dk-paid" data-kind="${kind}" data-id="${esc(id)}" ${extra} ${paid ? 'checked' : ''}>
     <span>${paid ? `${icon('check', 14)} ${t('desk.pay.paid')}` : t('desk.pay.unpaid')}</span></label>`;

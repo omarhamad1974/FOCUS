@@ -14,6 +14,8 @@ export interface PublicProfile {
   bio: string | null;
   is_seller: boolean;
   is_trainer: boolean;
+  /** Hall owner; from migration 0017. */
+  is_hall?: boolean;
   avatar_url: string | null;
   gender?: 'male' | 'female' | null;
   /** Organizer (or admin); from migration 0013, missing before it. */
@@ -60,7 +62,7 @@ export async function trainers(): Promise<PublicProfile[]> {
 
 /* ------------------------------------------------------------- roles */
 
-export type ExtraRole = 'organizer' | 'seller' | 'trainer';
+export type ExtraRole = 'organizer' | 'seller' | 'trainer' | 'hall';
 
 export interface RoleRequest {
   id: string;
@@ -89,7 +91,7 @@ export async function decideRoleRequest(id: string, approve: boolean): Promise<v
   check(await db().rpc('decide_role_request', { req: id, approve }));
 }
 
-export async function setRoles(id: string, roles: { is_organizer?: boolean; is_seller?: boolean; is_trainer?: boolean; role?: string }): Promise<void> {
+export async function setRoles(id: string, roles: { is_organizer?: boolean; is_seller?: boolean; is_trainer?: boolean; is_hall?: boolean; role?: string }): Promise<void> {
   check(await db().from('profiles').update(roles).eq('id', id));
 }
 
@@ -401,7 +403,7 @@ export async function removeAssistant(tournamentId: string, userId: string): Pro
 
 /* ------------------------------------------------------------- admin */
 
-export type AdminCounts = Record<'users' | 'organizers' | 'sellers' | 'trainers' | 'tournaments' | 'running' | 'posts' | 'products' | 'pendingProducts' | 'pendingRoles' | 'orders' | 'bookings', number>;
+export type AdminCounts = Record<'users' | 'organizers' | 'sellers' | 'trainers' | 'halls' | 'hallBookings' | 'tournaments' | 'running' | 'posts' | 'products' | 'pendingProducts' | 'pendingRoles' | 'orders' | 'bookings', number>;
 
 export async function adminCounts(): Promise<AdminCounts | null> {
   return check(await db().rpc('admin_counts')) as AdminCounts | null;

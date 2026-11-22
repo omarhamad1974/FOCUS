@@ -5,6 +5,8 @@ import type { Order, OrderStatus, Product, ProductCategory } from '../data/conte
 import { authErr, checked, hint, isAdmin, isSeller, loading, money, n, needLogin, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
+import * as pay from '../data/pay';
+import * as payUi from '../ui/pay';
 import { avatarOf, esc, toast } from '../ui/util';
 import { nameKey } from '../domain/tournament';
 import { imagePicker } from './news';
@@ -29,7 +31,7 @@ export function load(force = false): void {
   if (busy || (products && !force)) return;
   busy = true;
   content.listProducts()
-    .then(async (p) => { products = p; await content.people(p.map((x) => x.seller_id)); })
+    .then(async (p) => { products = p; await Promise.all([content.people(p.map((x) => x.seller_id)), pay.settingsOf(p.map((x) => x.seller_id)).catch(() => undefined)]); })
     .catch((e) => { products = []; toast(authErr(e)); })
     .finally(() => { busy = false; render(); });
 }
@@ -134,6 +136,7 @@ function productPage(id: string): string {
         <div><span class="muted small">${t('shops.soldBy')}</span><br><b dir="auto">${esc(store.name)}</b>${store.city ? ` <span class="muted small" dir="auto">· ${esc(store.city)}</span>` : ''}</div>${icon('chevron', 16)}</a>`
       : seller ? `<a class="seller" href="#/u/${esc(seller.id)}">${avatarOf(seller)}<div><span class="muted small">${t('shop.seller')}</span><br><b dir="auto">${esc(seller.full_name)}</b>${seller.club ? ` <span class="muted small" dir="auto">· ${esc(seller.club)}</span>` : ''}
         ${seller.bio ? `<p class="small clamp" dir="auto" style="margin:4px 0 0">${esc(seller.bio)}</p>` : ''}</div></a>` : ''}
+      ${seller ? `<div class="row">${sellerWa(seller.id, t('shop.waProduct', { product: p.name }))}<span class="small muted">${icon('wallet', 14)} ${esc(payUi.methodsLine(pay.settingsNow(seller.id)))}</span></div>` : ''}
       ${order}
       ${own || isAdmin() ? `<a class="btn soft small" href="#/shop/p/${p.id}/edit" style="margin-block-start:10px">${icon('edit', 16)} ${t('shop.editProduct')}</a>` : ''}
     </div>
@@ -148,6 +151,11 @@ function loadSales(): void {
     .finally(render);
 }
 
+/** WhatsApp button for a seller (when the seller gave a number). */
+function sellerWa(sellerId: string, text: string): string {
+  return payUi.waButton(pay.settingsNow(sellerId), text);
+}
+
 function orderRow(o: Order, asSeller: boolean): string {
   const who = asSeller ? buyers.get(o.id) : undefined;
   const sellerName = asSeller ? '' : content.personName(o.seller_id);
@@ -160,6 +168,8 @@ function orderRow(o: Order, asSeller: boolean): string {
       ${who ? `<span dir="auto">${icon('user', 14)} ${esc(who.full_name)}</span>${who.phone ? `<a href="tel:${esc(who.phone)}" dir="ltr">${icon('phone', 14)} ${esc(who.phone)}</a>` : ''}` : ''}
       ${sellerName ? `<span dir="auto">${icon('shop', 14)} ${esc(sellerName)}</span>` : ''}</div>
     ${o.note ? `<p class="small" dir="auto">💬 ${esc(o.note)}</p>` : ''}
+    ${!asSeller && o.status !== 'cancelled' ? payUi.payerBox({ kind: 'order', ref: o.id, amount: o.total, settings: pay.settingsNow(o.seller_id),
+      paid: !!(o as Order & { paid?: boolean }).paid, compact: true, waText: t('shop.waOrder', { product: o.product_name }) }) : ''}
     ${next.length ? `<div class="row">${next.map((s) => `<button class="btn ${s === 'cancelled' ? 'ghost' : s === 'delivered' ? 'green' : ''} small" data-act="shop-status" data-id="${o.id}" data-s="${s}">${t(`shop.to.${s}` as MessageKey)}</button>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -224,7 +234,11 @@ export function becomePrompt(role: content.ExtraRole): string {
 export function myOrdersCard(): string {
   if (mine === null) {
     mine = [];
-    content.myOrders().then(async (o) => { mine = o; await content.people(o.map((x) => x.seller_id)); }).catch(() => undefined).finally(render);
+    content.myOrders().then(async (o) => {
+      mine = o;
+      payUi.forget('order');
+      await Promise.all([content.people(o.map((x) => x.seller_id)), pay.settingsOf(o.map((x) => x.seller_id)), payUi.load('order', o.map((x) => x.id))]);
+    }).catch(() => undefined).finally(render);
     return '';
   }
   if (!mine.length) return '';
@@ -232,6 +246,7 @@ export function myOrdersCard(): string {
 }
 
 export function reset(): void { products = null; sales = null; mine = null; }
+payUi.onPayChange(() => { mine = null; });
 
 export function route(parts: string[]): string | null {
   if (parts[0] !== 'shop') return null;

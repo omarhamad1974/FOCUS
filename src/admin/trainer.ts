@@ -13,6 +13,8 @@ import { empty } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatar, esc, toast } from '../ui/util';
 import * as api from './api';
+import * as pay from '../data/pay';
+import * as payUi from '../ui/pay';
 import { countChips, ensureSim, payBox, paidTick, personLine, playerGrid, statTile, tip } from './ui';
 
 const timeFmt = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { hour: 'numeric', minute: '2-digit' });
@@ -33,6 +35,7 @@ let busy = false;
 let show: 'upcoming' | 'past' = 'upcoming';
 
 export function reset(): void { slots = null; bookings = null; }
+payUi.onPayChange(() => { if (location.hash.startsWith('#/desk/trainer')) bookings = null; });
 
 function load(): void {
   const me = session.profile?.id;
@@ -45,7 +48,8 @@ function load(): void {
       const missing = b.map((x) => x.slot_id).filter((id) => !known.has(id));
       for (const x of await content.slotsById(missing)) known.set(x.id, x);
       bkSlots = known;
-      await content.people(b.map((x) => x.player_id)).catch(() => undefined);
+      payUi.forget('training');
+      await Promise.all([content.people(b.map((x) => x.player_id)), payUi.load('training', b.map((x) => x.id))]).catch(() => undefined);
     })
     .catch((e) => { slots = []; bookings = []; toast(authErr(e)); })
     .finally(() => { loadingNow = false; render(); });
@@ -84,6 +88,7 @@ export function page(): string {
       ${countChips('dk-tr-count', [1, 3, 5, 10], bookCount)}
       <button class="btn green small" data-act="dk-tr-book" ${busy || !free.length ? 'disabled' : ''}>🎲 ${t('desk.tr.bookRandom', { n: Math.min(bookCount, free.length) })}</button>
       <button class="btn soft small" data-act="dk-pick-toggle" aria-pressed="${picking}">🖼️ ${t('desk.sim.pickByPhoto')}</button>
+      <button class="btn soft small" data-act="dk-tr-simpay" ${busy || !future.length ? 'disabled' : ''}>💳 ${t('desk.pay.simReceipts')}</button>
       <button class="btn ghost small" data-act="dk-tr-clear" ${busy ? 'disabled' : ''}>🧹 ${t('desk.sim.clear')}</button>
     </div>
     ${picking ? `<div class="dk-picker">${tip('desk.tr.pickHint')}${playerGrid(picked, new Set())}
@@ -106,7 +111,7 @@ export function page(): string {
         const ph = phones.get(b.id)?.phone;
         const l = locs.find((x) => x.id === s.location_id);
         return personLine(avatar(who?.full_name ?? '?', who?.avatar_url, who?.gender), who?.full_name ?? phones.get(b.id)?.full_name ?? '?',
-          `${icon('clock', 13)} ${range(s)}${l ? ` · ${icon('pin', 13)} ${esc(l.name)}` : ''}${ph ? ` · ${icon('phone', 13)} <span dir="ltr">${esc(ph)}</span>` : ''}`,
+          `${icon('clock', 13)} ${range(s)}${l ? ` · ${icon('pin', 13)} ${esc(l.name)}` : ''}${ph ? ` · ${icon('phone', 13)} <span dir="ltr">${esc(ph)}</span>` : ''} ${b.paid ? '' : payUi.proof(payUi.get('training', b.id))}`,
           `<b class="dk-price">${s.price ? money(s.price) : t('tr.free')}</b>${paidTick('booking', b.id, b.paid)}
            ${at(s) > now ? `<button class="btn ghost small" data-act="dk-tr-cancel" data-id="${b.id}" title="${esc(t('desk.tr.cancel'))}">${icon('x', 14)}</button>` : ''}`,
           b.paid ? 'paid' : '');
@@ -163,6 +168,10 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
       } catch (e) { toast(authErr(e)); }
       busy = false; reset(); render(); return true;
     }
+    case 'dk-tr-simpay':
+      busy = true; render();
+      try { toast(`💳 ${t('desk.pay.simulated', { n: await pay.simPay('training') })}`); } catch (e) { toast(authErr(e)); }
+      busy = false; reset(); render(); return true;
     case 'dk-tr-clear':
       busy = true; render();
       try { toast(`🧹 ${t('desk.sim.cleared', { n: await api.simClear('trainer') })}`); } catch (e) { toast(authErr(e)); }
@@ -178,8 +187,9 @@ export async function onChange(el: HTMLInputElement): Promise<boolean> {
   if (el.dataset.act !== 'dk-paid' || el.dataset.kind !== 'booking') return false;
   const b = bookings?.find((x) => x.id === el.dataset.id);
   try {
-    await api.setBookingPaid(el.dataset.id!, el.checked);
+    await pay.setPaid('training', el.dataset.id!, el.checked);
     if (b) b.paid = el.checked;
+    payUi.forget('training'); bookings = null;
   } catch (e) { toast(authErr(e)); el.checked = !el.checked; }
   render();
   return true;

@@ -86,7 +86,7 @@ function loadAll(): void {
 
 /* ------------------------------------------------------- role's own card */
 
-const DESK_ROLE: Record<'org' | 'trainer' | 'seller', SubRole> = { org: 'organizer', trainer: 'trainer', seller: 'seller' };
+const DESK_ROLE: Record<'org' | 'trainer' | 'seller' | 'hall', SubRole> = { org: 'organizer', trainer: 'trainer', seller: 'seller', hall: 'hall' };
 
 function whenLine(st: SubStatus): string {
   if (st.daysLeft == null) return t('sub.noneYet');
@@ -104,7 +104,7 @@ function priceChips(role: SubRole, s: PlanSettings): string {
     <span class="sub-price">🗓️ ${t('sub.price.year', { p: money(priceOf(s, role, 'yearly')) })}${save.pct > 0 ? ` <b class="badge green">${t('sub.price.save', { pct: n(save.pct) })}</b>` : ''}</span>`;
 }
 
-export function card(deskRole: 'org' | 'trainer' | 'seller'): string {
+export function card(deskRole: 'org' | 'trainer' | 'seller' | 'hall'): string {
   const me = session.profile;
   if (!me || me.role === 'admin') return '';
   if (!mine || !settings) { if (!notReady) loadMine(); return notReady ? '' : `<div class="card dk-plan muted"><span class="spin"></span> ${t('reg.loading')}</div>`; }
@@ -144,7 +144,7 @@ let busy = false;
 let armed: string | null = null;
 let draft: { user: string; role: SubRole; plan: SubPlan; products: number; start: string; end: string; amount: number; paid: boolean; note: string } | null = null;
 
-const holds = (p: Profile, r: SubRole) => p.role !== 'admin' && (r === 'organizer' ? !!p.is_organizer || p.role === 'organizer' : r === 'trainer' ? !!p.is_trainer : !!p.is_seller);
+const holds = (p: Profile, r: SubRole) => p.role !== 'admin' && (r === 'organizer' ? !!p.is_organizer || p.role === 'organizer' : r === 'trainer' ? !!p.is_trainer : r === 'hall' ? !!p.is_hall : !!p.is_seller);
 const personOf = (id: string) => people.find((p) => p.id === id);
 
 function draftForm(p: Profile): string {
@@ -175,6 +175,7 @@ function pricesForm(s: PlanSettings): string {
     <div class="dk-form sub-prices-form">
       ${f('spOrgM', 'subA.orgMonth', s.org_month)}${f('spOrgY', 'subA.orgYear', s.org_year)}
       ${f('spTrM', 'subA.trMonth', s.trainer_month)}${f('spTrY', 'subA.trYear', s.trainer_year)}
+      ${f('spHaM', 'subA.hallMonth', s.hall_month)}${f('spHaY', 'subA.hallYear', s.hall_year)}
       ${f('spPer', 'subA.perProduct', s.seller_per_product)}${f('spMax', 'subA.maxProducts', s.seller_max_products)}
       ${f('spUnl', 'subA.unlimited', s.seller_unlimited)}
     </div>
@@ -323,6 +324,7 @@ export async function onSubmit(kind: string): Promise<boolean> {
     const next = cleanSettings({
       org_month: num('spOrgM', s.org_month), org_year: num('spOrgY', s.org_year),
       trainer_month: num('spTrM', s.trainer_month), trainer_year: num('spTrY', s.trainer_year),
+      hall_month: num('spHaM', s.hall_month), hall_year: num('spHaY', s.hall_year),
       seller_per_product: num('spPer', s.seller_per_product), seller_max_products: num('spMax', s.seller_max_products),
       seller_unlimited: num('spUnl', s.seller_unlimited),
     });

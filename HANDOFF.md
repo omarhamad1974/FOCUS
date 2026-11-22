@@ -70,3 +70,11 @@ Also confirmed:
 - Promotion: the discount % is applied by the database to every new order of that seller (trigger on orders, `orders.promo_pct`), and product cards show the struck price and the Pingo price to signed-in players. The code and the "Pingo pass" (player photo + name + code) show only to signed-in players; visitors cannot read `shops.promo_code`.
 - Products keep the admin approval. The admin can hide or feature a shop from its page.
 - Database: migration 0018_sports_shops.sql (`shops` table, `shop_discount()`, `apply_shop_discount` trigger). Code: `src/pages/shops.ts`, text `src/i18n/ar-shops.ts`.
+
+## Player blacklists and favourites, 2026-11-22
+- Organizer's blacklist (#/desk/org/players, button «لاعبيني» on the organizer desk, or 🚫 beside a pending request): the player cannot join, be invited to or be added to that organizer's tournaments; other organizers' tournaments are not affected. Optional private reason. Taking a player off the list is one tap.
+- Admin's site-wide blacklist (#/desk/admin/blacklist, tile on the admin desk): the player cannot join any tournament. Organizers see these players marked and cannot pick them.
+- Blacklisting rejects the player's pending/approved entries in the owner's tournaments that are still in draft or open registration (all tournaments for the admin list) and cancels pending invitations. Started tournaments are untouched. After unblocking, the old entry stays "rejected"; the organizer can add the player again.
+- Enforced in the database (migration 0016): trigger on `registrations` raises `player blocked` for any path to pending/approved; trigger on `invitations` skips blocked players; `waitlist_add` and `sim_join` skip them. Players get only `my_blocks()` (whose tournaments), never reasons.
+- Favourites (⭐ on the same page, plus "players from your tournaments" suggestions). In a tournament's invitation card the favourites appear as photos: pick all in one tap, then "invite" or "add directly" (`org_add_players`: approved straight away, within the player limit).
+- Not enforced: players typed by hand into a tournament's own player list (names without accounts) are not checked.

@@ -16,7 +16,7 @@ import {
 import { bracketMatches, isBye, placements, roundName } from '../domain/bracket';
 import { hasResult, summarize, winnerId } from '../domain/scoring';
 import * as sim from '../domain/simulate';
-import { feeLines, feeOf, isPaid, payKey, setFee, setPaid, simulatePayments, totals } from '../domain/payments';
+import { feeOf, isPaid, payKey, setFee, setPaid, simulatePayments, totals } from '../domain/payments';
 import type { BestOf, Bracket, Match, Tournament } from '../domain/types';
 import { championCelebration } from '../ui/champion';
 import { cover, empty } from '../ui/art';
@@ -25,6 +25,9 @@ import { avatar, confetti, esc, groupColor, toast } from '../ui/util';
 import { host } from './host';
 import * as api from './api';
 import * as invites from '../pages/invites';
+import * as pay from '../data/pay';
+import * as payUi from '../ui/pay';
+import * as lists from '../pages/playerLists';
 import { countChips, ensureSim, payBox, paidTick, personLine, playerGrid, sample, statTile, stepper, tip } from './ui';
 
 /* ------------------------------------------------------------------ state */
@@ -38,7 +41,28 @@ let busy = false;
 let newOpen = false;
 const draft = { groups: 4, fee: 200, max: '', auto: true };
 
-export function reset(): void { regCache.clear(); picked.clear(); picking = false; }
+export function reset(): void { regCache.clear(); payCache.clear(); picked.clear(); picking = false; }
+
+/* Entry fee payments sent by players (receipts, cash), per tournament; paid ones first. */
+const payCache = new Map<string, pay.TournamentPay[]>();
+const payLoading = new Set<string>();
+payUi.onPayChange(() => payCache.clear());
+
+function loadPays(id: string): void {
+  if (payLoading.has(id) || payCache.has(id)) return;
+  payLoading.add(id);
+  pay.tournamentPayments(id).then((r) => payCache.set(id, r)).catch(() => payCache.set(id, []))
+    .finally(() => { payLoading.delete(id); render(); });
+}
+const payRow = (tm: Tournament, key: string) => payCache.get(tm.id)?.find((r) => r.player_id === key);
+/** Paid: ticked in the tournament (by hand) or confirmed on the registration (receipt approved / ticked). */
+const paidOf = (tm: Tournament, key: string) => isPaid(tm, key) || !!payRow(tm, key)?.paid;
+const proofOf = (tm: Tournament, key: string) => {
+  const r = payRow(tm, key);
+  return r ? pay.asPayment(r, tm.organizerId ?? '', feeOf(tm)) : null;
+};
+const feeLinesOf = (tm: Tournament) => payKeys(tm).map((k) => ({ amount: feeOf(tm), paid: paidOf(tm, k) }));
+const rank = (tm: Tournament, key: string) => payUi.priority(paidOf(tm, key), proofOf(tm, key));
 
 invites.setRegsChanged((id) => loadRegs(id, true));
 
@@ -97,9 +121,10 @@ function overview(): string {
   list.filter((x) => x.stage === 'setup').forEach((x) => loadRegs(x.id));
   const pending = list.reduce((s, x) => s + (regCache.get(x.id) ?? []).filter((r) => r.status === 'pending').length, 0);
   const left = list.reduce((s, x) => { const p = progress(x); return s + (x.stage === 'setup' ? 0 : Math.max(0, p.total - p.done)); }, 0);
-  const money3 = totals(list.flatMap((x) => feeLines(x, payKeys(x))));
+  const money3 = totals(list.flatMap((x) => feeLinesOf(x)));
   return `<section class="banner b-org slim"><div><h1>${icon('trophy', 26)} ${t('desk.org.title')}</h1><p>${t('desk.org.hint')}</p></div>
-    <button class="btn gold" data-act="dk-new-open">➕ ${t('desk.org.new')}</button></section>
+    <span class="row"><a class="btn soft" href="#/desk/org/players" title="${esc(t('pl.open'))}">⭐ ${t('pl.title')}</a>
+    <button class="btn gold" data-act="dk-new-open">➕ ${t('desk.org.new')}</button></span></section>
   <div class="stats dash-stats">
     ${statTile('trophy', n(list.filter((x) => stepOf(x) < 4).length), 'desk.org.statRunning')}
     ${statTile('bell', n(pending), 'desk.org.statPending', pending > 0)}
@@ -133,7 +158,7 @@ function tCard(tm: Tournament): string {
   const regs = regCache.get(tm.id) ?? [];
   const pend = regs.filter((r) => r.status === 'pending').length;
   const p = progress(tm);
-  const pay = totals(feeLines(tm, payKeys(tm)));
+  const pay = totals(feeLinesOf(tm));
   const top = step === 4 ? topTwo(tm) : null;
   const count = tm.stage === 'setup' && registrationOf(tm).open ? regs.filter((r) => r.status === 'approved').length : tm.players.length;
   return `<a class="dk-tcard rise" href="#/desk/org/${tm.id}">
@@ -162,6 +187,7 @@ function control(tm: Tournament): string {
   const step = stepOf(tm);
   loadPhotos(tm);
   if (tm.stage === 'setup') loadRegs(tm.id);
+  if (feeOf(tm)) loadPays(tm.id);
   if (step === 0) ensureSim();
   const panels = [registerPanel, groupsPanel, playPanel, koPanel, championPanel];
   return `<a class="backlink" href="#/desk/org">${icon('back', 18)} ${t('desk.org.all')}</a>
@@ -213,9 +239,12 @@ function registerPanel(tm: Tournament): string {
     ${reg.maxPlayers ? `<div class="xp"><span style="width:${Math.min(100, Math.round((approved.length / reg.maxPlayers) * 100))}%"></span></div>` : ''}
     <h3 class="dk-sub">⏳ ${t('reg.pending')} (${n(pending.length)})
       ${pending.length > 1 ? `<button class="btn green small" data-act="dk-approve-all">${icon('check', 14)} ${t('desk.org.approveAll')}</button>` : ''}</h3>
-    ${pending.length ? pending.map((r) => personLine(regPhoto(r), r.full_name ?? '', esc(r.club ?? ''), `
+    ${feeOf(tm) && pending.length ? tip('desk.pay.priorityHint') : ''}
+    ${pending.length ? [...pending].sort((a, b) => rank(tm, a.player_id) - rank(tm, b.player_id)).map((r) => personLine(regPhoto(r), r.full_name ?? '',
+      `${esc(r.club ?? '')} ${feeOf(tm) ? (paidOf(tm, r.player_id) ? `<span class="badge green">${icon('check', 12)} ${t('desk.pay.paid')}</span>` : payUi.proof(proofOf(tm, r.player_id))) : ''}`, `
       <button class="btn small green" data-act="dk-decide" data-id="${r.id}" data-s="approved">${icon('check', 14)} ${t('dash.accept')}</button>
-      <button class="btn small ghost" data-act="dk-decide" data-id="${r.id}" data-s="rejected" title="${esc(t('reg.reject'))}">${icon('x', 14)}</button>`, 'pend')).join('')
+      <button class="btn small ghost" data-act="dk-decide" data-id="${r.id}" data-s="rejected" title="${esc(t('reg.reject'))}">${icon('x', 14)}</button>
+      <button class="btn small ghost" data-act="dk-ban" data-id="${r.player_id}" title="${esc(t('pl.blockTip'))}" aria-label="${esc(t('pl.blockTip'))}">🚫</button>`, 'pend')).join('')
       : `<p class="muted small">${t('dash.noWaiting')}</p>`}
     <h3 class="dk-sub">✅ ${t('reg.approved')} (${n(approved.length)}${reg.maxPlayers ? ` / ${n(reg.maxPlayers)}` : ''})</h3>
     ${approved.length ? `<div class="dk-faces">${approved.map((r) => `<span class="dk-face" title="${esc(r.full_name ?? '')}">${regPhoto(r)}<small dir="auto">${esc((r.full_name ?? '').split(' ')[0])}</small></span>`).join('')}</div>`
@@ -344,7 +373,7 @@ function championPanel(tm: Tournament): string {
 function paymentsCard(tm: Tournament): string {
   const keys = payKeys(tm);
   const fee = feeOf(tm);
-  const tt = totals(feeLines(tm, keys));
+  const tt = totals(keys.map((k) => ({ amount: fee, paid: paidOf(tm, k) })));
   const preReg = tm.stage === 'setup' && registrationOf(tm).open;
   const regs = regCache.get(tm.id) ?? [];
   const nameOf = (k: string) => {
@@ -353,7 +382,9 @@ function paymentsCard(tm: Tournament): string {
     const r = regs.find((x) => x.player_id === k);
     return { name: r?.full_name ?? '?', photo: r ? regPhoto(r) : avatar('?') };
   };
-  const unpaidFirst = [...keys].sort((a, b) => Number(isPaid(tm, a)) - Number(isPaid(tm, b)));
+  // Waiting receipts first (to review), then cash promises, then nothing yet, then paid.
+  const order = (k: string) => { const r = rank(tm, k); return r === 0 ? 9 : r; };
+  const unpaidFirst = [...keys].sort((a, b) => order(a) - order(b));
   return `<div class="card dk-pay" id="payments">
     <div class="row between"><h2>💰 ${t('desk.pay.feesTitle')}</h2>
       <label class="row dk-fee">${t('desk.org.fee')} <input class="input" id="dkFeeEdit" inputmode="decimal" value="${fee || ''}" placeholder="0" style="width:90px">
@@ -363,7 +394,7 @@ function paymentsCard(tm: Tournament): string {
     ${fee && keys.length ? `<div class="row" style="margin-block:8px">
         <button class="btn soft small" data-act="dk-pay-sim">🎲 ${t('desk.pay.simulate')}</button>
         <button class="btn ghost small" data-act="dk-pay-all">${icon('check', 14)} ${t('desk.pay.markAll')}</button></div>
-      <div class="dk-lines">${unpaidFirst.map((k) => { const p = nameOf(k); return personLine(p.photo, p.name, money(fee), paidTick('fee', k, isPaid(tm, k))); }).join('')}</div>` : ''}
+      <div class="dk-lines">${unpaidFirst.map((k) => { const p = nameOf(k); return personLine(p.photo, p.name, `${money(fee)} ${paidOf(tm, k) ? '' : payUi.proof(proofOf(tm, k))}`, paidTick('fee', k, paidOf(tm, k)), paidOf(tm, k) ? 'paid' : ''); }).join('')}</div>` : ''}
     ${fee && !keys.length ? `<p class="muted small">${t('desk.pay.nobody')}</p>` : ''}
   </div>`;
 }
@@ -389,6 +420,10 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
     case 'dk-new-groups':
       draft.groups = Number(el.dataset.v) || 4;
       keepDraft(); render(); return true;
+    case 'dk-ban':
+      regCache.clear();
+      lists.askBlock(el.dataset.id ?? '');
+      return true;
     case 'dk-join-count':
       joinCount = Number(el.dataset.v) || 8; render(); return true;
     case 'dk-pick-toggle':
@@ -479,11 +514,18 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
       setFee(tm, Number(val('dkFeeEdit').replace(/[^\d.]/g, '')));
       save(); toast(t('settings.saved')); render(); return true;
     case 'dk-pay-sim': {
-      const k = simulatePayments(tm, payKeys(tm));
-      save(); toast(`💰 ${t('desk.pay.simulated', { n: k })}`); render(); return true;
+      // Demo players with a registration send receipts or promise cash (to review); others are ticked at random.
+      let k = 0;
+      try { if (payCache.get(tm.id)?.length) k = await pay.simPay('tournament', tm.id); } catch (e) { toast(authErr(e)); }
+      if (!k) { k = simulatePayments(tm, payKeys(tm).filter((x) => !payRow(tm, x))); save(); }
+      payCache.delete(tm.id);
+      toast(`💰 ${t('desk.pay.simulated', { n: k })}`); render(); return true;
     }
     case 'dk-pay-all':
       payKeys(tm).forEach((k) => setPaid(tm, k, true));
+      await Promise.all(payKeys(tm).map((k) => payRow(tm, k)).filter((r) => r && !r.paid)
+        .map((r) => pay.setPaid('tournament', r!.registration_id, true).catch(() => undefined)));
+      payCache.delete(tm.id);
       save(); render(); return true;
   }
   return false;
@@ -522,6 +564,11 @@ export function onChange(el: HTMLInputElement): boolean {
   const tm = current();
   if (el.dataset.act === 'dk-paid' && el.dataset.kind === 'fee' && tm) {
     setPaid(tm, el.dataset.id!, el.checked);
+    const r = payRow(tm, el.dataset.id!);
+    if (r) {
+      r.paid = el.checked;
+      pay.setPaid('tournament', r.registration_id, el.checked).then(() => { payCache.delete(tm.id); render(); }, (e) => toast(authErr(e)));
+    }
     save(); render(); return true;
   }
   if ((el.dataset.act === 'dk-reg-auto' || el.dataset.act === 'dk-reg-max') && tm) {

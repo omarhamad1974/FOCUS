@@ -297,6 +297,7 @@ const STEPS: Record<Exclude<Preview, 'off'>, [string, string][]> = {
   assistant: [['#/tournaments', 'trophy'], ['#/tournaments', 'edit'], ['#/tournaments', 'shield']],
   seller: [['#/shop/manage', 'box'], ['#/shop/new', 'plus'], ['#/admin/approvals', 'check'], ['#/shop/manage', 'bell']],
   trainer: [['#/training/manage', 'calendar'], ['#/training/manage', 'map'], ['#/training/manage', 'clock'], ['#/training/manage', 'users']],
+  hall: [['#/desk/hall', 'table'], ['#/desk/hall', 'clock'], ['#/halls', 'calendar'], ['#/desk/hall', 'wallet']],
 };
 
 function simView(): string {

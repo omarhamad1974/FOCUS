@@ -3,16 +3,17 @@
  * site's menus, so each role sees only its own work. "View site" goes back.
  */
 import { t, type MessageKey } from '../i18n/ar';
-import { canOrganize, isAdmin, isSeller, isTrainer, session } from '../app/ctx';
+import { canOrganize, isAdmin, isHall, isSeller, isTrainer, session } from '../app/ctx';
 import { icon } from '../ui/icons';
 import { avatarOf, esc } from '../ui/util';
 
-export type DeskRole = 'org' | 'trainer' | 'seller' | 'admin';
+export type DeskRole = 'org' | 'trainer' | 'seller' | 'hall' | 'admin';
 
 const TABS: [DeskRole, string, MessageKey][] = [
   ['org', 'trophy', 'desk.tab.org'],
   ['trainer', 'coach', 'desk.tab.trainer'],
   ['seller', 'shop', 'desk.tab.seller'],
+  ['hall', 'table', 'desk.tab.hall'],
   ['admin', 'shield', 'desk.tab.admin'],
 ];
 
@@ -21,6 +22,7 @@ export function rolesHeld(): DeskRole[] {
   if (canOrganize()) out.push('org');
   if (isTrainer()) out.push('trainer');
   if (isSeller()) out.push('seller');
+  if (isHall()) out.push('hall');
   if (isAdmin()) out.push('admin');
   return out;
 }

@@ -4,7 +4,7 @@
 // POST JSON { action: 'unconfirmed' }                      -> { users: [{ id, email, full_name, created_at }] }
 // POST JSON { action: 'confirm', user_id }                 -> { ok: true }
 // POST JSON { action: 'create', email, password, full_name, phone?, club?, birth_year?, roles? } -> { id }
-//   roles: ['organizer' | 'seller' | 'trainer'], admins only.
+//   roles: ['organizer' | 'seller' | 'trainer' | 'hall'], admins only.
 // POST JSON { action: 'claim', code, email, password, gender? } -> { ok: true }
 //   Anyone holding a player's claim code (made by batch entry, migration 0008): creates a
 //   ready-to-use account for that player and attaches their directory row and results.
@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
         is_organizer: roles.includes('organizer'),
         is_seller: roles.includes('seller'),
         is_trainer: roles.includes('trainer'),
+        is_hall: roles.includes('hall'),
       }).eq('id', id);
     }
     return json({ id });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { confirmed, holdsRole, planRoleRemoval, roleOff, type RoleHolder } from './bulk';
+import { confirmed, holdsRole, isTempAccount, planRoleRemoval, roleOff, type RoleHolder } from './bulk';
 
 const people: RoleHolder[] = [
   { id: 'admin', role: 'admin', is_organizer: true, is_seller: true },
@@ -45,5 +45,15 @@ describe('bulk delete by role', () => {
     expect(confirmed(' حذف ')).toBe(true);
     expect(confirmed('حذ')).toBe(false);
     expect(confirmed('delete')).toBe(false);
+  });
+});
+
+describe('temporary batch accounts', () => {
+  it('are plain players still on the claim code or the starting password', () => {
+    expect(isTempAccount({ id: 'a', role: 'player', must_change_password: true })).toBe(true);
+    expect(isTempAccount({ id: 'b', role: 'player', is_temp: true })).toBe(true);
+    expect(isTempAccount({ id: 'c', role: 'player' })).toBe(false);
+    expect(isTempAccount({ id: 'd', role: 'player', is_seller: true, must_change_password: true })).toBe(false);
+    expect(isTempAccount({ id: 'e', role: 'admin', must_change_password: true })).toBe(false);
   });
 });

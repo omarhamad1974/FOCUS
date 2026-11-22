@@ -3,11 +3,13 @@
  * English dictionary can be added later with the same keys.
  */
 import { arDesk } from './ar-desk';
+import { arShops } from './ar-shops';
 import { arLists } from './ar-lists';
 import { arHall } from './ar-hall';
 
 export const ar = {
   ...arDesk,
+  ...arShops,
   ...arLists,
   ...arHall,
   'app.name': 'بينجو',

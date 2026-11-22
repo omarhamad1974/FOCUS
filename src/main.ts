@@ -22,6 +22,7 @@ import * as admin from './pages/admin';
 import * as content from './data/content';
 import * as news from './pages/news';
 import * as shop from './pages/shop';
+import * as shops from './pages/shops';
 import * as training from './pages/training';
 import * as faq from './pages/faq';
 import * as claim from './pages/claim';
@@ -98,7 +99,7 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
-    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); lists.reset(); hallsPage.reset(); payUi.forget();
+    news.reset(); shop.reset(); shops.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); lists.reset(); hallsPage.reset(); payUi.forget();
     regCache.clear();
     assisting.clear();
     if (session.profile) {
@@ -250,6 +251,7 @@ type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'halls' |
 function section(): Section {
   const p = location.hash.replace(/^#\/?/, '').split('/')[0];
   if (p === 'news' || p === 'shop' || p === 'training' || p === 'halls') return p;
+  if (p === 'shops') return 'shop';
   if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org') return 'tournaments';
   if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
   return 'home';
@@ -412,6 +414,16 @@ function tournamentCarousel(): string {
     </section>`;
 }
 
+/** Home: sports shops, those with a Pingo promotion first. */
+function shopsStrip(): string {
+  const list = shops.withPromos(4);
+  if (list === null) { shops.load(); return '<div class="sk-row"></div>'; }
+  if (!list.length) return '';
+  return `<div class="sec-head"><h2>${icon('tag', 22)} ${t('shops.homeTitle')}</h2><a class="more" href="#/shops">${t('home.seeAll')} ${icon('chevron', 16)}</a></div>
+  <p class="muted small" style="margin-top:-6px">${t('shops.homeTip')}</p>
+  <div class="grid shops">${list.map(shops.shopCard).join('')}</div>`;
+}
+
 /** Home: news carousel first, then tournaments, then the other sections. */
 function homePage(): string {
   if (!online()) return tournamentsPage();
@@ -441,6 +453,7 @@ function homePage(): string {
     <span><b>${t('faq.title')}</b><br><small class="muted">${t('faq.homeText')}</small></span>${icon('chevron', 18)}</a>
   <div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
   ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}
+  ${shopsStrip()}
   <div class="sec-head"><h2>${icon('calendar', 22)} ${t('home.nextSlots')}</h2>${more('#/training')}</div>
   ${free === null ? '<div class="sk-row"></div>' : free.length
     ? `<div class="slots strip">${free.map((x) => `<a class="slot" href="#/training/t/${x.trainer_id}"><span class="slot-time">${icon('clock', 16)} ${dateTimeFmt.format(new Date(x.starts_at))}</span>
@@ -2215,9 +2228,9 @@ function draw(): void {
     shell(wizardPage());
   } else if (parts[0] === 'tournaments') {
     shell(tournamentsPage(parts[1]));
-  } else if (['news', 'shop', 'training', 'halls'].includes(parts[0])) {
+  } else if (['news', 'shop', 'shops', 'training', 'halls'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
-    shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? hallsPage.route(parts) ?? '');
+    shell(news.route(parts) ?? shop.route(parts) ?? shops.route(parts) ?? training.route(parts) ?? hallsPage.route(parts) ?? '');
   } else if (parts[0] === 'faq') {
     shell(faq.route(parts) ?? '');
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
@@ -2300,6 +2313,7 @@ document.addEventListener('click', (e) => {
   if (act.startsWith('inv-')) { void invites.onClick(act, el); return; }
   if (act.startsWith('pl-')) { void lists.onClick(act, el); return; }
   if (act.startsWith('dk-')) { void desk.onClick(act, el); return; }
+  if (act.startsWith('shp-')) { void shops.onClick(act, el); return; }
   if (act.startsWith('pay-')) { void payUi.onClick(act, el); return; }
   if (act.startsWith('hl-')) { void hallsPage.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
@@ -2632,7 +2646,7 @@ function syncInputs(): void {
 let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
-  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el) || lists.onInput(el)) return;
+  if (shop.onInput(el as HTMLInputElement) || shops.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el) || lists.onInput(el)) return;
   if (admin.onInput(el as HTMLInputElement)) return;
   if (el.dataset.act === 'assist-q') {
     const q = (el as HTMLInputElement).value.trim();
@@ -2705,7 +2719,7 @@ document.addEventListener('submit', async (e) => {
   }
   if (kind === 'user-edit') { await saveUserEdit(); return; }
   if (await desk.onSubmit(kind)) return;
-  if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await training.onSubmit(kind, form) || await claim.onSubmit(kind, form)) return;
+  if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await shops.onSubmit(kind) || await training.onSubmit(kind, form) || await claim.onSubmit(kind, form)) return;
   if (kind === 'add-player') {
     const name = val('pName');
     const mobile = normalizeMobile(val('pPhone'));
@@ -2765,7 +2779,7 @@ document.addEventListener('change', async (e) => {
   const el = e.target as HTMLInputElement;
   const { tm } = current();
   if (await desk.onChange(el)) return;
-  if (await news.onChange(el) || await shop.onChange(el) || training.onChange(el) || await claim.onChange(el) || admin.onChange(el)) return;
+  if (await news.onChange(el) || await shop.onChange(el) || await shops.onChange(el) || training.onChange(el) || await claim.onChange(el) || admin.onChange(el)) return;
   if (el.dataset.act === 'tl-time' || el.dataset.act === 'tl-place') {
     if (el.dataset.act === 'tl-time') listFilters.time = el.value as TimeFilter; else listFilters.place = el.value;
     route(); return;
@@ -2932,7 +2946,7 @@ if (online()) {
 }
 
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#/login' && /^#\/(t|news|shop|training|halls|claim|desk)\//.test(lastHash)) {
+  if (location.hash === '#/login' && /^#\/(t|news|shops?|training|halls|claim|desk)\//.test(lastHash)) {
     try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
   }
   lastHash = location.hash;

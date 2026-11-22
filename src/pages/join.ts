@@ -179,13 +179,13 @@ function revealSoon(): void {
 
 /* ---------- Online posters: #/poster/<role> (shared as links, the whole poster opens #/soon) ---------- */
 
-export function posterPage(r: JoinRole): string {
+/** The poster itself: the whole card links to #/soon. Also used small as a preview in the admin tool. */
+export function posterCard(r: JoinRole, preview = false): string {
   const p = PAGES[r];
   const highlightTitles = new Set(p.highlights.map((h) => h[1]));
   const more = p.features.filter((f) => !highlightTitles.has(f[1])).slice(0, 6);
-  const others = JOIN_ROLES.filter((x) => x !== r);
-  return `<div class="pst-stage jr-${r}">
-    <a class="pst" href="#/soon" aria-label="بينجو قريباً: اعرف كل المزايا">
+  const tag = preview ? 'div' : 'a';
+  return `<${tag} class="pst jr-${r}" ${preview ? 'aria-hidden="true"' : 'href="#/soon" aria-label="بينجو قريباً: اعرف كل المزايا"'}>
       <span class="pst-ring r1"></span><span class="pst-ring r2"></span>
       <header class="pst-head"><span class="pst-logo"><img src="${logo()}" alt="Pingo"></span><span class="pst-soon">${icon('spark', 18)} قريباً</span></header>
       ${pingoPoint('pst-pp')}
@@ -194,23 +194,17 @@ export function posterPage(r: JoinRole): string {
       <ul class="pst-highs">${p.highlights.map(([ic, h, s], i) => `<li style="--i:${i}"><span class="pst-ic">${icon(ic, 24)}</span><span><b>${h}</b><small>${s}</small></span></li>`).join('')}</ul>
       <div class="pst-more">${more.map(([ic, h], i) => `<span style="--i:${i}">${icon(ic, 14)} ${h}</span>`).join('')}</div>
       <span class="pst-cta">اكتشف بينجو ${icon('chevron', 20)}</span>
-    </a>
-    <div class="pst-tools">
-      <button class="btn soft small" type="button" data-act="pst-share" data-role="${r}">${icon('spark', 16)} شارك البوستر</button>
-      ${others.map((x) => `<a class="btn ghost small" href="#/poster/${x}">${icon(PAGES[x].icon, 16)} ${FOR_WHO[x]}</a>`).join('')}
-    </div>
-  </div>`;
+    </${tag}>`;
 }
 
-/** Shares (or copies) the poster's own link. */
-export async function sharePoster(r: JoinRole): Promise<string> {
-  const url = `${location.origin}${location.pathname}#/poster/${r}`;
-  const text = `${FOR_WHO[r]}: ${PAGES[r].title}`;
-  try {
-    if (navigator.share) { await navigator.share({ title: 'Pingo', text, url }); return ''; }
-    await navigator.clipboard.writeText(url);
-    return 'تم نسخ رابط البوستر';
-  } catch { return url; }
+/** #/poster/<role>: the poster alone, full screen. The admin shares these links from #/desk/admin/posters. */
+export function posterPage(r: JoinRole): string {
+  return `<div class="pst-stage jr-${r}">${posterCard(r)}</div>`;
+}
+
+/** Public link of a launch page on this site: 'soon' or a poster role. */
+export function launchUrl(what: JoinRole | 'soon'): string {
+  return `${location.origin}${location.pathname}#/${what === 'soon' ? 'soon' : 'poster/' + what}`;
 }
 
 /* ---------- Coming soon: #/soon, every role's features with animation ---------- */

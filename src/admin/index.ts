@@ -13,6 +13,7 @@ import * as seller from './seller';
 import * as adminDesk from './adminDesk';
 import * as bio from './bio';
 import * as subs from './subs';
+import * as posters from './posters';
 
 export { setHost } from './host';
 
@@ -33,7 +34,7 @@ export function page(parts: string[]): string | null {
     return deskShell('org', empty('shield', t('desk.noRole'), `<a class="btn gold small" href="#/me">${t('desk.askRole')}</a>`));
   }
   let body = role === 'org' ? organizer.page(parts) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page()
-    : parts[2] === 'subs' ? subs.adminPage() : adminDesk.page();
+    : parts[2] === 'subs' ? subs.adminPage() : parts[2] === 'posters' ? posters.page(parts[3]) : adminDesk.page();
   // Subscription status and the optional biography for organizers, trainers and sellers, on each tool's front page.
   if (role !== 'admin' && !parts[2]) body = body.replace('</section>', () => `</section>${subs.card(role)}${bio.card()}`);
   return deskShell(role, body, { org: organizer.pendingCount() });
@@ -43,6 +44,7 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
   const role = current();
   if (act.startsWith('dk-bio-')) return bio.onClick(act);
   if (act.startsWith('dk-sub-')) return subs.onClick(act, el);
+  if (act.startsWith('dk-pst-')) return posters.onClick(act, el);
   if (act === 'dk-new-open' && role !== 'org') { location.hash = '#/desk/org'; return organizer.onClick(act, el); }
   if (role === 'org') return organizer.onClick(act, el);
   if (role === 'trainer') return trainer.onClick(act, el);

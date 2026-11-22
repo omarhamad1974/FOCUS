@@ -2002,9 +2002,6 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
     case 'jn-scroll':
       document.getElementById(el.dataset.to ?? '')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return true;
-    case 'pst-share':
-      join.sharePoster(el.dataset.role as join.JoinRole).then((msg) => { if (msg) toast(msg); });
-      return true;
     case 'auth-tab':
       keepAuthVals();
       authTab = el.dataset.v as typeof authTab; authMsg = ''; route(); return true;

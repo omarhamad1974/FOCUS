@@ -14,6 +14,7 @@ import * as adminDesk from './adminDesk';
 import * as bio from './bio';
 import * as subs from './subs';
 import * as posters from './posters';
+import * as lists from '../pages/playerLists';
 
 export { setHost } from './host';
 
@@ -33,8 +34,8 @@ export function page(parts: string[]): string | null {
     if (held.length) { location.hash = `#/desk/${held.includes('admin') && !role ? 'admin' : held[0]}`; return null; }
     return deskShell('org', empty('shield', t('desk.noRole'), `<a class="btn gold small" href="#/me">${t('desk.askRole')}</a>`));
   }
-  let body = role === 'org' ? organizer.page(parts) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page()
-    : parts[2] === 'subs' ? subs.adminPage() : parts[2] === 'posters' ? posters.page(parts[3]) : adminDesk.page();
+  let body = role === 'org' ? (parts[2] === 'players' ? lists.orgPage() : organizer.page(parts)) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page()
+    : parts[2] === 'subs' ? subs.adminPage() : parts[2] === 'posters' ? posters.page(parts[3]) : parts[2] === 'blacklist' ? lists.adminPage() : adminDesk.page();
   // Subscription status and the optional biography for organizers, trainers and sellers, on each tool's front page.
   if (role !== 'admin' && !parts[2]) body = body.replace('</section>', () => `</section>${subs.card(role)}${bio.card()}`);
   return deskShell(role, body, { org: organizer.pendingCount() });

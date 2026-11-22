@@ -13,6 +13,7 @@ import { adminSummary } from './subs';
 const TILES: [string, string, MessageKey, MessageKey][] = [
   ['#/desk/admin/subs', 'money', 'desk.admin.subs', 'desk.admin.subsTip'],
   ['#/desk/admin/posters', 'image', 'desk.admin.posters', 'desk.admin.postersTip'],
+  ['#/desk/admin/blacklist', 'shield', 'pl.siteTile', 'pl.siteTileTip'],
   ['#/desk/org', 'trophy', 'desk.tab.org', 'desk.admin.orgTip'],
   ['#/desk/trainer', 'coach', 'desk.tab.trainer', 'desk.admin.trainerTip'],
   ['#/desk/seller', 'shop', 'desk.tab.seller', 'desk.admin.sellerTip'],

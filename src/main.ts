@@ -12,6 +12,7 @@ import * as sim from './domain/simulate';
 import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, Tournament } from './domain/types';
 import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
 import { championCelebration } from './ui/champion';
+import { hasChampion, onShare, shareButton } from './pages/shareCards';
 import { online, SUPPORT_WHATSAPP } from './config';
 import { DEFAULT_PASSWORD, loginEmail, normalizeMobile } from './domain/mobile';
 import * as remote from './data/remote';
@@ -762,6 +763,7 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
     <p class="muted">${tm.date ? dateFmt.format(new Date(tm.date)) : ''}${tm.time ? ` · ${esc(timeText(tm.time))}` : ''}${tm.location ? ` · 📍 <span dir="auto">${esc(tm.location)}</span>` : ''} · ${n(tm.players.length)} ${t('t.players')}${org ? ` · ${t('tl.by')} <a href="#/u/${esc(org.id)}" dir="auto">${esc(org.full_name)}</a>` : ''}</p>
     ${tableMap(tm)}
     ${stagePath(tm)}
+    ${hasChampion(tm) ? `<div class="row share-row">${shareButton('champion', '', 'btn gold')}</div>` : ''}
     <div class="row between small" style="margin-block-start:10px"><span>${t('t.progress')}</span><span>${n(p.done)} / ${n(p.total)}</span></div>
     ${xp(p.done, p.total)}
   </section>
@@ -1047,7 +1049,8 @@ function standingsTable(tm: Tournament, gi: number): string {
   const ties = s.unresolved.length ? tieResolver(tm, gi, s.unresolved) : '';
   return `
   <div class="card">
-    <h3 class="row" style="gap:6px"><span class="gletter" style="background:${groupColor(gi)};display:inline-grid">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)} ${tableBadge(g)}</h3>
+    <div class="row between"><h3 class="row" style="gap:6px"><span class="gletter" style="background:${groupColor(gi)};display:inline-grid">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)} ${tableBadge(g)}</h3>
+      ${s.rows.some((r) => r.played) ? shareButton('group', `data-g="${gi}"`, 'btn soft small icon-share') : ''}</div>
     <div class="table-wrap"><table class="standings">
       <thead><tr><th>${t('standings.rank')}</th><th class="name">${t('standings.player')}</th><th>${t('standings.played')}</th><th>${t('standings.won')}</th><th>${t('standings.lost')}</th>
       <th class="hide-sm">${t('standings.games')}</th>${pts ? `<th class="hide-sm">${t('standings.points')}</th>` : ''}<th>${t('standings.pts')}</th></tr></thead>
@@ -1181,7 +1184,8 @@ function bracketView(tm: Tournament, b: Bracket): string {
   };
   const podium = places.length ? `<h3 style="margin-block-start:14px">🏆 ${t('ko.podium')}</h3>
     <div class="podium">${step(2)}${step(1)}${step(3)}</div>
-    ${who(4) ? `<p class="center muted">${t('place.4')}: <b dir="auto">${esc(playerName(tm, who(4)!.playerId))}</b></p>` : ''}` : '';
+    ${who(4) ? `<p class="center muted">${t('place.4')}: <b dir="auto">${esc(playerName(tm, who(4)!.playerId))}</b></p>` : ''}
+    <div class="row share-row">${shareButton('podium', `data-b="${b.id}"`)}</div>` : '';
   return `<div class="card">
     <h2>${b.kind === 'main' ? '🏆 ' + t('ko.main') : '🥈 ' + esc(b.name)}</h2>
     ${hint('ko.hint')}
@@ -1413,6 +1417,7 @@ function scorePage(tm: Tournament, m: Match): string {
     return `<div class="row" style="margin-block-end:10px">${back}</div>
       <div class="card"><div class="muted small" style="margin-block-end:8px">${esc(where)} · ${bo(m.bestOf)}</div>${board(saved.gamesA, saved.gamesB)}
       ${savedText(m) ? `<p class="center">${savedText(m)}</p>` : ''}
+      ${saved.winner ? `<div class="row share-row">${shareButton('match')}</div>` : ''}
       ${!org ? `<p class="muted small center">👀 ${t('score.readonly')}</p>` : `<div class="err">🔒 ${t(m.stage === 'ko' ? 'score.locked' : 'score.err.locked')}</div>`}
       </div>${history}`;
   }
@@ -1459,6 +1464,7 @@ function scorePage(tm: Tournament, m: Match): string {
     ${entry}
     ${sd.error ? `<div class="err" role="alert">${esc(sd.error)}</div>` : ''}
     <button class="btn green block" data-act="save-score" style="margin-block-start:12px" ${!detailed && !sd.result ? 'disabled' : ''}>💾 ${t('score.save')}</button>
+    ${saved.winner ? `<div class="row share-row">${shareButton('match')}</div>` : ''}
   </div>
   <div class="card">
     <h3>🚩 ${t('score.walkover')}</h3>
@@ -2265,6 +2271,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act.startsWith('role-')) { void roleAction(act, el); return; }
+  if (act === 'share-card') { if (tm) onShare(el, tm, m); return; }
   if (act === 'dir-print') { if (printable.length) claim.printCards(printable); return; }
   if (/^(batch|claim)-/.test(act)) { void claim.onClick(act, el); return; }
   if (/^(media|assist)-/.test(act) && tm) { void mediaAction(act, el, tm); return; }

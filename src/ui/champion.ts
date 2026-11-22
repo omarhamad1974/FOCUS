@@ -40,16 +40,25 @@ function drawnFace(gender: string | null | undefined): string {
  * beside it). `key` keeps the SVG ids unique when several cards are on screen.
  */
 export function championCelebration(key: string, photo: string | null | undefined, gender: string | null | undefined): string {
+  const confetti = CONFETTI.map((c, i) =>
+    `<i style="--x:${(i * 37 + 7) % 100}%;--d:${((i * 0.29) % 2.4).toFixed(2)}s;--t:${(2.2 + (i % 4) * 0.35).toFixed(2)}s;--r:${(i % 2 ? 1 : -1) * (180 + i * 25)}deg;background:${c}"></i>`).join('');
+  return `<div class="champ-cel" aria-hidden="true">
+    <span class="cel-confetti">${confetti}</span>
+    ${championSvg(key, photo, gender)}
+  </div>`;
+}
+
+/**
+ * The cartoon scene as a standalone SVG (viewBox 0 -14 160 226). Also drawn
+ * into shareable result cards, where `photo` must be a data URL.
+ */
+export function championSvg(key: string, photo: string | null | undefined, gender: string | null | undefined): string {
   const id = `cel-${key.replace(/[^\w-]/g, '')}`;
   const head = photo
     ? `<circle cx="80" cy="62" r="25" fill="${SKIN}"/>
        <image href="${esc(photo)}" x="55" y="37" width="50" height="50" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id}-h)"/>`
     : drawnFace(gender);
-  const confetti = CONFETTI.map((c, i) =>
-    `<i style="--x:${(i * 37 + 7) % 100}%;--d:${((i * 0.29) % 2.4).toFixed(2)}s;--t:${(2.2 + (i % 4) * 0.35).toFixed(2)}s;--r:${(i % 2 ? 1 : -1) * (180 + i * 25)}deg;background:${c}"></i>`).join('');
-  return `<div class="champ-cel" aria-hidden="true">
-    <span class="cel-confetti">${confetti}</span>
-    <svg class="cel-svg" viewBox="0 -14 160 226" xmlns="http://www.w3.org/2000/svg">
+  return `<svg class="cel-svg" viewBox="0 -14 160 226" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <radialGradient id="${id}-glow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff3b0" stop-opacity=".95"/><stop offset=".6" stop-color="${GOLD}" stop-opacity=".35"/><stop offset="1" stop-color="${GOLD}" stop-opacity="0"/></radialGradient>
         <linearGradient id="${id}-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe680"/><stop offset=".5" stop-color="${GOLD}"/><stop offset="1" stop-color="#c88a00"/></linearGradient>
@@ -93,6 +102,5 @@ export function championCelebration(key: string, photo: string | null | undefine
         <g class="cel-head">${head}<circle cx="80" cy="62" r="25" fill="none" stroke="${GOLD}" stroke-width="3.5"/></g>
       </g>
       <circle class="cel-ball" cx="142" cy="60" r="5.5" fill="#fff" stroke="${NAVY}" stroke-opacity=".2"/>
-    </svg>
-  </div>`;
+    </svg>`;
 }

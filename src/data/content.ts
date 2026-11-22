@@ -109,8 +109,16 @@ export function chunks<T>(ids: T[], size = 100): T[][] {
 
 /* -------------------------------------------------------------- news */
 
-export type PostCategory = 'news' | 'learn' | 'tips' | 'events' | 'gear' | 'other';
-export const POST_CATEGORIES: PostCategory[] = ['news', 'learn', 'tips', 'events', 'gear', 'other'];
+export type PostCategory = 'news' | 'learn' | 'tips' | 'events' | 'gear' | 'other' | 'rules' | 'training';
+export const POST_CATEGORIES: PostCategory[] = ['news', 'events', 'gear', 'other', 'rules', 'training', 'tips', 'learn'];
+/** Categories shown in the news section. */
+export const NEWS_CATEGORIES: PostCategory[] = ['news', 'events', 'gear', 'other'];
+/** Categories of the Pingo Academy (education): rules, training, tips and tricks, basics. */
+export const ACADEMY_CATEGORIES: PostCategory[] = ['rules', 'training', 'tips', 'learn'];
+export const isAcademy = (c: PostCategory): boolean => ACADEMY_CATEGORIES.includes(c);
+
+export type PostLevel = 'beginner' | 'intermediate' | 'advanced';
+export const POST_LEVELS: PostLevel[] = ['beginner', 'intermediate', 'advanced'];
 
 export interface Post {
   id: string;
@@ -121,6 +129,8 @@ export interface Post {
   category: PostCategory;
   cover_url: string | null;
   published: boolean;
+  /** Academy articles only: who the lesson is for. */
+  level?: PostLevel | null;
   created_at: string;
 }
 

@@ -1,15 +1,18 @@
 /** News: a simple blog for table tennis news, lessons and tips. */
 import { dateFmt, t, type MessageKey } from '../i18n/ar';
 import * as content from '../data/content';
-import type { Post, PostCategory } from '../data/content';
+import type { Post, PostCategory, PostLevel } from '../data/content';
 import { authErr, canWriteNews, checked, hint, isAdmin, loading, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc, toast } from '../ui/util';
 
 export const CAT_ICON: Record<PostCategory, string> = {
-  news: 'news', learn: 'book', tips: 'bolt', events: 'calendar', gear: 'racket', other: 'spark',
+  news: 'news', learn: 'book', tips: 'bulb', events: 'calendar', gear: 'racket', other: 'spark', rules: 'gavel', training: 'target',
 };
+
+/** Where an article lives: academy lessons open under #/learn, everything else under #/news. */
+export const postHref = (p: Post): string => `#/${content.isAcademy(p.category) ? 'learn' : 'news'}/${p.id}`;
 
 let posts: Post[] | null = null;
 let busy = false;
@@ -25,14 +28,17 @@ export function load(force = false): void {
     .finally(() => { busy = false; render(); });
 }
 
-export const latest = (count: number): Post[] | null => posts && posts.filter((p) => p.published).slice(0, count);
+/** Newest published news (academy lessons are left out: they have their own section). */
+export const latest = (count: number): Post[] | null => posts && posts.filter((p) => p.published && !content.isAcademy(p.category)).slice(0, count);
+/** All loaded articles, for the academy (null while loading). */
+export const all = (): Post[] | null => posts;
 
-const catLabel = (c: PostCategory) => t(`news.cat.${c}` as MessageKey);
+export const catLabel = (c: PostCategory) => t(`news.cat.${c}` as MessageKey);
 const when = (iso: string) => dateFmt.format(new Date(iso));
 const canEdit = (p: Post) => isAdmin() || p.author_id === session.profile?.id;
 
 export function postCard(p: Post, big = false): string {
-  return `<a class="card post ${big ? 'big' : ''} rise" href="#/news/${p.id}">
+  return `<a class="card post ${big ? 'big' : ''} rise" href="${postHref(p)}">
     ${cover(p.cover_url, p.id, CAT_ICON[p.category], esc(p.title))}
     <div class="post-body">
       <div class="row small"><span class="badge blue">${icon(CAT_ICON[p.category], 14)} ${catLabel(p.category)}</span>
@@ -45,10 +51,10 @@ export function postCard(p: Post, big = false): string {
 
 function listPage(): string {
   if (!posts) { load(); return pageHead() + skeleton(4); }
-  const shown = posts.filter((p) => filter === 'all' || p.category === filter);
+  const shown = posts.filter((p) => !content.isAcademy(p.category) && (filter === 'all' || p.category === filter));
   const [first, ...rest] = shown;
   return `${pageHead()}
-  <div class="chips-row">${(['all', ...content.POST_CATEGORIES] as const).map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="news-filter" data-v="${c}">
+  <div class="chips-row">${(['all', ...content.NEWS_CATEGORIES] as const).map((c) => `<button class="pill ${filter === c ? 'on' : ''}" data-act="news-filter" data-v="${c}">
     ${c === 'all' ? icon('grid', 16) : icon(CAT_ICON[c], 16)} ${c === 'all' ? t('news.all') : catLabel(c)}</button>`).join('')}</div>
   ${first ? `${postCard(first, true)}<div class="grid">${rest.map((p) => postCard(p)).join('')}</div>`
     : empty('news', t('news.empty'), canWriteNews() ? `<a class="btn" href="#/news/new">${icon('plus')} ${t('news.write')}</a>` : '')}`;
@@ -58,23 +64,48 @@ function pageHead(): string {
   return `<section class="banner b-news">
     <div><h1>${icon('news', 28)} ${t('news.title')}</h1><p>${t('news.tagline')}</p></div>
     ${canWriteNews() ? `<a class="btn gold" href="#/news/new">${icon('edit')} ${t('news.write')}</a>` : ''}
-  </section>`;
+  </section>
+  ${sectionSwitch('news')}`;
 }
 
-/** Paragraphs from plain text; blank lines split paragraphs, links become clickable. */
-function richText(s: string): string {
-  return s.split(/\n{2,}/).map((para) => {
-    const html = esc(para).replace(/\n/g, '<br>')
-      .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" dir="ltr">$1</a>')
-      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-    return `<p dir="auto">${html}</p>`;
+/** Two tabs that switch between the news and the academy. */
+export function sectionSwitch(on: 'news' | 'learn'): string {
+  return `<nav class="seg-switch" aria-label="${esc(t('acad.switchLabel'))}">
+    <a href="#/news" ${on === 'news' ? 'aria-current="page"' : ''}>${icon('news', 18)} ${t('nav.news')}</a>
+    <a href="#/learn" ${on === 'learn' ? 'aria-current="page"' : ''}>${icon('grad', 18)} ${t('acad.title')}</a></nav>`;
+}
+
+/** Bold text and clickable links inside one line (already escaped). */
+function inline(s: string): string {
+  return esc(s)
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" dir="ltr">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+}
+
+/**
+ * Article text from plain text. Blank lines split blocks. A block that starts with "## " is a heading,
+ * lines that start with "- " make a list, "1. " a numbered list, and "> " a highlighted tip box.
+ */
+export function richText(s: string): string {
+  return s.replace(/\r/g, '').split(/\n{2,}/).map((block) => {
+    const lines = block.split('\n').filter((l) => l.trim());
+    if (!lines.length) return '';
+    if (lines.length === 1 && /^##\s/.test(lines[0])) return `<h2 dir="auto">${inline(lines[0].replace(/^##\s+/, ''))}</h2>`;
+    if (lines.every((l) => /^[-•]\s/.test(l))) return `<ul dir="auto">${lines.map((l) => `<li>${inline(l.replace(/^[-•]\s+/, ''))}</li>`).join('')}</ul>`;
+    if (lines.every((l) => /^\d+[.)]\s/.test(l))) return `<ol dir="auto">${lines.map((l) => `<li>${inline(l.replace(/^\d+[.)]\s+/, ''))}</li>`).join('')}</ol>`;
+    if (/^>\s?/.test(lines[0])) return `<aside class="tipbox" dir="auto">${icon('bulb', 22)}<p>${lines.map((l) => inline(l.replace(/^>\s?/, ''))).join('<br>')}</p></aside>`;
+    return `<p dir="auto">${lines.map(inline).join('<br>')}</p>`;
   }).join('');
 }
+
+/** About 150 Arabic words a minute; at least one minute. */
+export const readMinutes = (p: Post): number => Math.max(1, Math.ceil(`${p.summary ?? ''} ${p.body}`.split(/\s+/).filter(Boolean).length / 150));
 
 function postPage(id: string): string {
   if (!posts) { load(); return loading(); }
   const p = posts.find((x) => x.id === id);
   if (!p) return empty('news', t('news.notFound'), `<a class="btn" href="#/news">${t('news.back')}</a>`);
+  if (content.isAcademy(p.category)) { location.replace(postHref(p)); return loading(); }
   const author = content.person(p.author_id);
   const more = posts.filter((x) => x.id !== id && x.published && x.category === p.category).slice(0, 3);
   return `<a class="backlink" href="#/news">${icon('back', 18)} ${t('news.back')}</a>
@@ -92,20 +123,26 @@ function postPage(id: string): string {
   ${more.length ? `<h2 class="sec">${t('news.more')}</h2><div class="grid">${more.map((x) => postCard(x)).join('')}</div>` : ''}`;
 }
 
-function editorPage(id?: string): string {
+/** Article editor; `academy` starts a new article as a lesson (rules category) and returns to #/learn. */
+export function editorPage(id?: string, academy = false): string {
   if (!canWriteNews()) return empty('shield', t('news.onlyAdmin'));
   if (!posts) { load(); return loading(); }
   const p = id ? posts.find((x) => x.id === id) : undefined;
   if (id && (!p || !canEdit(p))) return empty('news', t('news.notFound'));
   if (coverDraft === undefined) coverDraft = p?.cover_url ?? null;
-  const cat = p?.category ?? 'news';
-  return `<a class="backlink" href="${p ? `#/news/${p.id}` : '#/news'}">${icon('back', 18)} ${t('common.cancel')}</a>
+  const cat = p?.category ?? (academy ? 'rules' : 'news');
+  const lvl = p?.level ?? '';
+  const group = (label: string, cats: PostCategory[]) => `<optgroup label="${esc(label)}">${cats.map((c) => `<option value="${c}" ${c === cat ? 'selected' : ''}>${catLabel(c)}</option>`).join('')}</optgroup>`;
+  return `<a class="backlink" href="${p ? postHref(p) : academy ? '#/learn' : '#/news'}">${icon('back', 18)} ${t('common.cancel')}</a>
   <form class="card" data-form="news-save" data-id="${p?.id ?? ''}" novalidate>
     <h2>${icon('edit', 22)} ${t(p ? 'news.edit' : 'news.write')}</h2>
     ${hint('news.editorHint')}
     <label class="field"><span>${t('news.fTitle')}</span><input class="input" id="nTitle" value="${esc(p?.title ?? '')}" dir="auto" maxlength="160" required></label>
     <label class="field"><span>${t('news.fCategory')}</span>
-      <select class="input" id="nCat">${content.POST_CATEGORIES.map((c) => `<option value="${c}" ${c === cat ? 'selected' : ''}>${catLabel(c)}</option>`).join('')}</select></label>
+      <select class="input" id="nCat">${group(t('nav.news'), content.NEWS_CATEGORIES)}${group(t('acad.title'), content.ACADEMY_CATEGORIES)}</select></label>
+    <label class="field"><span>${t('acad.fLevel')}</span>
+      <select class="input" id="nLevel"><option value="">${t('acad.levelNone')}</option>${content.POST_LEVELS.map((l) => `<option value="${l}" ${l === lvl ? 'selected' : ''}>${t(`acad.level.${l}` as MessageKey)}</option>`).join('')}</select>
+      <small class="muted">${t('acad.fLevelHint')}</small></label>
     <label class="field"><span>${t('news.fSummary')}</span><input class="input" id="nSummary" value="${esc(p?.summary ?? '')}" dir="auto" maxlength="300"></label>
     ${imagePicker('news-cover', coverDraft, p?.id ?? 'new', CAT_ICON[cat])}
     <label class="field"><span>${t('news.fBody')}</span><textarea class="input" id="nBody" dir="auto">${esc(p?.body ?? '')}</textarea></label>
@@ -142,7 +179,11 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
       coverDraft = null; render(); return true;
     case 'news-delete': {
       if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.innerHTML = `${icon('trash', 16)} ${t('news.deleteConfirm')}`; return true; }
-      try { await content.deletePost(el.dataset.id!); posts = posts?.filter((p) => p.id !== el.dataset.id) ?? null; toast(t('news.deleted')); location.hash = '#/news'; }
+      try {
+        const was = posts?.find((p) => p.id === el.dataset.id);
+        await content.deletePost(el.dataset.id!); posts = posts?.filter((p) => p.id !== el.dataset.id) ?? null; toast(t('news.deleted'));
+        location.hash = was && content.isAcademy(was.category) ? '#/learn' : '#/news';
+      }
       catch (e) { toast(authErr(e)); }
       return true;
     }
@@ -160,7 +201,7 @@ export async function onChange(el: HTMLInputElement): Promise<boolean> {
 
 /* Keep typed text when the editor re-renders after an upload. */
 let saved: Record<string, string> = {};
-function keepForm(): void { saved = { nTitle: val('nTitle'), nSummary: val('nSummary'), nBody: (document.getElementById('nBody') as HTMLTextAreaElement | null)?.value ?? '', nCat: val('nCat') }; }
+function keepForm(): void { saved = { nTitle: val('nTitle'), nSummary: val('nSummary'), nBody: (document.getElementById('nBody') as HTMLTextAreaElement | null)?.value ?? '', nCat: val('nCat'), nLevel: val('nLevel') }; }
 function restoreForm(): void {
   for (const [id, v] of Object.entries(saved)) { const f = document.getElementById(id) as HTMLInputElement | null; if (f) f.value = v; }
   saved = {};
@@ -170,17 +211,22 @@ export async function onSubmit(kind: string, form: HTMLFormElement): Promise<boo
   if (kind !== 'news-save') return false;
   const title = val('nTitle');
   if (!title) { toast(t('news.needTitle')); return true; }
+  const category = val('nCat') as PostCategory;
+  const level = (val('nLevel') || null) as PostLevel | null;
+  const old = posts?.find((x) => x.id === form.dataset.id);
   try {
     const p = await content.savePost({
       id: form.dataset.id || undefined, title, summary: val('nSummary') || null,
-      body: (document.getElementById('nBody') as HTMLTextAreaElement).value, category: val('nCat') as PostCategory,
+      body: (document.getElementById('nBody') as HTMLTextAreaElement).value, category,
       cover_url: coverDraft ?? null, published: checked('nPub'),
+      // The level only matters for academy lessons; leave the field out otherwise.
+      ...(content.isAcademy(category) || old?.level ? { level: content.isAcademy(category) ? level : null } : {}),
     });
     posts = [p, ...(posts ?? []).filter((x) => x.id !== p.id)].sort((a, b) => b.created_at.localeCompare(a.created_at));
     await content.people([p.author_id]);
     coverDraft = undefined;
     toast(`✅ ${t('news.saved')}`);
-    location.hash = `#/news/${p.id}`;
+    location.hash = postHref(p);
   } catch (e) { toast(authErr(e)); }
   return true;
 }

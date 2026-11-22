@@ -4,10 +4,12 @@
  */
 import { arDesk } from './ar-desk';
 import { arLists } from './ar-lists';
+import { arHall } from './ar-hall';
 
 export const ar = {
   ...arDesk,
   ...arLists,
+  ...arHall,
   'app.name': 'بينجو',
   'app.tagline': 'بطولات تنس الطاولة بسهولة',
 

@@ -12,6 +12,8 @@ import { empty } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatar, esc, toast } from '../ui/util';
 import * as api from './api';
+import * as pay from '../data/pay';
+import * as payUi from '../ui/pay';
 import { countChips, ensureSim, payBox, paidTick, personLine, playerGrid, statTile, tip } from './ui';
 
 const whenFmt = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -27,6 +29,7 @@ let busy = false;
 let filter: 'open' | 'all' | 'unpaid' = 'open';
 
 export function reset(): void { products = null; orders = null; }
+payUi.onPayChange(() => { if (location.hash.startsWith('#/desk/seller')) orders = null; });
 
 function load(): void {
   const me = session.profile?.id;
@@ -36,7 +39,8 @@ function load(): void {
     .then(async ([p, o, b]) => {
       products = p.filter((x) => x.seller_id === me);
       orders = o; buyers = b;
-      await content.people(o.map((x) => x.buyer_id)).catch(() => undefined);
+      payUi.forget('order');
+      await Promise.all([content.people(o.map((x) => x.buyer_id)), payUi.load('order', o.map((x) => x.id))]).catch(() => undefined);
     })
     .catch((e) => { products = []; orders = []; toast(authErr(e)); })
     .finally(() => { loadingNow = false; render(); });
@@ -79,6 +83,7 @@ export function page(): string {
       ${countChips('dk-sh-count', [1, 3, 5, 10], orderCount)}
       <button class="btn green small" data-act="dk-sh-order" ${busy || !sellable.length ? 'disabled' : ''}>🎲 ${t('desk.sh.orderRandom', { n: orderCount })}</button>
       <button class="btn soft small" data-act="dk-pick-toggle" aria-pressed="${picking}">🖼️ ${t('desk.sim.pickByPhoto')}</button>
+      <button class="btn soft small" data-act="dk-sh-simpay" ${busy || !orders.length ? 'disabled' : ''}>💳 ${t('desk.pay.simReceipts')}</button>
       <button class="btn ghost small" data-act="dk-sh-clear" ${busy ? 'disabled' : ''}>🧹 ${t('desk.sim.clear')}</button>
     </div>
     ${picking ? `<div class="dk-picker">${tip('desk.sh.pickHint')}${playerGrid(picked, new Set())}
@@ -98,7 +103,7 @@ export function page(): string {
       const b = buyers.get(o.id);
       const ph = o.phone ?? b?.phone;
       return personLine(avatar(who?.full_name ?? b?.full_name ?? '?', who?.avatar_url, who?.gender), who?.full_name ?? b?.full_name ?? '?',
-        `${icon('box', 13)} <span dir="auto">${esc(o.product_name)}</span> × ${n(o.qty)} · ${whenFmt.format(new Date(o.created_at))}${ph ? ` · ${icon('phone', 13)} <span dir="ltr">${esc(ph)}</span>` : ''}`,
+        `${icon('box', 13)} <span dir="auto">${esc(o.product_name)}</span> × ${n(o.qty)} · ${whenFmt.format(new Date(o.created_at))}${ph ? ` · ${icon('phone', 13)} <span dir="ltr">${esc(ph)}</span>` : ''} ${o.paid || o.status === 'cancelled' ? '' : payUi.proof(payUi.get('order', o.id))}`,
         `<span class="badge ${o.status === 'delivered' ? 'green' : o.status === 'cancelled' ? 'red' : o.status === 'confirmed' ? 'blue' : 'gold'}">${STATUS_ICON[o.status]} ${t(`shop.status.${o.status}` as MessageKey)}</span>
          <b class="dk-price">${money(o.total)}</b>
          ${o.status !== 'cancelled' ? paidTick('order', o.id, o.paid) : ''}
@@ -139,6 +144,10 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
       } catch (e) { toast(authErr(e)); }
       busy = false; reset(); render(); return true;
     }
+    case 'dk-sh-simpay':
+      busy = true; render();
+      try { toast(`💳 ${t('desk.pay.simulated', { n: await pay.simPay('order') })}`); } catch (e) { toast(authErr(e)); }
+      busy = false; reset(); render(); return true;
     case 'dk-sh-clear':
       busy = true; render();
       try { toast(`🧹 ${t('desk.sim.cleared', { n: await api.simClear('seller') })}`); } catch (e) { toast(authErr(e)); }
@@ -154,7 +163,8 @@ export async function onChange(el: HTMLInputElement): Promise<boolean> {
   if (el.dataset.act !== 'dk-paid' || el.dataset.kind !== 'order') return false;
   const o = orders?.find((x) => x.id === el.dataset.id);
   try {
-    await api.setOrderPaid(el.dataset.id!, el.checked);
+    await pay.setPaid('order', el.dataset.id!, el.checked);
+    payUi.forget('order'); orders = null;
     if (o) o.paid = el.checked;
   } catch (e) { toast(authErr(e)); el.checked = !el.checked; }
   render();

@@ -11,8 +11,8 @@ const p = () => session.profile;
 export const isAdmin = () => p()?.role === 'admin';
 
 /* Journey simulator: an admin can look at the app as another kind of user. */
-export type Preview = 'off' | 'guest' | 'player' | 'organizer' | 'assistant' | 'seller' | 'trainer';
-export const PREVIEWS: Preview[] = ['guest', 'player', 'organizer', 'assistant', 'seller', 'trainer'];
+export type Preview = 'off' | 'guest' | 'player' | 'organizer' | 'assistant' | 'seller' | 'trainer' | 'hall';
+export const PREVIEWS: Preview[] = ['guest', 'player', 'organizer', 'assistant', 'seller', 'trainer', 'hall'];
 export const preview = {
   get as(): Preview {
     try { return (localStorage.getItem('pingo.preview') as Preview) || 'off'; } catch { return 'off'; }
@@ -25,7 +25,7 @@ export const preview = {
 /** The profile as the chosen preview would have it (null for a guest). */
 export function previewProfile(real: remote.Profile, as: Preview): remote.Profile | null {
   if (as === 'guest') return null;
-  return { ...real, role: 'player', is_organizer: as === 'organizer', is_seller: as === 'seller', is_trainer: as === 'trainer' };
+  return { ...real, role: 'player', is_organizer: as === 'organizer', is_seller: as === 'seller', is_trainer: as === 'trainer', is_hall: as === 'hall' };
 }
 
 /** Assistants this session may score for (tournament ids); filled after sign-in. */
@@ -37,6 +37,8 @@ export const rendering: { preview: Preview } = { preview: 'off' };
 export const canOrganize = () => !online() || isAdmin() || p()?.role === 'organizer' || !!p()?.is_organizer;
 export const isSeller = () => isAdmin() || !!p()?.is_seller;
 export const isTrainer = () => isAdmin() || !!p()?.is_trainer;
+/** Hall owner (table tennis hall with bookable tables). */
+export const isHall = () => isAdmin() || !!p()?.is_hall;
 /** News is managed by admins only. */
 export const canWriteNews = () => online() && isAdmin();
 

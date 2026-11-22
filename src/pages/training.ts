@@ -5,6 +5,8 @@ import type { Booking, Location, PublicProfile, Slot } from '../data/content';
 import { authErr, hint, isTrainer, loading, money, n, needLogin, render, session, val } from '../app/ctx';
 import { empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
+import * as pay from '../data/pay';
+import * as payUi from '../ui/pay';
 import { avatarOf, esc, toast } from '../ui/util';
 import { byDay, dayKey, slotEnd, slotStarts } from '../domain/training';
 import { becomePrompt } from './shop';
@@ -41,6 +43,7 @@ export function load(force = false): void {
 }
 
 export function reset(): void { slots = null; myBk = null; trainerBk = null; }
+payUi.onPayChange(() => { myBk = null; });
 
 const at = (s: Slot) => new Date(s.starts_at);
 const future = (s: Slot) => at(s) > new Date();
@@ -139,9 +142,18 @@ function trainerPage(id: string): string {
   <section class="banner b-train slim rise"><div class="row">${avatarOf(tr)}<div><h1 dir="auto">${esc(tr.full_name)}</h1>
     ${tr.club ? `<p dir="auto">${esc(tr.club)}</p>` : ''}</div></div></section>
   ${tr.bio ? `<div class="card"><p dir="auto">${esc(tr.bio)}</p></div>` : ''}
+  ${trainerContact(tr.id)}
   ${locs.length ? `<div class="card"><h3>${icon('map', 20)} ${t('tr.locations')}</h3>${locs.map((l) => locRow(l)).join('')}</div>` : ''}
   <h2 class="sec">${icon('calendar', 22)} ${t('tr.available')}</h2>
   ${dayPicker(slots.filter((s) => s.trainer_id === id), false)}`;
+}
+
+/** WhatsApp and payment methods of a trainer (loaded once). */
+function trainerContact(id: string): string {
+  const s = pay.settingsNow(id);
+  if (s === undefined) { pay.settingsOf([id]).then(render, () => undefined); return ''; }
+  const wa = payUi.waButton(s, t('tr.waText'));
+  return `<div class="card row">${wa}<span class="small muted">${icon('wallet', 14)} ${esc(payUi.methodsLine(s))}</span></div>`;
 }
 
 function locRow(l: Location, removable = false): string {
@@ -228,7 +240,8 @@ export function myBookingsCard(): string {
       .then(async (b) => {
         myBk = b;
         myBkSlots = await content.slotsById(b.map((x) => x.slot_id));
-        await content.people(b.map((x) => x.trainer_id));
+        payUi.forget('training');
+        await Promise.all([content.people(b.map((x) => x.trainer_id)), pay.settingsOf(b.map((x) => x.trainer_id)), payUi.load('training', b.map((x) => x.id))]).catch(() => undefined);
         if (!locations) locations = await content.listLocations();
       })
       .catch(() => undefined).finally(render);
@@ -240,6 +253,8 @@ export function myBookingsCard(): string {
     <div class="row between"><b>${dayFmt.format(at(s!))} · ${range(s!)}</b><span class="badge green">${t('tr.bookedBadge')}</span></div>
     <div class="row small muted"><span dir="auto">${icon('coach', 14)} ${esc(trainerName(b.trainer_id))}</span>${loc(s!.location_id) ? `<span dir="auto">${icon('pin', 14)} ${esc(loc(s!.location_id)!.name)}</span>` : ''}
       <span>${s!.price ? money(s!.price) : t('tr.free')}</span></div>
+    ${payUi.payerBox({ kind: 'training', ref: b.id, amount: s!.price, settings: pay.settingsNow(b.trainer_id), paid: !!(b as Booking & { paid?: boolean }).paid, compact: true,
+      waText: t('tr.waBooking', { when: `${dayFmt.format(at(s!))} ${range(s!)}` }) })}
     <button class="btn ghost small" data-act="tr-cancel" data-id="${b.id}">${icon('x', 16)} ${t('tr.cancelBooking')}</button></div>`).join('')}</div>`;
 }
 

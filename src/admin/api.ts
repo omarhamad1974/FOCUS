@@ -49,7 +49,7 @@ export async function simOrder(n: number, players: string[] | null): Promise<num
   return check(await db().rpc('sim_order', { n, players: players?.length ? players : null })) as number;
 }
 
-export async function simClear(kind: 'organizer' | 'trainer' | 'seller', tournamentId?: string): Promise<number> {
+export async function simClear(kind: 'organizer' | 'trainer' | 'seller' | 'hall', tournamentId?: string): Promise<number> {
   return check(await db().rpc('sim_clear', { kind, t: tournamentId ?? null })) as number;
 }
 

@@ -19,6 +19,7 @@ const TILES: [string, string, MessageKey, MessageKey][] = [
   ['#/desk/seller', 'shop', 'desk.tab.seller', 'desk.admin.sellerTip'],
   ['#/admin', 'shield', 'desk.admin.console', 'desk.admin.consoleTip'],
   ['#/admin/users', 'users', 'desk.admin.accounts', 'desk.admin.accountsTip'],
+  ['#/admin/people', 'x', 'adm.tab.people', 'ppl.deskTip'],
   ['#/admin/sim', 'eye', 'desk.admin.journeys', 'desk.admin.journeysTip'],
 ];
 

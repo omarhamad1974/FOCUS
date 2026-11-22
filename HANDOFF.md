@@ -94,3 +94,10 @@ Also confirmed:
 - Tap a player: bottom sheet to move to another group (drop-down), also fill another group while staying in their own, back to the waiting list, or delete from the tournament (two taps). Drag and drop still works.
 - «نشر المجموعات»: `Tournament.groupsPublished`. During setup players see a "groups being prepared" card instead of the draw until the organizer (or admin) publishes; once groups start they are always visible. Hiding is in the app only (the state JSON is still readable).
 - Quick add card: name + mobile puts a new player straight on the waiting list (online: temporary account through admin-users 'players', password pingo123). No SQL.
+
+## Remove any account (admin), 2026-11-22
+- Admin tab «إزالة الحسابات» (`#/admin/people`, also a tile on the admin desk and a quick action): every account in one list, search by name/mobile/club, filter chips (all, players only, organizers, sellers, trainers, hall owners, temporary, simulation demo players). Delete button per person, or tick many and «حذف المحدد». Confirm box shows faces + what happens, and needs the word «حذف».
+- Admin sees «حذف هذا الحساب» on any profile page (`#/u/<id>`) and a 🗑 per row in الحسابات; both open the same confirm (`#/admin/people/del/<id>`).
+- Admins and your own account never appear and the Edge Function refuses them anyway.
+- What happens: account deleted through admin-users `delete_users` (unchanged). Tournaments and articles move to the deleting admin; results inside tournaments keep the name; products, shop, training slots, halls and their bookings are deleted by the existing cascades. No SQL, no function redeploy.
+- Code: `src/pages/peopleAdmin.ts`, `src/domain/people.ts` (+ test), text `src/i18n/ar-people.ts`.

@@ -10,14 +10,15 @@ import { cover } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc, toast } from '../ui/util';
 import * as catsAdmin from './categoriesAdmin';
+import * as peopleAdmin from './peopleAdmin';
 import { catIcon as newsIcon, catLabel as newsLabel } from './news';
 import { catIcon as shopIcon } from './shop';
 
-type Tab = 'home' | 'approvals' | 'users' | 'news' | 'shop' | 'categories' | 'tournaments' | 'bulk' | 'sim';
+type Tab = 'home' | 'approvals' | 'users' | 'news' | 'shop' | 'categories' | 'tournaments' | 'people' | 'bulk' | 'sim';
 const TABS: [Tab, string, MessageKey][] = [
   ['home', 'grid', 'adm.tab.home'], ['approvals', 'check', 'adm.tab.approvals'], ['users', 'users', 'adm.tab.users'],
   ['news', 'news', 'adm.tab.news'], ['shop', 'shop', 'adm.tab.shop'], ['categories', 'tag', 'adm.tab.categories'], ['tournaments', 'trophy', 'adm.tab.tournaments'],
-  ['bulk', 'trash', 'adm.tab.bulk'], ['sim', 'eye', 'adm.tab.sim'],
+  ['people', 'x', 'adm.tab.people'], ['bulk', 'trash', 'adm.tab.bulk'], ['sim', 'eye', 'adm.tab.sim'],
 ];
 
 let counts: AdminCounts | null = null;
@@ -72,6 +73,7 @@ export function page(parts: string[]): string {
   else if (tab === 'shop') body = shopView();
   else if (tab === 'categories') body = catsAdmin.view(posts ?? [], products ?? []);
   else if (tab === 'bulk') body = bulkView(parts[2]);
+  else if (tab === 'people') body = peopleAdmin.view({ profiles: profiles ?? [], tournaments: tournaments ?? [], products: products ?? [] }, parts, async () => { await afterBulk(); reset(); });
   else body = tournamentsView();
   return head + nav + body;
 }
@@ -97,6 +99,7 @@ function homeView(): string {
       <a class="qa" href="#/admin/users">${icon('user', 22)}<span>${t('users.create')}</span></a>
       <a class="qa" href="#/admin/approvals">${icon('check', 22)}<span>${t('adm.tab.approvals')}</span></a>
       <a class="qa" href="#/admin/categories">${icon('tag', 22)}<span>${t('adm.tab.categories')}</span></a>
+      <a class="qa" href="#/admin/people">${icon('x', 22)}<span>${t('adm.tab.people')}</span></a>
       <a class="qa" href="#/admin/bulk">${icon('trash', 22)}<span>${t('adm.tab.bulk')}</span></a>
       <a class="qa" href="#/admin/sim">${icon('eye', 22)}<span>${t('adm.tab.sim')}</span></a>
       <a class="qa" href="#/players">${icon('users', 22)}<span>${t('dir.link')}</span></a>
@@ -241,6 +244,7 @@ function confirmBox(kind: BulkKind, label: string): string {
 
 /** Checkbox clicks (the main click handler skips inputs). */
 export function onChange(el: HTMLInputElement): boolean {
+  if (peopleAdmin.onChange(el)) return true;
   if (el.dataset.act === 'adm-sel') {
     if (el.checked) bulk.selected.add(el.dataset.id!); else bulk.selected.delete(el.dataset.id!);
   } else if (el.dataset.act === 'adm-sel-all') {
@@ -253,6 +257,7 @@ export function onChange(el: HTMLInputElement): boolean {
 
 /** The confirm button wakes up only after the exact word is typed. */
 export function onInput(el: HTMLInputElement): boolean {
+  if (peopleAdmin.onInput(el)) return true;
   if (el.dataset.act !== 'adm-bulk-type') return false;
   const go = document.getElementById('bulkGo') as HTMLButtonElement | null;
   if (go) go.disabled = bulk.running || !confirmed(el.value);
@@ -322,6 +327,7 @@ function simView(): string {
 
 export async function onClick(act: string, el: HTMLElement): Promise<void> {
   if (act.startsWith('adm-cat-') && await catsAdmin.onClick(act, el)) return;
+  if (act.startsWith('adm-ppl-') && await peopleAdmin.onClick(act, el)) return;
   switch (act) {
     case 'pv-set':
       preview.as = el.dataset.v as Preview;

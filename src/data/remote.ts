@@ -22,6 +22,8 @@ export interface Profile {
   gender?: Gender | null;
   /** Still on the starting password "pingo123" (migration 0014). */
   must_change_password?: boolean;
+  /** Old-style batch account waiting for its claim code (migration 0011). */
+  is_temp?: boolean;
 }
 
 export type Gender = 'male' | 'female';

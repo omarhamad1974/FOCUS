@@ -15,7 +15,7 @@ import { championCelebration } from './ui/champion';
 import { online, SUPPORT_WHATSAPP } from './config';
 import { DEFAULT_PASSWORD, loginEmail, normalizeMobile } from './domain/mobile';
 import * as remote from './data/remote';
-import { addExtraPlayer, addPlayerToSetup, closeRegistration, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
+import { addExtraPlayer, addPlayerToSetup, addPlayerToWaiting, boardSummary, closeRegistration, groupsVisible, publishGroups, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isHall, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
 import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PUBLIC_STATUSES, publicStatus, sortForListing, TIME_FILTERS, topTwo, tournamentLocations, type PublicStatus, type TimeFilter } from './domain/tournament';
 import * as admin from './pages/admin';
@@ -814,7 +814,8 @@ function myPlayerId(tm: Tournament): string | undefined {
 /** Hero strip: the player's own group and table first, then every group's table. */
 function tableMap(tm: Tournament): string {
   if (tm.stage === 'knockout' || !tm.groups.some((g) => g.table)) return '';
-  const pid = myPlayerId(tm);
+  // Before the draw is published a player must not learn their group from the table strip.
+  const pid = isOrg(tm) || groupsVisible(tm) ? myPlayerId(tm) : undefined;
   const mine = pid ? groupOf(tm, pid) : undefined;
   const fills = pid ? groupsOf(tm, pid).filter((g) => g !== mine && g.table) : [];
   const mineLine = (mine?.table ? `<div class="my-table">🎯 ${t('table.yourGroup')} <b>${esc(mine.name)}</b> · ${t('table.playAt')} <b dir="auto">${esc(tableText(mine.table))}</b></div>` : '')
@@ -844,26 +845,38 @@ function tablesCard(tm: Tournament): string {
 }
 
 /* Setup: drag-and-drop group board */
-let selectedChip: string | null = null;
+/** Player whose action menu is open on the group board. */
+let playerMenu: string | null = null;
+let pmDeleteArmed = false;
 /** Group whose "fill with a player from another group" list is open. */
 let extraPickFor: string | null = null;
 
 function setupBoard(tm: Tournament): string {
   const org = isOrg(tm);
+  if (!org && !groupsVisible(tm)) return `<div class="card pub-wait center">
+    <div class="pub-wait-icon" aria-hidden="true">🔒</div>
+    <h2>${t('pub.playerTitle')}</h2><p class="muted">${t('pub.playerHint')}</p>
+    <p class="small muted">${n(tm.players.length)} ${t('t.players')} · ${n(tm.groups.length)} ${t('wizard.groups')}</p></div>`;
   const seedOf = (id: string) => tm.players.findIndex((p) => p.id === id) + 1;
   const biggest = Math.max(...tm.groups.map((g) => g.playerIds.length));
   const homeName = (pid: string) => groupOf(tm, pid)?.name ?? '';
+  const nameSpan = (pid: string) => `<span class="cname" dir="auto">${esc(playerName(tm, pid))}</span>`;
   const extraChip = (g: Group, pid: string) => `
         <div class="chip ro extra" data-extra-pid="${pid}">
-          ${pAvatar(tm, pid)}<span class="extra-who"><span dir="auto">${esc(playerName(tm, pid))}</span>
-          <span class="badge extra-badge" title="${esc(t('extra.badgeTitle'))}">🧩 ${t('extra.badge')} ${t('extra.from')} ${t('setup.group')} ${esc(homeName(pid))}</span></span>
-          ${org ? `<button class="btn ghost small" data-act="rm-extra" data-pid="${pid}" data-gid="${g.id}" aria-label="${t('extra.remove')}" title="${t('extra.remove')}" style="min-height:28px;padding:2px 8px;margin-inline-start:auto">✕</button>` : ''}
+          ${pAvatar(tm, pid)}<span class="extra-who">${nameSpan(pid)}
+          <span class="badge extra-badge" title="${esc(t('extra.badgeTitle'))}">🧩 <span class="hide-phone">${t('extra.badge')} ${t('extra.from')} ${t('setup.group')}</span> ${esc(homeName(pid))}</span></span>
+          ${org ? `<button class="btn ghost small chip-x" data-act="rm-extra" data-pid="${pid}" data-gid="${g.id}" aria-label="${t('extra.remove')}" title="${t('extra.remove')}">✕</button>` : ''}
+        </div>`;
+  const chip = (pid: string, seed: boolean) => `
+        <div class="chip ${org ? '' : 'ro'} ${playerMenu === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" aria-haspopup="dialog" data-act="chip"` : ''}>
+          ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}${nameSpan(pid)}
+          ${seed ? `<span class="seed">#${n(seedOf(pid))}</span>` : ''}
         </div>`;
   const extraPicker = (g: Group) => {
     if (!org) return '';
     if (extraPickFor !== g.id) {
       const short = g.playerIds.length < biggest || g.playerIds.length % 2 === 1;
-      return `<button class="btn ${short ? 'soft' : 'ghost'} small block extra-add" data-act="extra-open" data-gid="${g.id}">🧩 ${t('extra.add')}</button>`;
+      return `<button class="btn ${short ? 'soft' : 'ghost'} small block extra-add" data-act="extra-open" data-gid="${g.id}">🧩 <span class="hide-phone">${t('extra.add')}</span><span class="show-phone">${t('sum.short')}؟</span></button>`;
     }
     const cands = extraCandidates(tm, g.id);
     return `<div class="extra-pick">
@@ -875,44 +888,128 @@ function setupBoard(tm: Tournament): string {
     </div>`;
   };
   const cols = tm.groups.map((g, i) => `
-    <div class="gcol ${selectedChip ? 'target' : ''}" data-gid="${g.id}" ${org ? `tabindex="0" data-act="drop-here"` : ''} aria-label="${t('setup.group')} ${esc(g.name)}">
-      <h3><span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span> ${t('setup.group')} ${esc(g.name)}
-        ${tableBadge(g)}<span class="badge" style="margin-inline-start:auto">${n(g.playerIds.length)}</span></h3>
-      ${g.playerIds.map((pid) => isExtra(g, pid) ? extraChip(g, pid) : `
-        <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
-          ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
-          <span class="seed">#${n(seedOf(pid))}</span>
-          ${org && online() ? `<button class="btn ghost small" data-act="rm-player" data-pid="${pid}" aria-label="${t('dir.remove')}" title="${t('dir.remove')}" style="min-height:28px;padding:2px 8px">✕</button>` : ''}
-        </div>`).join('')}
+    <div class="gcol" data-gid="${g.id}" aria-label="${t('setup.group')} ${esc(g.name)}">
+      <h3><span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span> <span class="hide-phone">${t('setup.group')} ${esc(g.name)}</span>
+        ${tableBadge(g)}<span class="badge gcount" style="margin-inline-start:auto">${n(g.playerIds.length)}</span></h3>
+      <div class="gchips">${g.playerIds.map((pid) => isExtra(g, pid) ? extraChip(g, pid) : chip(pid, true)).join('')}</div>
       ${extraPicker(g)}
     </div>`).join('');
   const waiting = sim.waitingPlayers(tm);
   const waitCol = waiting.length || (org && simOpen.has(tm.id)) ? `
-    <div class="gcol waitcol ${selectedChip ? 'target' : ''}" data-gid="${WAITING}" ${org ? `tabindex="0" data-act="drop-here"` : ''} aria-label="${esc(t('tsim.waiting'))}">
+    <div class="gcol waitcol" data-gid="${WAITING}" aria-label="${esc(t('tsim.waiting'))}">
       <h3><span class="gletter wait-letter">⏳</span> ${t('tsim.waiting')}<span class="badge ${waiting.length ? 'gold' : ''}" style="margin-inline-start:auto">${n(waiting.length)}</span></h3>
       ${waiting.length ? '' : `<p class="small muted">${t('tsim.waitingEmpty')}</p>`}
-      ${waiting.map((pid) => `
-        <div class="chip ${org ? '' : 'ro'} ${selectedChip === pid ? 'sel' : ''}" data-pid="${pid}" ${org ? `tabindex="0" role="button" data-act="chip"` : ''}>
-          ${org ? '<span class="grip" aria-hidden="true">⋮⋮</span>' : ''}${pAvatar(tm, pid)}<span dir="auto">${esc(playerName(tm, pid))}</span>
-          ${org ? `<button class="btn ghost small" data-act="rm-player" data-pid="${pid}" aria-label="${t('dir.remove')}" title="${t('dir.remove')}" style="min-height:28px;padding:2px 8px;margin-inline-start:auto">✕</button>` : ''}
-        </div>`).join('')}
+      <div class="gchips">${waiting.map((pid) => chip(pid, false)).join('')}</div>
       ${org && waiting.length ? `<button class="btn green small block" data-act="sim-distribute" style="margin-block-start:8px">🎲 ${t('tsim.distribute')}</button>` : ''}
     </div>` : '';
   return `
-  <div class="card">
+  ${org ? publishCard(tm, waiting.length) : ''}
+  <div class="card board-card">
     <div class="row between"><h2>🧩 ${t('setup.title')}</h2>
       ${org ? `<button class="btn soft small" data-act="reshuffle">🔀 ${t('setup.reshuffle')}</button>` : ''}</div>
-    ${org ? hint('setup.hint') : ''}
-    ${org ? hint('extra.hint') : ''}
-    ${org && waiting.length ? hint('tsim.waitingHint') : ''}
+    ${org ? hint('setup.hint2') : ''}
+    ${boardSummaryBar(tm)}
     <div class="board" id="board">${waitCol}${cols}</div>
+    ${org ? `<details class="board-help"><summary>❔ ${t('extra.add')}</summary>${hint('extra.hint')}</details>` : ''}
   </div>
+  ${org ? quickAddCard() : ''}
   ${org ? tablesCard(tm) : ''}
   ${org && online() ? dirPicker(new Set(tm.players.map((p) => p.directoryId).filter((x): x is string => !!x)), 'dir.addToTournament') : ''}
   ${org ? `<div class="card">
     ${hint('setup.startHint')}
     <button class="btn green block" data-act="start-groups">▶️ ${t('setup.start')}</button>
-  </div>` : ''}`;
+  </div>` : ''}
+  ${org && playerMenu ? playerMenuSheet(tm, playerMenu) : ''}`;
+}
+
+/** Always-visible counts: places in groups (a player in two groups counts twice), waiting list, each group. */
+function boardSummaryBar(tm: Tournament): string {
+  const s = boardSummary(tm);
+  return `<div class="gsum" aria-label="${esc(t('sum.groupsTitle'))}">
+    <div class="gsum-total"><b>${n(s.places)}</b><span>${t('sum.places')}<small>${s.extra ? t('sum.detail', { placed: n(s.placed), extra: n(s.extra) }) : t('sum.detailPlain', { placed: n(s.placed) })}</small></span></div>
+    ${s.waiting ? `<div class="gsum-wait">⏳ <b>${n(s.waiting)}</b> ${t('sum.waiting')}</div>` : ''}
+    <div class="gsum-groups">${s.groups.map((g, i) => `<span class="gsum-g ${g.short ? 'short' : ''}" title="${t('setup.group')} ${esc(g.name)}${g.short ? ` · ${t('sum.short')}` : ''}">
+      <span class="gletter" style="background:${groupColor(i)}">${esc(g.name)}</span><b>${n(g.count)}</b>${g.extra ? `<small>🧩${n(g.extra)}</small>` : ''}</span>`).join('')}</div>
+  </div>`;
+}
+
+/** Organizer: groups stay hidden from players until published. */
+function publishCard(tm: Tournament, waiting: number): string {
+  if (tm.groupsPublished) return `<div class="card pub-card on">
+    <div class="row between"><b>✅ ${t('pub.onTitle')}</b>
+      <button class="btn ghost small" data-act="pub-hide">🙈 ${t('pub.hide')}</button></div>
+    <p class="small muted">${t('pub.onHint')}</p></div>`;
+  return `<div class="card pub-card">
+    <div class="row between" style="align-items:flex-start"><div><b>🙈 ${t('pub.hiddenTitle')}</b>
+      <p class="small muted">${t('pub.hiddenHint')}${waiting ? ` <b class="warn-text">${t('pub.waitingWarn', { n: n(waiting) })}</b>` : ''}</p></div>
+      <button class="btn gold" data-act="pub-show">📢 ${t('pub.btn')}</button></div></div>`;
+}
+
+/** Name + mobile: a temporary account, straight onto the waiting list. */
+function quickAddCard(): string {
+  return `<form class="card qa-card" data-form="qa">
+    <h3>➕ ${t('qa.title')}</h3>${hint('qa.hint')}
+    <div class="qa-row">
+      <input class="input" id="qaName" placeholder="${esc(t('qa.name'))}" aria-label="${esc(t('qa.name'))}" dir="auto" autocomplete="off" required>
+      <input class="input" id="qaMobile" type="tel" inputmode="tel" dir="ltr" placeholder="01xxxxxxxxx" aria-label="${esc(t('qa.mobile'))}" autocomplete="off" required>
+      <button class="btn green" type="submit" ${busy ? 'disabled' : ''}>⏳ ${t('qa.btn')}</button>
+    </div></form>`;
+}
+
+async function quickAdd(): Promise<void> {
+  const { tm } = current();
+  if (!tm || !isOrg(tm)) return;
+  const name = val('qaName').trim();
+  const raw = val('qaMobile');
+  const mobile = normalizeMobile(raw);
+  if (!name) { toast(t('qa.needName')); document.getElementById('qaName')?.focus(); return; }
+  if (!mobile) { toast(t(raw ? 'auth.err.badMobile' : 'dir.needMobile')); document.getElementById('qaMobile')?.focus(); return; }
+  let dirId: string | undefined, account: string | undefined;
+  if (online()) {
+    busy = true; route();
+    try {
+      const r = (await remote.addPlayers([{ full_name: name, mobile }])).rows[0];
+      if (!r?.player_id) throw new Error(r?.error ?? 'unknown');
+      dirId = r.player_id; account = r.id ?? undefined;
+      if (r.kind === 'account') toast(t('batch.kind.account'));
+      dir = null;
+    } catch (e) { busy = false; toast(authErr(e)); route(); return; }
+    busy = false;
+  }
+  try { addPlayerToWaiting(tm, name, dirId, account); } catch { toast(t('dir.duplicate')); route(); return; }
+  persist();
+  toast(`✅ ${t('qa.added', { name })}${online() ? ` · ${mobile} / ${DEFAULT_PASSWORD}` : ''}`);
+  route();
+  document.getElementById('qaName')?.focus();
+}
+
+/** Tap on a player: move, fill another group, back to the waiting list, or delete. */
+function playerMenuSheet(tm: Tournament, pid: string): string {
+  if (!tm.players.some((p) => p.id === pid)) return '';
+  const home = groupOf(tm, pid);
+  const fills = groupsOf(tm, pid).filter((g) => g !== home);
+  const gi = (g: Group) => tm.groups.indexOf(g);
+  const opt = (g: Group) => `<option value="${g.id}">${t('setup.group')} ${esc(g.name)} · ${t('pm.count', { n: n(g.playerIds.length) })}</option>`;
+  const moveTo = tm.groups.filter((g) => g !== home);
+  const fillTo = home ? tm.groups.filter((g) => !g.playerIds.includes(pid)) : [];
+  return `<div class="pm-back" data-act="pm-close"></div>
+  <div class="pm-sheet" role="dialog" aria-modal="true" aria-label="${esc(t('pm.title'))}">
+    <div class="pm-head">${pAvatar(tm, pid)}<div><b dir="auto">${esc(playerName(tm, pid))}</b>
+      <small>${home ? `<span class="gletter mini" style="background:${groupColor(gi(home))}">${esc(home.name)}</span> ${t('pm.inGroup', { g: esc(home.name) })}` : `⏳ ${t('pm.inWaiting')}`}
+      ${fills.map((g) => ` · 🧩 ${t('pm.alsoFills', { g: esc(g.name) })}`).join('')}</small></div>
+      <button class="btn ghost small" data-act="pm-close" aria-label="${t('common.cancel')}" style="margin-inline-start:auto">✕</button></div>
+    <label class="pm-row"><span>🔀 ${t(home ? 'pm.move' : 'pm.place')}</span>
+      <span class="pm-ctl"><select class="input" id="pmMove"><option value="">${t('pm.pick')}</option>${moveTo.map(opt).join('')}</select>
+      <button class="btn green small" data-act="pm-move">${t('pm.moveBtn')}</button></span></label>
+    ${home ? `<label class="pm-row"><span>🧩 ${t('pm.extra')}</span>
+      ${fillTo.length ? `<span class="pm-ctl"><select class="input" id="pmExtra"><option value="">${t('pm.pick')}</option>${fillTo.map(opt).join('')}</select>
+      <button class="btn soft small" data-act="pm-extra">${t('pm.extraBtn')}</button></span>` : `<small class="muted">${t('pm.extraNone')}</small>`}</label>` : ''}
+    ${fills.map((g) => `<button class="btn ghost small block" data-act="rm-extra" data-pid="${pid}" data-gid="${g.id}">✕ ${t('pm.extraOut', { g: esc(g.name) })}</button>`).join('')}
+    <div class="pm-actions">
+      ${home ? `<button class="btn soft" data-act="pm-wait">⏳ ${t('pm.toWaiting')}</button>` : ''}
+      <button class="btn ${pmDeleteArmed ? 'red' : 'ghost'}" data-act="pm-delete">🗑️ ${pmDeleteArmed ? t('pm.deleteConfirm') : t('pm.delete')}</button>
+    </div>
+  </div>`;
 }
 
 /* Step-by-step simulation with random players and results (organizer) */
@@ -1016,7 +1113,7 @@ function simAction(act: string, el: HTMLElement, tm: Tournament): boolean {
     }
     case 'sim-distribute': {
       const moved = sim.distributeWaiting(tm);
-      selectedChip = null;
+      playerMenu = null;
       persist();
       toast(`🎲 ${t('tsim.distributed', { n: moved })}`);
       go('groups');
@@ -2505,9 +2602,41 @@ document.addEventListener('click', (e) => {
     /* setup board */
     case 'chip':
       if (dragMoved) return;
-      selectedChip = selectedChip === el.dataset.pid ? null : el.dataset.pid!;
+      playerMenu = el.dataset.pid!;
+      pmDeleteArmed = false;
+      extraPickFor = null;
       route();
-      if (selectedChip) toast(t('setup.selected'));
+      document.querySelector<HTMLElement>('.pm-sheet select')?.focus({ preventScroll: true });
+      return;
+    case 'pm-close':
+      playerMenu = null; pmDeleteArmed = false;
+      route();
+      return;
+    case 'pm-move': case 'pm-extra': case 'pm-wait': case 'pm-delete': {
+      const pid = playerMenu;
+      if (!tm || !pid || !isOrg(tm) || tm.stage !== 'setup') return;
+      if (act === 'pm-delete' && !pmDeleteArmed) { pmDeleteArmed = true; route(); return; }
+      const gid = act === 'pm-move' ? val('pmMove') : act === 'pm-extra' ? val('pmExtra') : '';
+      if ((act === 'pm-move' || act === 'pm-extra') && !gid) { toast(t('pm.pick')); return; }
+      const gName = tm.groups.find((g) => g.id === gid)?.name ?? '';
+      try {
+        if (act === 'pm-move') { movePlayer(tm, pid, gid); toast(`🔀 ${t('pm.moved', { g: gName })}`); }
+        else if (act === 'pm-extra') { addExtraPlayer(tm, pid, gid); toast(`🧩 ${t('extra.added')}`); }
+        else if (act === 'pm-wait') { sim.moveToWaiting(tm, pid); toast(`⏳ ${t('pm.waited')}`); }
+        else { removePlayerFromSetup(tm, pid); toast(`🗑️ ${t('pm.deleted')}`); }
+      } catch { return; }
+      playerMenu = null; pmDeleteArmed = false;
+      persist();
+      route();
+      return;
+    }
+    case 'pub-show': case 'pub-hide':
+      if (!tm || !isOrg(tm)) return;
+      publishGroups(tm, act === 'pub-show');
+      persist();
+      toast(act === 'pub-show' ? `📢 ${t('pub.done')}` : `🙈 ${t('pub.hidden')}`);
+      if (act === 'pub-show') confetti();
+      route();
       return;
     case 'extra-open':
       extraPickFor = el.dataset.gid || null;
@@ -2524,13 +2653,6 @@ document.addEventListener('click', (e) => {
     case 'rm-extra':
       if (!tm || !isOrg(tm)) return;
       removeExtraPlayer(tm, el.dataset.pid!, el.dataset.gid!);
-      persist();
-      route();
-      return;
-    case 'drop-here':
-      if (!tm || !selectedChip) return;
-      placePlayer(tm, selectedChip, el.dataset.gid!);
-      selectedChip = null;
       persist();
       route();
       return;
@@ -2793,6 +2915,7 @@ document.addEventListener('submit', async (e) => {
   if (kind === 'user-edit') { await saveUserEdit(); return; }
   if (await desk.onSubmit(kind)) return;
   if (await news.onSubmit(kind, form) || await shop.onSubmit(kind, form) || await shops.onSubmit(kind) || await training.onSubmit(kind, form) || await claim.onSubmit(kind, form)) return;
+  if (kind === 'qa') { await quickAdd(); return; }
   if (kind === 'add-player') {
     const name = val('pName');
     const mobile = normalizeMobile(val('pPhone'));
@@ -2931,6 +3054,7 @@ document.addEventListener('change', async (e) => {
 
 document.addEventListener('keydown', (e) => {
   const el = e.target as HTMLElement;
+  if (e.key === 'Escape' && playerMenu) { playerMenu = null; pmDeleteArmed = false; route(); return; }
   if ((e.key === 'Enter' || e.key === ' ') && (el.dataset.act === 'chip' || el.dataset.act === 'drop-here')) {
     e.preventDefault();
     el.click();
@@ -2991,7 +3115,7 @@ function endDrag(commit: boolean): void {
     placePlayer(tm, d.pid, target.dataset.gid!, index === -1 ? undefined : index);
     persist();
   }
-  selectedChip = null;
+  playerMenu = null;
   route();
   setTimeout(() => (dragMoved = false), 0);
 }

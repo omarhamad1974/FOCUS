@@ -138,4 +138,9 @@ export interface Tournament {
   fee?: number;
   /** Who paid the entry fee: payment keys (account id, else player id), see domain/payments. */
   paid?: string[];
+  /**
+   * The organizer published the group draw: players can see who is in which group while the
+   * tournament is still in setup. Missing or false: the draw stays hidden until the groups start.
+   */
+  groupsPublished?: boolean;
 }

@@ -5,12 +5,12 @@ import {
   createTournament, duplicateTournament, groupName, groupMatches, groupStandings, groupsComplete, movePlayer,
   playerName, progress, saveResult, snakeGroups, startGroups, startKnockout, uid,
 } from './domain/tournament';
-import { canEditKo, isBye, placements, roundName } from './domain/bracket';
+import { bracketMatches, canEditKo, isBye, placements, roundName } from './domain/bracket';
 import { GAME_POINTS, gamesToWin, possibleResults, summarize, type MatchCheck } from './domain/scoring';
 import { sampleNames, sampleTournament, type SampleLevel } from './domain/sample';
 import * as sim from './domain/simulate';
 import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, Tournament } from './domain/types';
-import { avatar, avatarOf, confetti, esc, groupColor, toast } from './ui/util';
+import { avatar, avatarOf, confetti, esc, groupColor, toast, zone } from './ui/util';
 import { championCelebration } from './ui/champion';
 import { online, SUPPORT_WHATSAPP } from './config';
 import { DEFAULT_PASSWORD, loginEmail, normalizeMobile } from './domain/mobile';
@@ -412,12 +412,12 @@ function tournamentCarousel(): string {
   recent.forEach(loadPhotos);
   const head = `<div class="sec-head"><div><h2>${icon('trophy', 22)} ${t('nav.tournaments')}</h2>${hint('tl.homeHint')}</div>
     <a class="btn soft small" href="#/tournaments">${icon('grid', 16)} ${t('tl.showAll')} <span class="badge">${n(data.tournaments.length)}</span></a></div>`;
-  if (!list.length) return head + empty('trophy', t('tl.noneNow'), `<a class="btn gold small" href="#/tournaments">${t('tl.showAll')}</a>`);
-  return `${head}
+  if (!list.length) return zone('gold', head + empty('trophy', t('tl.noneNow'), `<a class="btn gold small" href="#/tournaments">${t('tl.showAll')}</a>`));
+  return zone('gold', `${head}
     <section class="tcarousel" data-carousel aria-roledescription="carousel" aria-label="${esc(t('nav.tournaments'))}">
       <div class="car-track">${list.map((tm, i) => `<div class="car-cell" data-i="${i}">${tournamentCard(tm)}</div>`).join('')}</div>
       ${carControls(list.length)}
-    </section>`;
+    </section>`);
 }
 
 /** Home: sports shops, those with a Pingo promotion first. */
@@ -425,9 +425,9 @@ function shopsStrip(): string {
   const list = shops.withPromos(4);
   if (list === null) { shops.load(); return '<div class="sk-row"></div>'; }
   if (!list.length) return '';
-  return `<div class="sec-head"><h2>${icon('tag', 22)} ${t('shops.homeTitle')}</h2><a class="more" href="#/shops">${t('home.seeAll')} ${icon('chevron', 16)}</a></div>
+  return zone('navy', `<div class="sec-head"><h2>${icon('tag', 22)} ${t('shops.homeTitle')}</h2><a class="more" href="#/shops">${t('home.seeAll')} ${icon('chevron', 16)}</a></div>
   <p class="muted small" style="margin-top:-6px">${t('shops.homeTip')}</p>
-  <div class="grid shops">${list.map(shops.shopCard).join('')}</div>`;
+  <div class="grid shops">${list.map(shops.shopCard).join('')}</div>`);
 }
 
 /** Home: news carousel first, then tournaments, then the other sections. */
@@ -456,22 +456,22 @@ function homePage(): string {
     ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
     ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
   </div>
-  <div class="sec-head"><h2>${icon('grad', 22)} ${t('acad.title')}</h2>${more('#/learn')}</div>
+  ${zone('blue', `<div class="sec-head"><h2>${icon('grad', 22)} ${t('acad.title')}</h2>${more('#/learn')}</div>
   ${lessons === null ? '<div class="sk-row"></div>' : lessons.length
     ? `<p class="muted sec-sub">${t('acad.homeText')}</p><div class="grid acad-home">${lessons.map((p) => academy.lessonCard(p)).join('')}</div>`
-    : `<p class="muted">${t('acad.empty')}</p>`}
+    : `<p class="muted">${t('acad.empty')}</p>`}`)}
   <a class="card faq-cta jn-home rise" href="#/soon"><span class="faq-ic">${icon('spark', 26)}</span>
     <span><b>بينجو لمين؟</b><br><small class="muted">لاعب، منظم بطولات، مدرب أو بائع: اعرف مزايا كل دور</small></span>${icon('chevron', 18)}</a>
   <a class="card faq-cta rise" href="#/faq"><span class="faq-ic">${icon('help', 26)}</span>
     <span><b>${t('faq.title')}</b><br><small class="muted">${t('faq.homeText')}</small></span>${icon('chevron', 18)}</a>
-  <div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
-  ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}
+  ${zone('red', `<div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
+  ${prods === null ? '<div class="sk-row"></div>' : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shop.empty')}</p>`}`)}
   ${shopsStrip()}
-  <div class="sec-head"><h2>${icon('calendar', 22)} ${t('home.nextSlots')}</h2>${more('#/training')}</div>
+  ${zone('green', `<div class="sec-head"><h2>${icon('calendar', 22)} ${t('home.nextSlots')}</h2>${more('#/training')}</div>
   ${free === null ? '<div class="sk-row"></div>' : free.length
     ? `<div class="slots strip">${free.map((x) => `<a class="slot" href="#/training/t/${x.trainer_id}"><span class="slot-time">${icon('clock', 16)} ${dateTimeFmt.format(new Date(x.starts_at))}</span>
         <span class="small" dir="auto">${icon('coach', 14)} ${esc(training.trainerName(x.trainer_id))}</span></a>`).join('')}</div>`
-    : `<p class="muted">${t('tr.noSlots')}</p>`}`;
+    : `<p class="muted">${t('tr.noSlots')}</p>`}`)}`;
 }
 
 /* Carousels: arrows, dots and auto-advance every 6 seconds unless the visitor is touching them. */
@@ -579,6 +579,7 @@ function tournamentsPage(filterArg?: string): string {
     <div class="stat"><b>${n(done)}</b><small>${t('home.statMatches')}</small></div>
   </div>
   ${org ? samplePanel() : ''}
+  <section class="zone z-gold">
   <div class="sec-head"><h2>${icon('trophy', 22)} ${t(filter === 'mine' ? 'ws.myTournaments' : 'tl.allTitle')}</h2></div>
   <div class="fbar">
     <label class="fsel">${icon('calendar', 16)}
@@ -592,6 +593,7 @@ function tournamentsPage(filterArg?: string): string {
     : !ts.length ? `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`
     : shown.length ? `<div class="grid tgrid">${shown.map(tournamentCard).join('')}</div>`
     : empty('search', t('tl.noneFilter'), filtered ? `<button class="btn soft small" data-act="tl-clear">${t('tl.clear')}</button>` : `<a class="btn soft small" href="#/tournaments">${t('tl.f.all')}</a>`)}
+  </section>
   ${org && !online() ? `<div class="card">
     <h3>💾 ${t('home.backup')}</h3>
     ${hint('home.backupHint')}
@@ -1075,7 +1077,7 @@ function standingsTable(tm: Tournament, gi: number): string {
   }).join('');
   const ties = s.unresolved.length ? tieResolver(tm, gi, s.unresolved) : '';
   return `
-  <div class="card">
+  <div class="card gcard" style="--gc:${groupColor(gi)}">
     <h3 class="row" style="gap:6px"><span class="gletter" style="background:${groupColor(gi)};display:inline-grid">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)} ${tableBadge(g)}</h3>
     <div class="table-wrap"><table class="standings">
       <thead><tr><th>${t('standings.rank')}</th><th class="name">${t('standings.player')}</th><th>${t('standings.played')}</th><th>${t('standings.won')}</th><th>${t('standings.lost')}</th>
@@ -1109,6 +1111,35 @@ function tieResolver(tm: Tournament, gi: number, groups: string[][]): string {
   }).join('');
 }
 
+/* Stages of a tournament: each one sits in its own coloured block with a clear title, so the rounds never blur together. */
+type StageTone = 'groups' | 'main' | 'classb';
+
+function stageBlock(tone: StageTone, title: string, sub: string, meta: string, inner: string): string {
+  const ic = tone === 'groups' ? '👥' : tone === 'main' ? '🏆' : '🥈';
+  return `<section class="stage st-${tone}">
+    <header class="stage-head"><span class="st-ic" aria-hidden="true">${ic}</span>
+      <div class="st-txt"><h2 dir="auto">${title}</h2><small dir="auto">${sub}</small></div>
+      ${meta ? `<span class="st-meta">${meta}</span>` : ''}</header>
+    ${inner}
+  </section>`;
+}
+
+const playedOf = (ms: Match[]) => {
+  const real = ms.filter((m) => m && m.aId && m.bId);
+  return t('stg.played', { d: n(real.filter((m) => summarize(m).winner).length), t: n(real.length) });
+};
+
+function groupStage(tm: Tournament, inner: string): string {
+  const all = tm.groups.flatMap((g) => groupMatches(tm, g.id));
+  return stageBlock('groups', t('stg.groups'), t('stg.groupsSub', { g: n(tm.groups.length) }), playedOf(all), inner);
+}
+
+function bracketStage(tm: Tournament, b: Bracket, inner: string): string {
+  const main = b.kind === 'main';
+  return stageBlock(main ? 'main' : 'classb', t(main ? 'stg.main' : 'stg.classB'),
+    main ? t('stg.mainSub') : t('stg.classBSub', { name: esc(b.name) }), playedOf(bracketMatches(b, tm.matches)), inner);
+}
+
 function groupsView(tm: Tournament): string {
   const legend = `<div class="legend"><span><i style="background:var(--ok)"></i>${t('standings.qualified')}</span>
     ${tm.consolation.enabled ? `<span><i style="background:var(--warn)"></i>${t('standings.consolation')} · ${esc(tm.consolation.name)}</span>` : ''}
@@ -1119,8 +1150,9 @@ function groupsView(tm: Tournament): string {
     <button class="btn green block" data-act="start-ko" ${ready ? '' : 'disabled'}>⚔️ ${t('ko.start')}</button>
     ${ready ? '' : `<p class="muted small center">${t('ko.notReady')}</p>`}
   </div>` : '';
-  return `${isOrg(tm) ? tablesCard(tm) : ''}${hint(recordsPoints(tm) ? 'standings.hint' : 'standings.hintGames')}${legend}
-    ${tm.groups.map((_, i) => standingsTable(tm, i)).join('')}
+  return `${isOrg(tm) ? tablesCard(tm) : ''}
+    ${groupStage(tm, `${hint(recordsPoints(tm) ? 'standings.hint' : 'standings.hintGames')}${legend}
+    ${tm.groups.map((_, i) => standingsTable(tm, i)).join('')}`)}
     ${startKo}
     ${statsCard(tm)}`;
 }
@@ -1172,14 +1204,30 @@ function matchesView(tm: Tournament): string {
     const all = groupMatches(tm, g.id);
     const d = all.filter((m) => summarize(m).winner).length;
     const pct = Math.round((d / all.length) * 100);
-    return `<div class="card">
+    return `<div class="card gcard" style="--gc:${groupColor(i)}">
       <div class="row between"><h3 class="row" style="gap:6px"><span class="gletter" style="background:${groupColor(i)};display:inline-grid">${esc(g.name)}</span>${t('setup.group')} ${esc(g.name)} ${tableBadge(g)}</h3>
         <span class="ring" style="--p:${pct}" data-label="${n(d)}/${n(all.length)}"></span></div>
       ${ms.map((m) => matchCard(tm, m)).join('')}
     </div>`;
   }).join('');
+  // Knockout matches come first (the stage being played now), one block per round; group matches follow.
+  const ko = tm.stage === 'knockout' ? tm.brackets.map((b) => {
+    const total = b.rounds.length;
+    const rounds: [string, string[]][] = b.rounds.map((ids, r) => [t(`ko.round.${roundName(r, total)}` as MessageKey), ids]);
+    if (b.thirdPlaceId) rounds.push([`🥉 ${t('ko.round.third')}`, [b.thirdPlaceId]]);
+    const blocks = rounds.map(([label, ids], r) => {
+      const real = ids.map((id) => tm.matches[id]).filter((m) => m && m.aId && m.bId);
+      const ms = real.filter(keep);
+      if (!ms.length) return '';
+      return `<div class="round-block r${r % 2}"><h3 class="round-title"><span>${esc(label)}</span><small>${playedOf(real)}</small></h3>
+        ${ms.map((m) => matchCard(tm, m)).join('')}</div>`;
+    }).join('');
+    return blocks ? bracketStage(tm, b, blocks) : '';
+  }).join('') : '';
+  const groupsPart = sections ? groupStage(tm, sections) : '';
   return `<div class="choice" style="margin-block:8px">${filters.map(([k, l]) => `<button data-act="filter" data-v="${k}" aria-pressed="${matchFilter === k}">${t(l)}</button>`).join('')}</div>
-    ${sections || `<div class="card center muted">${t('matches.empty')}</div>`}`;
+    ${ko}${groupsPart}
+    ${ko || groupsPart ? '' : `<div class="card center muted">${t('matches.empty')}</div>`}`;
 }
 
 function bracketView(tm: Tournament, b: Bracket): string {
@@ -1198,7 +1246,7 @@ function bracketView(tm: Tournament, b: Bracket): string {
     const inner = `${slot(m, 'a')}${slot(m, 'b')}`;
     return playable ? `<a class="bmatch" href="#/t/${tm.id}/m/${m.id}">${inner}</a>` : `<div class="bmatch">${inner}</div>`;
   };
-  const cols = b.rounds.map((ids, r) => `<div class="bround"><h4>${t(`ko.round.${roundName(r, total)}` as MessageKey)}</h4>
+  const cols = b.rounds.map((ids, r) => `<div class="bround r${r % 2}"><h4>${t(`ko.round.${roundName(r, total)}` as MessageKey)}</h4>
     ${ids.map((id) => card(tm.matches[id])).join('')}</div>`).join('');
   const third = b.thirdPlaceId ? `<div style="max-width:240px;margin-block-start:8px"><h4 class="muted small">🥉 ${t('ko.round.third')}</h4>${card(tm.matches[b.thirdPlaceId])}</div>` : '';
   const places = placements(b, tm.matches);
@@ -1211,13 +1259,12 @@ function bracketView(tm: Tournament, b: Bracket): string {
   const podium = places.length ? `<h3 style="margin-block-start:14px">🏆 ${t('ko.podium')}</h3>
     <div class="podium">${step(2)}${step(1)}${step(3)}</div>
     ${who(4) ? `<p class="center muted">${t('place.4')}: <b dir="auto">${esc(playerName(tm, who(4)!.playerId))}</b></p>` : ''}` : '';
-  return `<div class="card">
-    <h2>${b.kind === 'main' ? '🏆 ' + t('ko.main') : '🥈 ' + esc(b.name)}</h2>
+  return bracketStage(tm, b, `<div class="card">
     ${hint('ko.hint')}
     <div class="bracket">${cols}</div>
     ${third}
     ${podium}
-  </div>`;
+  </div>`);
 }
 
 function knockoutView(tm: Tournament): string {

@@ -254,7 +254,14 @@ a.match:hover { border-color: var(--blue); }
 .bmatch .slot.win { background: #eafbe3; color: #23661a; }
 .bmatch .slot.empty { color: #b5c0d3; font-weight: 400; }
 .bround:not(:last-child) .bmatch::after {
-  content: ''; position: absolute; inset-inline-end: -20px; top: 50%; width: 18px; border-block-start: 2px solid var(--line);
+  content: ''; position: absolute; inset-inline-end: -36px; top: 50%; width: 34px; border-block-start: 2px solid var(--line);
+}
+/* Each round is its own tinted column with a coloured title, so rounds read apart at a glance. */
+.bround { padding: 8px; border-radius: 16px; background: #f6f8fc; }
+.bround.r1 { background: #eef3fa; }
+.bround h4 {
+  align-self: center; background: var(--sc, var(--navy)); color: #fff; border-radius: 999px;
+  padding: 3px 14px; font-size: 13px; font-weight: 900; margin-block-end: 6px;
 }
 
 /* Podium */
@@ -359,7 +366,7 @@ a.match:hover { border-color: var(--blue); }
   /* Phones: rounds stacked top to bottom instead of a wide horizontal tree. */
   .bracket { flex-direction: column; overflow: visible; gap: 10px; }
   .bround { width: auto; gap: 8px; }
-  .bround h4 { text-align: start; background: #edf1f8; border-radius: 10px; padding: 4px 10px; }
+  .bround h4 { align-self: flex-start; }
   .bround .bmatch::after { display: none; }
 }
 @media (max-width: 420px) {
@@ -486,6 +493,56 @@ form .btn.block { margin-block-start: 8px; }
 .sec-head { display: flex; align-items: center; justify-content: space-between; margin-block: 22px 6px; }
 .sec-head h2, h2.sec { display: flex; align-items: center; gap: 8px; font-size: 20px; }
 h2.sec, h3.sec { margin-block: 20px 8px; }
+/* Page sections: each sits on its own soft tint with a clear title (Omar, 2026-11-22). */
+.zone {
+  --zbg: #fff; --zline: var(--line); --zacc: var(--green-ink); --zsoft: var(--green-soft);
+  background: var(--zbg); border: 1px solid var(--zline); border-radius: 22px;
+  padding: 2px 14px 14px; margin-block: 18px;
+}
+.z-green { --zbg: #f0faea; --zline: #d3eec4; --zacc: var(--green-ink); --zsoft: #d9f4cb; }
+.z-blue { --zbg: #eef4fc; --zline: #d2e1f5; --zacc: var(--blue); --zsoft: #d8e6f8; }
+.z-gold { --zbg: #fff8e8; --zline: #f3e0ab; --zacc: #a86f00; --zsoft: #fdeabb; }
+.z-red { --zbg: #fdf2f2; --zline: #f3d5d7; --zacc: var(--red); --zsoft: #fadadd; }
+.z-navy { --zbg: #eff1f7; --zline: #d8deea; --zacc: var(--navy); --zsoft: #dce2ee; }
+.z-teal { --zbg: #ecf8f7; --zline: #cbebe8; --zacc: #0f766e; --zsoft: #d3f0ec; }
+.zone > .sec-head:first-child, .zone > h2.sec:first-child { margin-block-start: 14px; }
+.zone .tcarousel { margin-block-end: -6px; }
+/* Clear titles: a coloured bar at the start and the icon in a soft tile. */
+.sec-head h2, h2.sec {
+  font-weight: 900; color: var(--navy);
+  border-inline-start: 5px solid var(--zacc, var(--green)); border-radius: 3px; padding-inline-start: 10px;
+}
+.sec-head h2 .ic, h2.sec .ic {
+  color: var(--zacc, var(--green-ink)); background: var(--zsoft, var(--green-soft));
+  border-radius: 10px; padding: 5px; box-sizing: content-box; flex: none;
+}
+
+/* Tournament stages (groups, main knockout, class B): one coloured block each with its own header. */
+.stage {
+  --sc: var(--green-ink); --sc2: #45a634; --sbg: #f0faea; --sline: #cdeebf;
+  background: var(--sbg); border: 1px solid var(--sline); border-radius: 20px;
+  padding: 0 12px 12px; margin-block: 16px; overflow: hidden;
+}
+.st-main { --sc: var(--blue); --sc2: #1b7fd0; --sbg: #eef4fc; --sline: #cfe0f6; }
+.st-classb { --sc: #b85400; --sc2: #e07b00; --sbg: #fff5e8; --sline: #f4d9b3; }
+.stage-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 -12px 6px; padding: 12px 14px; color: #fff;
+  background: linear-gradient(135deg, var(--sc), var(--sc2));
+}
+.stage-head h2 { font-size: 17px; font-weight: 900; }
+.stage-head small { display: block; font-size: 12px; opacity: .92; }
+.st-ic { width: 40px; height: 40px; border-radius: 12px; background: #ffffff30; display: grid; place-items: center; font-size: 22px; flex: none; }
+.st-txt { flex: 1; min-width: 0; }
+.st-meta { background: #fff; color: var(--sc); font-weight: 800; font-size: 12px; border-radius: 999px; padding: 3px 12px; white-space: nowrap; }
+.stage .hint { margin-block: 10px 6px; }
+.gcard { border-block-start: 5px solid var(--gc, var(--line)); }
+.round-block { background: #fff; border: 1px solid var(--sline, var(--line)); border-radius: 16px; padding: 10px 12px 4px; margin-block: 12px; }
+.round-block .match { background: var(--sbg, #fff); }
+.round-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.round-title span { background: var(--sc, var(--navy)); color: #fff; border-radius: 999px; padding: 3px 14px; font-size: 14px; font-weight: 900; }
+.round-title small { color: var(--muted); font-size: 12px; font-weight: 700; }
+
 .more { display: inline-flex; align-items: center; gap: 2px; color: var(--blue); font-weight: 800; text-decoration: none; font-size: 14px; }
 
 /* Section banners */

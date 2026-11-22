@@ -5,7 +5,7 @@ import type { Post, PostCategory, PostLevel } from '../data/content';
 import { authErr, canWriteNews, checked, hint, isAdmin, loading, render, session, val } from '../app/ctx';
 import { cover, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
-import { avatarOf, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast, zone } from '../ui/util';
 
 export const CAT_ICON: Record<PostCategory, string> = {
   news: 'news', learn: 'book', tips: 'bulb', events: 'calendar', gear: 'racket', other: 'spark', rules: 'gavel', training: 'target',
@@ -120,7 +120,7 @@ function postPage(id: string): string {
       <a class="btn soft small" href="#/news/${p.id}/edit">${icon('edit', 16)} ${t('news.edit')}</a>
       <button class="btn ghost small" data-act="news-delete" data-id="${p.id}">${icon('trash', 16)} ${t('news.delete')}</button></div>` : ''}
   </article>
-  ${more.length ? `<h2 class="sec">${t('news.more')}</h2><div class="grid">${more.map((x) => postCard(x)).join('')}</div>` : ''}`;
+  ${more.length ? zone('blue', `<h2 class="sec">${icon('news', 22)} ${t('news.more')}</h2><div class="grid">${more.map((x) => postCard(x)).join('')}</div>`) : ''}`;
 }
 
 /** Article editor; `academy` starts a new article as a lesson (rules category) and returns to #/learn. */

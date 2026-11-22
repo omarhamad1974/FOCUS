@@ -64,3 +64,10 @@ export function confetti(): void {
     setTimeout(() => c.remove(), 4200);
   }
 }
+
+/** Tints for page sections: each section sits on its own soft colour with a clear title. */
+export type ZoneTone = 'green' | 'blue' | 'gold' | 'red' | 'navy' | 'teal';
+
+/** Wraps one page section (title + content) in a softly tinted panel. Empty content gives nothing. */
+export const zone = (tone: ZoneTone, inner: string, extra = ''): string =>
+  inner.trim() ? `<section class="zone z-${tone}${extra ? ' ' + extra : ''}">${inner}</section>` : '';

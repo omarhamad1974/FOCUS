@@ -12,6 +12,7 @@ import * as trainer from './trainer';
 import * as seller from './seller';
 import * as adminDesk from './adminDesk';
 import * as bio from './bio';
+import * as subs from './subs';
 
 export { setHost } from './host';
 
@@ -31,15 +32,17 @@ export function page(parts: string[]): string | null {
     if (held.length) { location.hash = `#/desk/${held.includes('admin') && !role ? 'admin' : held[0]}`; return null; }
     return deskShell('org', empty('shield', t('desk.noRole'), `<a class="btn gold small" href="#/me">${t('desk.askRole')}</a>`));
   }
-  let body = role === 'org' ? organizer.page(parts) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page() : adminDesk.page();
-  // Optional biography for organizers, trainers and sellers, on each tool's front page.
-  if (role !== 'admin' && !parts[2]) body = body.replace('</section>', () => `</section>${bio.card()}`);
+  let body = role === 'org' ? organizer.page(parts) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page()
+    : parts[2] === 'subs' ? subs.adminPage() : adminDesk.page();
+  // Subscription status and the optional biography for organizers, trainers and sellers, on each tool's front page.
+  if (role !== 'admin' && !parts[2]) body = body.replace('</section>', () => `</section>${subs.card(role)}${bio.card()}`);
   return deskShell(role, body, { org: organizer.pendingCount() });
 }
 
 export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
   const role = current();
   if (act.startsWith('dk-bio-')) return bio.onClick(act);
+  if (act.startsWith('dk-sub-')) return subs.onClick(act, el);
   if (act === 'dk-new-open' && role !== 'org') { location.hash = '#/desk/org'; return organizer.onClick(act, el); }
   if (role === 'org') return organizer.onClick(act, el);
   if (role === 'trainer') return trainer.onClick(act, el);
@@ -48,6 +51,7 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
 }
 
 export async function onChange(el: HTMLInputElement): Promise<boolean> {
+  if (el.dataset.act?.startsWith('dk-sub-')) return subs.onChange(el);
   const role = current();
   if (role === 'org') return organizer.onChange(el);
   if (role === 'trainer') return trainer.onChange(el);
@@ -55,7 +59,7 @@ export async function onChange(el: HTMLInputElement): Promise<boolean> {
   return false;
 }
 
-export const onSubmit = (kind: string) => organizer.onSubmit(kind);
+export const onSubmit = async (kind: string) => (kind.startsWith('dk-sub-') ? subs.onSubmit(kind) : organizer.onSubmit(kind));
 
 /** Forget loaded data (after sign-in changes or a refresh). */
-export function reset(): void { organizer.reset(); trainer.reset(); seller.reset(); }
+export function reset(): void { organizer.reset(); trainer.reset(); seller.reset(); subs.reset(); }

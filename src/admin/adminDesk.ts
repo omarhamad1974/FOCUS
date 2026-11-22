@@ -8,8 +8,10 @@ import { icon } from '../ui/icons';
 import { esc } from '../ui/util';
 import { simPlayersNow } from './api';
 import { ensureSim, simAvatar, tip } from './ui';
+import { adminSummary } from './subs';
 
 const TILES: [string, string, MessageKey, MessageKey][] = [
+  ['#/desk/admin/subs', 'money', 'desk.admin.subs', 'desk.admin.subsTip'],
   ['#/desk/org', 'trophy', 'desk.tab.org', 'desk.admin.orgTip'],
   ['#/desk/trainer', 'coach', 'desk.tab.trainer', 'desk.admin.trainerTip'],
   ['#/desk/seller', 'shop', 'desk.tab.seller', 'desk.admin.sellerTip'],
@@ -23,6 +25,7 @@ export function page(): string {
   const players = simPlayersNow();
   const year = new Date().getFullYear();
   return `<section class="banner b-admin slim"><div><h1>${icon('shield', 26)} ${t('desk.admin.title')}</h1><p>${t('desk.admin.hint')}</p></div></section>
+  ${adminSummary()}
   <div class="dk-tiles">${TILES.map(([href, ic, label, tipKey]) => `<a class="dk-tile rise" href="${href}">${icon(ic, 30)}<b>${t(label)}</b><small>${t(tipKey)}</small></a>`).join('')}</div>
   <div class="card">
     <div class="row between"><h2>👥 ${t('desk.admin.simPlayers')}</h2>${players ? `<span class="badge blue">${n(players.length)}</span>` : ''}</div>

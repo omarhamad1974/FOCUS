@@ -93,6 +93,9 @@ jobs:
         run: supabase db push --linked --yes
       - name: Deploy Edge Functions
         # admin-users checks the caller's session and role itself (see supabase/config.toml).
-        run: supabase functions deploy admin-users --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+        run: |
+          supabase functions deploy admin-users --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+          # Phone notifications (0020). Makes and keeps its own VAPID keys, no secrets to set.
+          supabase functions deploy send-push --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
       - name: Migration history now
         run: supabase migration list --linked

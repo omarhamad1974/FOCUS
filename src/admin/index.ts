@@ -18,6 +18,8 @@ import * as lists from '../pages/playerLists';
 import * as hall from './hall';
 import * as paySettings from './paySettings';
 import * as payUi from '../ui/pay';
+import * as wa from './whatsapp';
+import { host } from './host';
 
 export { setHost } from './host';
 
@@ -46,6 +48,7 @@ export function page(parts: string[]): string | null {
 
 export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
   const role = current();
+  if (act.startsWith('dk-wa-')) return wa.onClick(act, el, host.tournaments().find((x) => x.id === el.dataset.tid));
   if (act.startsWith('dk-bio-')) return bio.onClick(act);
   if (act.startsWith('dk-sub-')) return subs.onClick(act, el);
   if (act.startsWith('dk-pst-')) return posters.onClick(act, el);

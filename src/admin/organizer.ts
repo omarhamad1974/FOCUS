@@ -21,6 +21,7 @@ import type { BestOf, Bracket, Match, Tournament } from '../domain/types';
 import { championCelebration } from '../ui/champion';
 import { cover, empty } from '../ui/art';
 import { icon } from '../ui/icons';
+import * as wa from './whatsapp';
 import { avatar, confetti, esc, groupColor, toast } from '../ui/util';
 import { host } from './host';
 import * as api from './api';
@@ -204,7 +205,8 @@ function control(tm: Tournament): string {
     ${stepper(STEPS, step)}
   </section>
   ${panels[step](tm)}
-  ${paymentsCard(tm)}`;
+  ${paymentsCard(tm)}
+  ${wa.card(tm)}`;
 }
 
 /* Step 1: registration and the join simulation */

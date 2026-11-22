@@ -11,6 +11,7 @@ import type { Shop, ShopFields } from '../data/content';
 import { authErr, hint, isAdmin, isSeller, loading, n, render, session } from '../app/ctx';
 import { cover, empty, placeholder, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
+import { followButton } from './alerts';
 import { avatarOf, esc, toast } from '../ui/util';
 import { nameKey } from '../domain/tournament';
 import * as shop from './shop';
@@ -172,6 +173,7 @@ function shopPage(id: string): string {
     s.whatsapp ? `<a class="btn green" href="${esc(waLink(s.whatsapp))}" target="_blank" rel="noopener">${icon('whatsapp', 18)} ${t('shops.whatsapp')}</a>` : '',
     s.phone ? `<a class="btn soft" href="tel:${esc(s.phone)}">${icon('phone', 18)} ${t('shops.call')}</a>` : '',
     s.map_url ? `<a class="btn soft" href="${esc(s.map_url)}" target="_blank" rel="noopener">${icon('map', 18)} ${t('shops.map')}</a>` : '',
+    own ? '' : followButton(s.owner_id, 'btn gold'),
   ].join('');
   return `<a class="backlink" href="#/shops">${icon('back', 18)} ${t('shops.back')}</a>
   <section class="shop-hero rise">

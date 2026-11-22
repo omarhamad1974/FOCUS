@@ -13,3 +13,8 @@ enabled = false
 [functions.admin-users]
 # The function checks the caller's session and role itself (the claim action has no session).
 verify_jwt = false
+
+[functions.send-push]
+# Called by the database (pg_net, checked with the secret in push_config) and by the app for the
+# public VAPID key, so no user session is required.
+verify_jwt = false

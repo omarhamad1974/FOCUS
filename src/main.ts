@@ -36,15 +36,7 @@ import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
 
 /* ------------------------------------------------------------------ state */
 
-type View = 'player' | 'organizer';
-
 const prefs = {
-  get view(): View {
-    try { return (localStorage.getItem('pingo.view') as View) || 'organizer'; } catch { return 'organizer'; }
-  },
-  set view(v: View) {
-    try { localStorage.setItem('pingo.view', v); } catch { /* ignore */ }
-  },
   get hints(): boolean {
     try { return localStorage.getItem('pingo.hints') !== 'off'; } catch { return true; }
   },
@@ -55,7 +47,15 @@ const prefs = {
 
 let data: AppData = load();
 
-const isOrg = () => canOrganize() && prefs.view === 'organizer';
+/**
+ * Organizer tools show by themselves, with no player/organizer switch: on a
+ * tournament page only for the people who run it (its organizer or an admin);
+ * everyone else sees the player view. Without a tournament it just asks
+ * whether this user may organize at all (create button, wizard).
+ */
+const isOrg = (tm?: Tournament) => canOrganize() && (!tm || manages(tm));
+/** Same owner rule persist() uses to decide what may be saved. */
+const manages = (tm: Tournament) => !online() || isAdmin() || !tm.organizerId || tm.organizerId === session.profile?.id;
 
 /** JSON of each tournament as last saved on the server, to upload only changes. */
 const synced = new Map<string, string>();
@@ -170,7 +170,7 @@ function loadPhotos(tm: Tournament): void {
 }
 
 /** May this user enter results in this tournament (organizer view, or assistant)? */
-const canScore = (tm: Tournament) => isOrg() || isAssistantFor(tm.id);
+const canScore = (tm: Tournament) => isOrg(tm) || isAssistantFor(tm.id);
 
 function stageIndex(tm: Tournament): number {
   if (tm.stage === 'setup') return 0;
@@ -263,7 +263,6 @@ function navItems(): [Section, string, string, MessageKey][] {
 }
 
 function shell(body: string): void {
-  const v = prefs.view;
   const sec = section();
   document.body.classList.toggle('no-hints', !prefs.hints);
   document.body.dataset.section = sec;
@@ -274,10 +273,6 @@ function shell(body: string): void {
     <nav class="topnav" aria-label="${esc(t('nav.label'))}">${nav.filter(([k]) => k !== 'me').map(([k, href, ic, label]) =>
       `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>
     <span class="spacer"></span>
-    ${canOrganize() && (sec === 'tournaments' || sec === 'home') ? `<div class="switch" role="group" aria-label="${esc(t('view.hint'))}" title="${esc(t('view.hint'))}">
-      <button data-act="view" data-v="player" aria-pressed="${v === 'player'}">🎾 <span class="hide-xs">${t('view.player')}</span></button>
-      <button data-act="view" data-v="organizer" aria-pressed="${v === 'organizer'}">🛠️ <span class="hide-xs">${t('view.organizer')}</span></button>
-    </div>` : ''}
     ${online() ? (session.profile
       ? `<a class="acct" href="#/me" title="${esc(t('me.title'))}">${avatarOf(session.profile)}<span class="hide-sm">${esc(session.profile.full_name)}</span></a>`
       : `<a class="btn small" href="#/login">${t('auth.login')}</a>`) : ''}
@@ -520,8 +515,6 @@ function tournamentsPage(filterArg?: string): string {
   const canMine = canOrganize() && !!session.profile;
   const filter: ListFilter = filterArg === 'mine' && canMine ? 'mine'
     : (PUBLIC_STATUSES as string[]).includes(filterArg ?? '') ? filterArg as PublicStatus : 'all';
-  // The organizer shortcut lands here: open it in organizer view so the tools are ready.
-  if (filter === 'mine' && prefs.view !== 'organizer') prefs.view = 'organizer';
   const places = tournamentLocations(ts);
   if (listFilters.place && !places.includes(listFilters.place)) listFilters.place = '';
   const inWindow = ts.filter((x) => matchesTime(x, listFilters.time) && matchesLocation(x, listFilters.place));
@@ -746,8 +739,8 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
   const p = progress(tm);
   const tabs: [Tab, MessageKey][] = [['groups', 't.tab.groups'], ['matches', 't.tab.matches'], ['knockout', 't.tab.knockout']];
   if (online() && tm.stage === 'setup') tabs.unshift(['register', 'reg.tab']);
-  if (online() && ((tm.media?.length ?? 0) > 0 || isOrg())) tabs.push(['media', 'media.tab']);
-  if (isOrg()) tabs.push(['settings', 't.tab.settings']);
+  if (online() && ((tm.media?.length ?? 0) > 0 || isOrg(tm))) tabs.push(['media', 'media.tab']);
+  if (isOrg(tm)) tabs.push(['settings', 't.tab.settings']);
   loadPhotos(tm);
   let body = '';
   if (tab === 'register') body = registerView(tm);
@@ -756,7 +749,7 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
   else if (tab === 'knockout') body = knockoutView(tm);
   else if (tab === 'media') body = mediaView(tm);
   else body = settingsView(tm);
-  if (isAssistantFor(tm.id) && !isOrg()) body = `<div class="hint">${t('assist.youAre')}</div>` + body;
+  if (isAssistantFor(tm.id) && !isOrg(tm)) body = `<div class="hint">${t('assist.youAre')}</div>` + body;
   const org = tm.organizerId ? content.person(tm.organizerId) : undefined;
   return `
   <section class="hero ${tm.cover ? 't-hero' : ''}">
@@ -768,7 +761,7 @@ function tournamentPage(tm: Tournament, tab: Tab): string {
     <div class="row between small" style="margin-block-start:10px"><span>${t('t.progress')}</span><span>${n(p.done)} / ${n(p.total)}</span></div>
     ${xp(p.done, p.total)}
   </section>
-  ${isOrg() ? simCard(tm) : ''}
+  ${isOrg(tm) ? simCard(tm) : ''}
   <nav class="tabs" style="margin-block:14px 4px">${tabs.map(([k, l]) => `<a href="#/t/${tm.id}/${k}" ${k === tab ? 'aria-current="page"' : ''}>${t(l)}</a>`).join('')}</nav>
   ${body}`;
 }
@@ -819,7 +812,7 @@ let selectedChip: string | null = null;
 let extraPickFor: string | null = null;
 
 function setupBoard(tm: Tournament): string {
-  const org = isOrg();
+  const org = isOrg(tm);
   const seedOf = (id: string) => tm.players.findIndex((p) => p.id === id) + 1;
   const biggest = Math.max(...tm.groups.map((g) => g.playerIds.length));
   const homeName = (pid: string) => groupOf(tm, pid)?.name ?? '';
@@ -1064,7 +1057,7 @@ function standingsTable(tm: Tournament, gi: number): string {
 const tieDrafts = new Map<string, string[]>();
 function tieResolver(tm: Tournament, gi: number, groups: string[][]): string {
   const g = tm.groups[gi];
-  if (!isOrg()) return `<div class="err">⏳ ${t('tie.waiting')}</div>`;
+  if (!isOrg(tm)) return `<div class="err">⏳ ${t('tie.waiting')}</div>`;
   return groups.map((ids, k) => {
     const key = `${g.id}:${k}`;
     const order = tieDrafts.get(key) ?? ids;
@@ -1088,12 +1081,12 @@ function groupsView(tm: Tournament): string {
     ${tm.consolation.enabled ? `<span><i style="background:var(--warn)"></i>${t('standings.consolation')} · ${esc(tm.consolation.name)}</span>` : ''}
     ${tm.groups.some((g) => g.extraIds?.length) ? `<span>🧩 ${t('extra.legend')}</span>` : ''}</div>`;
   const ready = groupsComplete(tm);
-  const startKo = isOrg() && tm.stage === 'groups' ? `<div class="card">
+  const startKo = isOrg(tm) && tm.stage === 'groups' ? `<div class="card">
     ${hint('ko.startHint')}
     <button class="btn green block" data-act="start-ko" ${ready ? '' : 'disabled'}>⚔️ ${t('ko.start')}</button>
     ${ready ? '' : `<p class="muted small center">${t('ko.notReady')}</p>`}
   </div>` : '';
-  return `${isOrg() ? tablesCard(tm) : ''}${hint(recordsPoints(tm) ? 'standings.hint' : 'standings.hintGames')}${legend}
+  return `${isOrg(tm) ? tablesCard(tm) : ''}${hint(recordsPoints(tm) ? 'standings.hint' : 'standings.hintGames')}${legend}
     ${tm.groups.map((_, i) => standingsTable(tm, i)).join('')}
     ${startKo}
     ${statsCard(tm)}`;
@@ -1219,7 +1212,7 @@ function scoringChoice(points: boolean, act: string): string {
 }
 
 function settingsView(tm: Tournament): string {
-  if (!isOrg()) return '';
+  if (!isOrg(tm)) return '';
   const locked = tm.stage !== 'setup';
   const row = (k: keyof StageFormats) => `
     <div class="row between" style="margin-block:8px"><b>${t(`format.${k}` as MessageKey)}</b>
@@ -1269,7 +1262,7 @@ function youtubeId(url: string): string | null {
 
 function mediaView(tm: Tournament): string {
   const items = tm.media ?? [];
-  const org = isOrg();
+  const org = isOrg(tm);
   const item = (x: NonNullable<Tournament['media']>[number]) => {
     const yt = x.kind === 'video' ? youtubeId(x.url) : null;
     const view = x.kind === 'photo'
@@ -1471,7 +1464,7 @@ function scorePage(tm: Tournament, m: Match): string {
       <button class="btn soft" data-act="walkover" data-s="b" dir="auto">${esc(b)}</button>
     </div>
   </div>
-  ${isOrg() ? `<p class="muted small center">⚙️ ${t(detailed ? 'score.modePoints' : 'score.modeResult')} · <a href="#/t/${tm.id}/settings">${t('score.changeMode')}</a></p>` : ''}
+  ${isOrg(tm) ? `<p class="muted small center">⚙️ ${t(detailed ? 'score.modePoints' : 'score.modeResult')} · <a href="#/t/${tm.id}/settings">${t('score.changeMode')}</a></p>` : ''}
   ${history}`;
 }
 
@@ -1948,7 +1941,7 @@ function registerView(tm: Tournament): string {
     <span class="badge ${reg.open ? 'gold' : ''}">${reg.open ? t('reg.open') : t('reg.closed')}</span></div>
     ${reg.maxPlayers ? `${xp(approved.length, reg.maxPlayers)}<p class="small muted">${countText}</p>` : ''}`;
 
-  if (!isOrg()) {
+  if (!isOrg(tm)) {
     const mine = session.profile ? regs.find((r) => r.player_id === session.profile!.id) : undefined;
     let action = '';
     if (!session.profile) action = reg.open ? `<a class="btn gold block" href="#/login">👤 ${t('auth.needLogin')}</a>` : '';
@@ -2255,7 +2248,7 @@ function draw(): void {
       shell(scorePage(tm, tm.matches[parts[3]]));
     } else {
       let tab = (parts[2] as Tab) || (tm.stage === 'knockout' ? 'knockout' : online() && tm.stage === 'setup' ? 'register' : 'groups');
-      if (tab === 'settings' && !isOrg()) tab = 'groups';
+      if (tab === 'settings' && !isOrg(tm)) tab = 'groups';
       if (tab === 'media' && !online()) tab = 'groups';
       if (tab === 'register' && (!online() || tm.stage !== 'setup')) tab = 'groups';
       shell(tournamentPage(tm, tab));
@@ -2302,7 +2295,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act.startsWith('adm-') || act.startsWith('pv-')) { void admin.onClick(act, el); return; }
-  if (act.startsWith('sim-') && tm && isOrg()) { simAction(act, el, tm); return; }
+  if (act.startsWith('sim-') && tm && isOrg(tm)) { simAction(act, el, tm); return; }
   if (act === 'rm-player' && tm && !online()) { removePlayerFromSetup(tm, el.dataset.pid!); persist(); route(); return; }
   if (online() && ONLINE_ACTS.has(act)) {
     void onlineAction(act, el, tm);
@@ -2319,12 +2312,6 @@ document.addEventListener('click', (e) => {
       delete tm.cover;
       persist(); admin.reset(); toast(t('admin.saved'));
       route();
-      return;
-    case 'view':
-      prefs.view = el.dataset.v as View;
-      selectedChip = null;
-      route();
-      toast(el.dataset.v === 'player' ? `🎾 ${t('view.player')}` : `🛠️ ${t('view.organizer')}`);
       return;
     case 'hints':
       prefs.hints = !prefs.hints;
@@ -2414,7 +2401,7 @@ document.addEventListener('click', (e) => {
       route();
       return;
     case 'extra-add':
-      if (!tm || !isOrg()) return;
+      if (!tm || !isOrg(tm)) return;
       try { addExtraPlayer(tm, el.dataset.pid!, el.dataset.gid!); } catch { return; }
       extraPickFor = null;
       persist();
@@ -2422,7 +2409,7 @@ document.addEventListener('click', (e) => {
       route();
       return;
     case 'rm-extra':
-      if (!tm || !isOrg()) return;
+      if (!tm || !isOrg(tm)) return;
       removeExtraPlayer(tm, el.dataset.pid!, el.dataset.gid!);
       persist();
       route();
@@ -2476,7 +2463,7 @@ document.addEventListener('click', (e) => {
     case 'tables-save':
     case 'tables-auto':
     case 'tables-clear': {
-      if (!tm || !isOrg()) return;
+      if (!tm || !isOrg(tm)) return;
       if (act === 'tables-auto') numberTables(tm);
       else document.querySelectorAll<HTMLInputElement>('[data-table-gid]').forEach((inp) =>
         setGroupTable(tm, inp.dataset.tableGid!, act === 'tables-clear' ? '' : inp.value));

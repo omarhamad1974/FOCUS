@@ -1358,3 +1358,25 @@ a.seller:hover { outline: 2px solid var(--green); }
 .batch-preview .chip .avatar { width: 28px; height: 28px; }
 .dir-new { gap: 6px; margin-block-start: 6px; }
 .user-edit { margin-block-start: 8px; padding: 10px; border-radius: 12px; background: #f7f9fd; }
+
+/* Subscriptions (role tools) */
+.dk-plan { border: 2px solid var(--line); }
+.dk-plan h2 { margin: 0; }
+.dk-plan.st-active { border-color: #cdeec0; }
+.dk-plan.st-soon, .dk-plan.st-none { border-color: #f5e3a3; }
+.dk-plan.st-expired { border-color: #f3c6c9; background: linear-gradient(180deg, #fff8f8, var(--card) 40%); }
+.sub-msg { margin: 8px 0 0; padding: 8px 12px; border-radius: 12px; background: #fffbea; border: 1px solid #f5e3a3; font-weight: 700; font-size: 14px; }
+.sub-msg.bad { background: #fff4f4; border-color: #f3c6c9; color: #a8101c; }
+.sub-box .pay-cell small + b + small { margin-block-start: 2px; }
+.sub-box .pay-cell b { display: block; font-size: clamp(14px, 2.6vw, 18px); }
+.sub-prices { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-block: 6px; }
+.sub-price { background: #f4f7fb; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 700; }
+.sub-how { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.sub-how .hint { flex: 1 1 260px; margin: 0; }
+.sub-roles { margin-block: 8px 4px; }
+.sub-form { background: #f7fbff; border: 2px dashed #b8d3f0; border-radius: 16px; padding: 12px; display: grid; gap: 10px; }
+.sub-form h3 { margin: 0; }
+.sub-prices-form { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.due-amt, .due-amt b { color: #a8101c; }
+.sub-sum { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; text-decoration: none; color: inherit; margin-block-end: 12px; border: 2px solid #cdeec0; }
+.sub-sum > b { flex-basis: 100%; }

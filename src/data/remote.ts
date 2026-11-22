@@ -16,6 +16,7 @@ export interface Profile {
   is_organizer?: boolean;
   is_seller?: boolean;
   is_trainer?: boolean;
+  is_hall?: boolean;
   bio?: string | null;
   avatar_url?: string | null;
   gender?: Gender | null;
@@ -33,6 +34,8 @@ export interface Registration {
   player_id: string;
   status: RegStatus;
   created_at: string;
+  /** Entry fee confirmed by the organizer (0017). */
+  paid?: boolean;
   /** Joined from player_directory (or profiles for organizers). */
   full_name?: string;
   club?: string | null;

@@ -16,7 +16,7 @@ import { online, SUPPORT_WHATSAPP } from './config';
 import { DEFAULT_PASSWORD, loginEmail, normalizeMobile } from './domain/mobile';
 import * as remote from './data/remote';
 import { addExtraPlayer, addPlayerToSetup, closeRegistration, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
-import { assisting, canOrganize, isAdmin, isAssistantFor, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
+import { assisting, canOrganize, isAdmin, isAssistantFor, isHall, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
 import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PUBLIC_STATUSES, publicStatus, sortForListing, TIME_FILTERS, topTwo, tournamentLocations, type PublicStatus, type TimeFilter } from './domain/tournament';
 import * as admin from './pages/admin';
 import * as content from './data/content';
@@ -30,6 +30,9 @@ import * as deskApi from './admin/api';
 import * as invites from './pages/invites';
 import * as profile from './pages/profile';
 import * as join from './pages/join';
+import * as hallsPage from './pages/halls';
+import * as payUi from './ui/pay';
+import * as pay from './data/pay';
 import { icon } from './ui/icons';
 import { cover, empty, heroArt } from './ui/art';
 import { carLogo, fadeSwipe, fadeTo } from './ui/carouselFade';
@@ -94,7 +97,7 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
-    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset();
+    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); hallsPage.reset(); payUi.forget();
     regCache.clear();
     assisting.clear();
     if (session.profile) {
@@ -234,17 +237,18 @@ function workspaceBar(): string {
   if (canOrganize()) links.push(['#/desk/org', 'trophy', 'ws.myTournaments', 'ws.myTournamentsTip', here.startsWith('#/tournaments/mine')]);
   if (isSeller()) links.push(['#/desk/seller', 'shop', 'ws.myProducts', 'ws.myProductsTip', here.startsWith('#/shop/manage')]);
   if (isTrainer()) links.push(['#/desk/trainer', 'coach', 'ws.mySessions', 'ws.mySessionsTip', here.startsWith('#/training/manage')]);
+  if (isHall()) links.push(['#/desk/hall', 'table', 'ws.myHall', 'ws.myHallTip', false]);
   if (isAdmin()) links.push(['#/desk/admin', 'shield', 'ws.adminDesk', 'ws.adminDeskTip', false]);
   if (!links.length) return '';
   return `<nav class="wsbar" aria-label="${esc(t('ws.label'))}"><span class="ws-label">${icon('grid', 16)} <span class="ws-name">${t('ws.label')}</span></span>
     ${links.map(([href, ic, label, tip, on]) => `<a class="ws-btn" href="${href}" title="${esc(t(tip))}" ${on ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>`;
 }
 
-type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'me';
+type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'halls' | 'me';
 
 function section(): Section {
   const p = location.hash.replace(/^#\/?/, '').split('/')[0];
-  if (p === 'news' || p === 'shop' || p === 'training') return p;
+  if (p === 'news' || p === 'shop' || p === 'training' || p === 'halls') return p;
   if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org') return 'tournaments';
   if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
   return 'home';
@@ -256,7 +260,7 @@ function navItems(): [Section, string, string, MessageKey][] {
     ['tournaments', '#/tournaments', 'trophy', 'nav.tournaments'],
   ];
   if (online()) {
-    items.push(['news', '#/news', 'news', 'nav.news'], ['shop', '#/shop', 'shop', 'nav.shop'], ['training', '#/training', 'coach', 'nav.training']);
+    items.push(['news', '#/news', 'news', 'nav.news'], ['shop', '#/shop', 'shop', 'nav.shop'], ['training', '#/training', 'coach', 'nav.training'], ['halls', '#/halls', 'table', 'nav.halls']);
     items.push(['me', session.profile ? '#/me' : '#/login', 'user', session.profile ? 'nav.me' : 'auth.login']);
   }
   return items;
@@ -1549,7 +1553,7 @@ function genderPick(name: string, current: string, fullName: string): string {
 
 async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
   keepAuthVals(true);
-  for (const r of ['organizer', 'seller', 'trainer']) { const c = document.getElementById(`aWant-${r}`) as HTMLInputElement | null; if (c) authVals[`aWant-${r}`] = c.checked ? '1' : ''; }
+  for (const r of EXTRA) { const c = document.getElementById(`aWant-${r}`) as HTMLInputElement | null; if (c) authVals[`aWant-${r}`] = c.checked ? '1' : ''; }
   const login = kind === 'login' ? val('aLogin') : val('aMobile'), password = val('aPass');
   if (!login || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
   if (!loginEmail(login) || (kind === 'signup' && !normalizeMobile(login))) { authMsg = t('auth.err.badMobile'); route(); return; }
@@ -1638,9 +1642,9 @@ function loginCard(): string {
   </div>`;
 }
 
-const EXTRA: content.ExtraRole[] = ['organizer', 'seller', 'trainer'];
-const ROLE_ICON: Record<content.ExtraRole, string> = { organizer: 'trophy', seller: 'shop', trainer: 'coach' };
-const hasRole = (r: content.ExtraRole) => (r === 'organizer' ? canOrganize() : r === 'seller' ? isSeller() : isTrainer());
+const EXTRA: content.ExtraRole[] = ['organizer', 'seller', 'trainer', 'hall'];
+const ROLE_ICON: Record<content.ExtraRole, string> = { organizer: 'trophy', seller: 'shop', trainer: 'coach', hall: 'table' };
+const hasRole = (r: content.ExtraRole) => (r === 'organizer' ? canOrganize() : r === 'seller' ? isSeller() : r === 'hall' ? isHall() : isTrainer());
 
 function rolesCard(): string {
   if (myRoleReqs === null) {
@@ -1655,7 +1659,7 @@ function rolesCard(): string {
       const state = has ? `<span class="badge green">${icon('check', 14)} ${t('roles.active')}</span>`
         : rq?.status === 'pending' ? `<span class="badge gold">${icon('clock', 14)} ${t('roles.pending')}</span>`
         : `<button class="btn soft small" data-act="role-request" data-v="${r}">${icon('plus', 14)} ${t(rq?.status === 'rejected' ? 'roles.again' : 'roles.request')}</button>`;
-      const link = has ? (r === 'organizer' ? '#/tournaments' : r === 'seller' ? '#/shop/manage' : '#/training/manage') : '';
+      const link = has ? (r === 'organizer' ? '#/tournaments' : r === 'seller' ? '#/shop/manage' : r === 'hall' ? '#/desk/hall' : '#/training/manage') : '';
       return `<div class="role-card ${has ? 'on' : ''}"><span class="role-ic">${icon(ROLE_ICON[r], 24)}</span>
         <div><b>${t(`roles.${r}` as MessageKey)}</b><br><small class="muted">${t(`roles.${r}Text` as MessageKey)}</small></div>
         <div class="role-state">${state}${link ? `<a class="btn small" href="${link}">${t('roles.open')}</a>` : ''}</div></div>`;
@@ -1675,6 +1679,7 @@ function mePage(): string {
     <div class="row" style="gap:6px">${roleBadges || `<span class="badge">${t('role.player')}</span>`}</div></div></div></section>
   ${invites.banner()}
   ${training.myBookingsCard()}
+  ${hallsPage.myCard()}
   ${shop.myOrdersCard()}
   <div class="card"><h3>${icon('trophy', 20)} ${t('me.myTournaments')}</h3>
     ${myRegs.length ? myRegs.map(reg).join('') : `<p class="muted">${t('me.none')}</p>`}
@@ -1695,7 +1700,7 @@ function mePage(): string {
       <label class="field"><span>${t('auth.phone')}</span><input class="input" id="mPhone" type="tel" value="${esc(p.phone ?? '')}" dir="ltr"></label>
       <div class="row"><label class="field" style="flex:1"><span>${t('auth.birthYear')}</span><input class="input" id="mYear" inputmode="numeric" value="${p.birth_year ?? ''}" dir="ltr"></label>
       <label class="field" style="flex:2"><span>${t('auth.club')}</span><input class="input" id="mClub" value="${esc(p.club ?? '')}" dir="auto"></label></div>
-      ${isTrainer() || isSeller() || canOrganize() ? `<label class="field"><span>${t('me.bio')} <small class="muted">(${t('bio.optional')})</small></span><textarea class="input" id="mBio" dir="auto" style="min-height:90px" maxlength="600" placeholder="${esc(t('me.bioPh'))}">${esc(p.bio ?? '')}</textarea></label>` : ''}
+      ${isTrainer() || isSeller() || isHall() || canOrganize() ? `<label class="field"><span>${t('me.bio')} <small class="muted">(${t('bio.optional')})</small></span><textarea class="input" id="mBio" dir="auto" style="min-height:90px" maxlength="600" placeholder="${esc(t('me.bioPh'))}">${esc(p.bio ?? '')}</textarea></label>` : ''}
       <button class="btn green" type="submit">${icon('check')} ${t('me.save')}</button>
     </form>
   </div>
@@ -1785,6 +1790,7 @@ function usersPage(): string {
     ['is_organizer', 'roles.organizer', (p) => p.role === 'organizer' || !!p.is_organizer],
     ['is_seller', 'roles.seller', (p) => !!p.is_seller],
     ['is_trainer', 'roles.trainer', (p) => !!p.is_trainer],
+    ['is_hall', 'roles.hall', (p) => !!p.is_hall],
     ['admin', 'role.admin', (p) => p.role === 'admin'],
   ];
   const pending = pendingUsers === null
@@ -1922,7 +1928,13 @@ function loadRegs(id: string): void {
   if (regLoading.has(id)) return;
   regLoading.add(id);
   remote.tournamentRegistrations(id)
-    .then(async (r) => { regCache.set(id, r); await content.people(r.map((x) => x.player_id)).catch(() => undefined); })
+    .then(async (r) => {
+      regCache.set(id, r);
+      const org = findT(id)?.organizerId;
+      const mine = session.profile ? r.find((x) => x.player_id === session.profile!.id) : undefined;
+      await Promise.all([content.people(r.map((x) => x.player_id)), org ? pay.settingsOf([org]) : null,
+        mine ? (payUi.forget('tournament'), payUi.load('tournament', [mine.id])) : null]).catch(() => undefined);
+    })
     .catch(() => regCache.set(id, []))
     .finally(() => { regLoading.delete(id); route(); });
 }
@@ -1946,12 +1958,19 @@ function registerView(tm: Tournament): string {
     let action = '';
     if (!session.profile) action = reg.open ? `<a class="btn gold block" href="#/login">👤 ${t('auth.needLogin')}</a>` : '';
     else if (mine && (mine.status === 'pending' || mine.status === 'approved')) {
+      const set = tm.organizerId ? pay.settingsNow(tm.organizerId) : null;
+      const start = pay.tournamentStart(tm.date, tm.time);
+      const dl = pay.cancelDeadline(start, set?.cancel_hours);
+      const canWithdraw = pay.canCancel(start, set?.cancel_hours);
       action = `<div class="hint" style="background:${mine.status === 'approved' ? '#eafbe3' : ''}">${t(`reg.status.${mine.status}` as MessageKey)}</div>
-        ${reg.open ? `<button class="btn ghost small" data-act="withdraw">${t('reg.withdraw')}</button>` : ''}`;
+        ${payUi.payerBox({ kind: 'tournament', ref: mine.id, amount: Number(tm.fee) || 0, settings: set, paid: !!mine.paid || (tm.paid ?? []).includes(mine.player_id) })}
+        ${reg.open ? (canWithdraw ? `<button class="btn ghost small" data-act="withdraw">${t('reg.withdraw')}</button>${dl ? ` <small class="muted">${t('reg.withdrawUntil', { when: dateTimeFmt.format(dl) })}</small>` : ''}`
+          : `<p class="small muted">🔒 ${t('reg.withdrawClosed')}</p>`) : ''}`;
     } else if (mine?.status === 'rejected') action = `<div class="err">${t('reg.status.rejected')}</div>`;
     else if (invites.pendingFor(tm.id)) action = invites.forTournament(tm.id);
     else if (reg.open) action = `<button class="btn green block" data-act="join" ${busy ? 'disabled' : ''}>🏓 ${t('reg.join')}</button>`;
-    return `<div class="card">${status}${action}
+    const orgWa = tm.organizerId ? payUi.waButton(pay.settingsNow(tm.organizerId), t('reg.waText', { name: tm.name }), 'reg.contactOrg') : '';
+    return `<div class="card">${status}${action}${orgWa ? `<div class="row" style="margin-block-start:8px">${orgWa}</div>` : ''}
         <a class="faq-mini" href="#/faq/${mine && (mine.status === 'pending' || mine.status === 'approved') ? 'withdraw' : 'join'}">${icon('help', 16)} ${t(mine && (mine.status === 'pending' || mine.status === 'approved') ? 'faq.withdraw.q' : 'faq.join.q')}</a></div>
       <div class="card"><h3>✅ ${t('reg.approved')} (${countText})</h3>
         ${approved.length ? approved.map((r) => person(r)).join('') : `<p class="muted">${t('reg.empty')}</p>`}</div>`;
@@ -2192,9 +2211,9 @@ function draw(): void {
     shell(wizardPage());
   } else if (parts[0] === 'tournaments') {
     shell(tournamentsPage(parts[1]));
-  } else if (['news', 'shop', 'training'].includes(parts[0])) {
+  } else if (['news', 'shop', 'training', 'halls'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
-    shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? '');
+    shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? hallsPage.route(parts) ?? '');
   } else if (parts[0] === 'faq') {
     shell(faq.route(parts) ?? '');
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
@@ -2276,6 +2295,8 @@ document.addEventListener('click', (e) => {
   const m = here.m;
   if (act.startsWith('inv-')) { void invites.onClick(act, el); return; }
   if (act.startsWith('dk-')) { void desk.onClick(act, el); return; }
+  if (act.startsWith('pay-')) { void payUi.onClick(act, el); return; }
+  if (act.startsWith('hl-')) { void hallsPage.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
     return;
@@ -2906,7 +2927,7 @@ if (online()) {
 }
 
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#/login' && /^#\/(t|news|shop|training|claim|desk)\//.test(lastHash)) {
+  if (location.hash === '#/login' && /^#\/(t|news|shop|training|halls|claim|desk)\//.test(lastHash)) {
     try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
   }
   lastHash = location.hash;

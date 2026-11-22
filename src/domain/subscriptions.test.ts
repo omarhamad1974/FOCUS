@@ -67,6 +67,15 @@ describe('revenue', () => {
       sub({}), sub({ role: 'seller', plan: 'unlimited', paid_at: '2026-10-03T09:00:00Z' }), sub({ paid: false, amount: 5000 }),
     ], '2026-11-22');
     expect(r).toMatchObject({ collected: 1000, thisMonth: 500, due: 5000, paidCount: 2, count: 3 });
-    expect(r.byRole).toEqual({ organizer: 500, trainer: 0, seller: 500 });
+    expect(r.byRole).toEqual({ organizer: 500, trainer: 0, seller: 500, hall: 0 });
+  });
+});
+
+describe('hall owners', () => {
+  it('pay monthly or yearly like trainers, with their own prices', () => {
+    const s = cleanSettings({ hall_month: '300', hall_year: 3000 });
+    expect(priceOf(s, 'hall', 'monthly')).toBe(300);
+    expect(priceOf(s, 'hall', 'yearly')).toBe(3000);
+    expect(yearlySaving(s, 'hall').amount).toBe(600);
   });
 });

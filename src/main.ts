@@ -433,8 +433,8 @@ function homePage(): string {
     ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
     ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
   </div>
-  <a class="card faq-cta jn-home rise" href="#/join"><span class="faq-ic">${icon('spark', 26)}</span>
-    <span><b>بينجو لمين؟</b><br><small class="muted">لاعب، منظم بطولات، مدرب أو بائع: اعرف مزاياك وأسعار الإطلاق</small></span>${icon('chevron', 18)}</a>
+  <a class="card faq-cta jn-home rise" href="#/soon"><span class="faq-ic">${icon('spark', 26)}</span>
+    <span><b>بينجو لمين؟</b><br><small class="muted">لاعب، منظم بطولات، مدرب أو بائع: اعرف مزايا كل دور</small></span>${icon('chevron', 18)}</a>
   <a class="card faq-cta rise" href="#/faq"><span class="faq-ic">${icon('help', 26)}</span>
     <span><b>${t('faq.title')}</b><br><small class="muted">${t('faq.homeText')}</small></span>${icon('chevron', 18)}</a>
   <div class="sec-head"><h2>${icon('star', 22)} ${t('home.shopPicks')}</h2>${more('#/shop')}</div>
@@ -2000,7 +2000,10 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
       } catch (e) { toast(authErr(e)); }
       route(); return true;
     case 'jn-scroll':
-      document.getElementById('jn-features')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById(el.dataset.to ?? '')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    case 'pst-share':
+      join.sharePoster(el.dataset.role as join.JoinRole).then((msg) => { if (msg) toast(msg); });
       return true;
     case 'auth-tab':
       keepAuthVals();
@@ -2205,8 +2208,17 @@ function draw(): void {
   } else if (parts[0] === 'faq') {
     shell(faq.route(parts) ?? '');
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
+  } else if (parts[0] === 'soon' || parts[0] === 'poster') {
+    // Launch material: the coming soon page and the online posters, full screen without the site frame.
+    document.body.classList.toggle('no-hints', !prefs.hints);
+    document.body.dataset.section = parts[0];
+    const role = parts[1] as join.JoinRole;
+    app.innerHTML = parts[0] === 'poster' && join.JOIN_ROLES.includes(role) ? join.posterPage(role) : join.soonPage();
+    window.scrollTo(0, 0);
   } else if (parts[0] === 'join') {
-    shell(join.route(parts) ?? '');
+    const html = join.route(parts);
+    if (html === null) return;
+    shell(html);
   } else if (parts[0] === 'login' && online()) {
     // #/login/signup/organizer: the landing pages open sign-up with the role ticked.
     if (parts[1] === 'signup' && !session.profile) {

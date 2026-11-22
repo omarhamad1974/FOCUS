@@ -13,7 +13,6 @@ export type JoinRole = 'player' | 'organizer' | 'trainer' | 'seller';
 export const JOIN_ROLES: JoinRole[] = ['player', 'organizer', 'trainer', 'seller'];
 
 type Item = [icon: string, title: string, text: string];
-type Price = { amount: string; unit: string; note?: string };
 
 interface RolePage {
   icon: string;
@@ -27,19 +26,17 @@ interface RolePage {
   /** Every feature the role has in the app today. */
   features: Item[];
   steps: string[];
-  prices: Price[];
-  priceNote: string;
   cta: string;
 }
 
-/** Launch prices from Omar's plan (2026-11-22). The admin can change them later in the app. */
+/** What each role gets. No prices here: the launch material talks about features only (Omar, 2026-11-22). */
 export const PAGES: Record<JoinRole, RolePage> = {
   player: {
     icon: 'ball',
     name: 'اللاعبون',
     tag: 'بطولات، نتائج مباشرة، ترتيب وحجز تدريب',
     title: 'العب. نافس. اصعد الترتيب.',
-    lead: 'كل بطولات تنس الطاولة حولك في مكان واحد، بنتائج مباشرة وإحصائيات لك وحدك. مجاناً بالكامل.',
+    lead: 'كل بطولات تنس الطاولة حولك في مكان واحد، بنتائج مباشرة وإحصائيات لك وحدك، وكلها من هاتفك.',
     highlights: [
       ['trophy', 'انضم للبطولات بضغطة', 'تصفح البطولات المفتوحة حسب المكان والموعد وانضم من هاتفك.'],
       ['bolt', 'نتائج مباشرة', 'مجموعتك وجدول الترتيب والأدوار الإقصائية لحظة بلحظة.'],
@@ -61,9 +58,7 @@ export const PAGES: Record<JoinRole, RolePage> = {
       ['news', 'أخبار ونصائح', 'أخبار البطولات ونصائح اللعب والأدوات في مكان واحد.'],
     ],
     steps: ['سجّل برقم موبايلك', 'اختر بطولة وانضم', 'العب وتابع نتائجك مباشرة', 'شارك إنجازك واصعد الترتيب'],
-    prices: [{ amount: 'مجاناً', unit: 'دائماً', note: 'كل مزايا اللاعب بدون أي رسوم' }],
-    priceNote: 'رسوم البطولات وحصص التدريب يحددها المنظم أو المدرب وتُدفع له مباشرة.',
-    cta: 'سجّل كلاعب مجاناً',
+    cta: 'سجّل كلاعب',
   },
   organizer: {
     icon: 'trophy',
@@ -93,12 +88,7 @@ export const PAGES: Record<JoinRole, RolePage> = {
       ['user', 'صفحتك العامة', 'نبذة عنك وكل البطولات التي نظمتها في صفحة واحدة تبني سمعتك.'],
       ['spark', 'جرّب قبل البطولة الحقيقية', 'محاكاة كاملة بلاعبين تجريبيين بصورهم: انضمام، دفع، جولات حتى البطل.'],
     ],
-    steps: ['سجّل واختر «منظم بطولات»', 'توافق الإدارة ويبدأ اشتراكك', 'أنشئ بطولتك وافتح التسجيل', 'أدر الجولات حتى تتويج البطل'],
-    prices: [
-      { amount: '500 ج.م', unit: 'شهرياً' },
-      { amount: '5000 ج.م', unit: 'سنوياً', note: 'وفّر 1000 ج.م' },
-    ],
-    priceNote: 'الدفع نقداً أو بالتحويل عن طريق إدارة بينجو، وتواصل معنا على واتساب لأي استفسار.',
+    steps: ['سجّل واختر «منظم بطولات»', 'توافق الإدارة على دورك', 'أنشئ بطولتك وافتح التسجيل', 'أدر الجولات حتى تتويج البطل'],
     cta: 'سجّل كمنظم بطولات',
   },
   trainer: {
@@ -125,12 +115,7 @@ export const PAGES: Record<JoinRole, RolePage> = {
       ['users', 'جمهور جاهز', 'لاعبو البطولات على بينجو هم عملاؤك القادمون.'],
       ['spark', 'جرّب قبل الإطلاق', 'محاكاة حجوزات بلاعبين تجريبيين لترى كيف يعمل كل شيء.'],
     ],
-    steps: ['سجّل واختر «مدرب»', 'توافق الإدارة ويبدأ اشتراكك', 'أضف مكانك وساعاتك المتاحة', 'استقبل الحجوزات وتابع المدفوعات'],
-    prices: [
-      { amount: '500 ج.م', unit: 'شهرياً' },
-      { amount: '5000 ج.م', unit: 'سنوياً', note: 'وفّر 1000 ج.م' },
-    ],
-    priceNote: 'ثمن الحصة تحدده أنت ويدفعه اللاعب لك مباشرة. اشتراك بينجو يُدفع عن طريق الإدارة.',
+    steps: ['سجّل واختر «مدرب»', 'توافق الإدارة على دورك', 'أضف مكانك وساعاتك المتاحة', 'استقبل الحجوزات وتابع المدفوعات'],
     cta: 'سجّل كمدرب',
   },
   seller: {
@@ -157,49 +142,120 @@ export const PAGES: Record<JoinRole, RolePage> = {
       ['users', 'جمهور متخصص', 'كل زائر لبينجو لاعب أو مدرب أو منظم يحتاج أدوات تنس الطاولة.'],
       ['spark', 'جرّب قبل الإطلاق', 'محاكاة طلبات من عملاء تجريبيين لترى دورة الطلب كاملة.'],
     ],
-    steps: ['سجّل واختر «بائع»', 'توافق الإدارة ويبدأ اشتراكك', 'أضف منتجاتك وتنتظر المراجعة', 'استقبل الطلبات وسلّم وحصّل'],
-    prices: [
-      { amount: '20 ج.م', unit: 'للمنتج شهرياً', note: 'حتى 20 منتجاً' },
-      { amount: '500 ج.م', unit: 'شهرياً', note: 'منتجات بلا حدود' },
-    ],
-    priceNote: 'ثمن المنتجات يدفعه العميل لك مباشرة. اشتراك بينجو يُدفع عن طريق الإدارة.',
+    steps: ['سجّل واختر «بائع»', 'توافق الإدارة على دورك', 'أضف منتجاتك وتنتظر المراجعة', 'استقبل الطلبات وسلّم وحصّل'],
     cta: 'سجّل كبائع',
   },
 };
 
-/** The "Pingo point": a ball flying along a dotted arc. Decorative. */
+export const FOR_WHO: Record<JoinRole, string> = { player: 'بينجو للاعبين', organizer: 'بينجو للمنظمين', trainer: 'بينجو للمدربين', seller: 'بينجو للبائعين' };
+
+/** The "Pingo point": a ball flying in along a dotted arc. The dots light up one after another (CSS). */
 export function pingoPoint(cls = ''): string {
   const dots = [[18, 92, 3], [34, 70, 3.6], [52, 52, 4.2], [72, 38, 4.8], [94, 30, 5.4], [116, 30, 6]]
-    .map(([x, y, r], i) => `<circle cx="${x}" cy="${y}" r="${r}" fill="currentColor" opacity="${(0.25 + i * 0.12).toFixed(2)}"/>`).join('');
+    .map(([x, y, r], i) => `<circle class="pp-dot" style="--i:${i}" cx="${x}" cy="${y}" r="${r}" fill="currentColor" opacity="${(0.25 + i * 0.12).toFixed(2)}"/>`).join('');
   return `<svg class="pp ${cls}" viewBox="0 0 200 120" aria-hidden="true">
     <defs><radialGradient id="ppBall" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#f1f4f8"/><stop offset="1" stop-color="#c9d3e0"/></radialGradient></defs>
     ${dots}
-    <circle cx="160" cy="44" r="30" fill="#7ed957" opacity=".35"/>
+    <g class="pp-ball"><circle cx="160" cy="44" r="30" fill="#7ed957" opacity=".35" class="pp-glow"/>
     <circle cx="160" cy="44" r="22" fill="url(#ppBall)"/>
-    <ellipse cx="153" cy="36" rx="6" ry="4" fill="#fff" opacity=".9"/>
+    <ellipse cx="153" cy="36" rx="6" ry="4" fill="#fff" opacity=".9"/></g>
   </svg>`;
 }
 
-export const FOR_WHO: Record<JoinRole, string> = { player: 'بينجو للاعبين', organizer: 'بينجو للمنظمين', trainer: 'بينجو للمدربين', seller: 'بينجو للبائعين' };
-
+const logo = () => `${import.meta.env.BASE_URL}brand/logo.png`;
 const signupHref = (role: JoinRole) => (session.profile ? '#/me' : `#/login/signup${role === 'player' ? '' : '/' + role}`);
 
-function overview(): string {
-  const card = (r: JoinRole) => {
-    const p = PAGES[r];
-    return `<a class="jn-role jr-${r} rise" href="#/join/${r}">
-      <span class="jn-role-ic">${icon(p.icon, 30)}</span>
-      <b>${p.name}</b><small>${p.tag}</small>
-      <span class="jn-role-go">التفاصيل ${icon('chevron', 16)}</span></a>`;
-  };
-  return `<section class="jn-hero jr-all">
-    <div class="jn-hero-text"><span class="jn-soon">${icon('spark', 16)} قريباً</span>
-      <h1>بينجو: ملتقى لاعبي تنس الطاولة</h1>
-      <p>بطولات بنتائج مباشرة، تدريب بالحجز، ومتجر أدوات. اختر مكانك في بينجو قبل الإطلاق.</p></div>
-    ${pingoPoint('jn-hero-pp')}</section>
-  <div class="jn-roles">${JOIN_ROLES.map(card).join('')}</div>
-  ${contact()}`;
+/** Lights up elements with .reveal as they scroll into view. Without IntersectionObserver they just show. */
+function revealSoon(): void {
+  requestAnimationFrame(() => {
+    const els = document.querySelectorAll<HTMLElement>('.reveal:not(.in)');
+    if (!('IntersectionObserver' in window)) { els.forEach((e) => e.classList.add('in')); return; }
+    const io = new IntersectionObserver((list) => list.forEach((x) => {
+      if (x.isIntersecting) { x.target.classList.add('in'); io.unobserve(x.target); }
+    }), { threshold: 0.15 });
+    els.forEach((e) => io.observe(e));
+  });
 }
+
+/* ---------- Online posters: #/poster/<role> (shared as links, the whole poster opens #/soon) ---------- */
+
+export function posterPage(r: JoinRole): string {
+  const p = PAGES[r];
+  const highlightTitles = new Set(p.highlights.map((h) => h[1]));
+  const more = p.features.filter((f) => !highlightTitles.has(f[1])).slice(0, 6);
+  const others = JOIN_ROLES.filter((x) => x !== r);
+  return `<div class="pst-stage jr-${r}">
+    <a class="pst" href="#/soon" aria-label="بينجو قريباً: اعرف كل المزايا">
+      <span class="pst-ring r1"></span><span class="pst-ring r2"></span>
+      <header class="pst-head"><span class="pst-logo"><img src="${logo()}" alt="Pingo"></span><span class="pst-soon">${icon('spark', 18)} قريباً</span></header>
+      ${pingoPoint('pst-pp')}
+      <span class="pst-who">${icon(p.icon, 24)} ${FOR_WHO[r]}</span>
+      <h1 class="pst-title">${esc(p.title)}</h1>
+      <ul class="pst-highs">${p.highlights.map(([ic, h, s], i) => `<li style="--i:${i}"><span class="pst-ic">${icon(ic, 24)}</span><span><b>${h}</b><small>${s}</small></span></li>`).join('')}</ul>
+      <div class="pst-more">${more.map(([ic, h], i) => `<span style="--i:${i}">${icon(ic, 14)} ${h}</span>`).join('')}</div>
+      <span class="pst-cta">اكتشف بينجو ${icon('chevron', 20)}</span>
+    </a>
+    <div class="pst-tools">
+      <button class="btn soft small" type="button" data-act="pst-share" data-role="${r}">${icon('spark', 16)} شارك البوستر</button>
+      ${others.map((x) => `<a class="btn ghost small" href="#/poster/${x}">${icon(PAGES[x].icon, 16)} ${FOR_WHO[x]}</a>`).join('')}
+    </div>
+  </div>`;
+}
+
+/** Shares (or copies) the poster's own link. */
+export async function sharePoster(r: JoinRole): Promise<string> {
+  const url = `${location.origin}${location.pathname}#/poster/${r}`;
+  const text = `${FOR_WHO[r]}: ${PAGES[r].title}`;
+  try {
+    if (navigator.share) { await navigator.share({ title: 'Pingo', text, url }); return ''; }
+    await navigator.clipboard.writeText(url);
+    return 'تم نسخ رابط البوستر';
+  } catch { return url; }
+}
+
+/* ---------- Coming soon: #/soon, every role's features with animation ---------- */
+
+function soonRole(r: JoinRole, n: number): string {
+  const p = PAGES[r];
+  return `<section class="sn-role jr-${r}${n % 2 ? ' flip' : ''}" id="sn-${r}">
+    <div class="sn-role-head reveal">
+      <span class="sn-role-ic">${icon(p.icon, 40)}</span>
+      <div><span class="sn-for">${FOR_WHO[r]}</span><h2>${esc(p.title)}</h2><p>${esc(p.lead)}</p></div>
+    </div>
+    <div class="sn-highs">${p.highlights.map(([ic, h, s], i) => `<div class="sn-high reveal" style="--i:${i}"><span class="sn-high-ic">${icon(ic, 28)}</span><b>${h}</b><small>${s}</small></div>`).join('')}</div>
+    <ul class="sn-feats">${p.features.map(([ic, h, s], i) => `<li class="reveal" style="--i:${i % 6}" title="${esc(s)}">${icon(ic, 18)}<span><b>${h}</b><small>${s}</small></span></li>`).join('')}</ul>
+    <div class="sn-role-foot reveal"><a class="btn gold" href="${signupHref(r)}">${icon('user')} ${p.cta}</a>
+      <a class="btn ghost" href="#/join/${r}">${icon('grid')} صفحة ${p.name}</a></div>
+  </section>`;
+}
+
+export function soonPage(): string {
+  const wa = whatsappLink();
+  revealSoon();
+  return `<div class="sn">
+    <header class="sn-top"><a href="#/" class="sn-logo"><img src="${logo()}" alt="Pingo"></a>
+      <nav class="sn-tabs">${JOIN_ROLES.map((r) => `<button type="button" data-act="jn-scroll" data-to="sn-${r}">${icon(PAGES[r].icon, 16)} ${PAGES[r].name}</button>`).join('')}</nav></header>
+    <section class="sn-hero">
+      <div class="sn-table" aria-hidden="true"><span class="sn-net"></span><span class="sn-ball"></span><span class="sn-shadow"></span></div>
+      <span class="sn-badge">${icon('spark', 18)} قريباً جداً</span>
+      <h1><span>بينجو</span> ملتقى لاعبي تنس الطاولة</h1>
+      <p>بطولات بنتائج مباشرة، مكاتب للمنظمين والمدربين والبائعين، حجز تدريب ومتجر أدوات. كل ما تحتاجه لعالم تنس الطاولة في تطبيق واحد.</p>
+      <div class="sn-hero-roles">${JOIN_ROLES.map((r, i) => `<button type="button" class="sn-chip jr-${r}" style="--i:${i}" data-act="jn-scroll" data-to="sn-${r}">${icon(PAGES[r].icon, 22)}<b>${PAGES[r].name}</b></button>`).join('')}</div>
+      <span class="sn-down" aria-hidden="true">${icon('chevron', 22)}</span>
+    </section>
+    ${JOIN_ROLES.map(soonRole).join('')}
+    <section class="sn-end reveal">
+      ${pingoPoint('sn-end-pp')}
+      <h2>كن من أوائل المنضمين لبينجو</h2>
+      <p>سجّل الآن وجهّز حسابك قبل الإطلاق، أو كلّمنا على واتساب.</p>
+      <div class="row"><a class="btn gold" href="${session.profile ? '#/me' : '#/login/signup'}">${icon('user')} سجّل الآن</a>
+        ${wa ? `<a class="btn green" href="${wa}" target="_blank" rel="noopener">${icon('whatsapp')} تواصل معنا</a>` : ''}
+        <a class="btn ghost" href="#/">${icon('home')} ادخل الموقع</a></div>
+    </section>
+  </div>`;
+}
+
+/* ---------- Role pages: #/join/<role> (inside the site) ---------- */
 
 function contact(): string {
   const wa = whatsappLink();
@@ -217,7 +273,7 @@ function rolePage(r: JoinRole): string {
       <h1>${esc(p.title)}</h1>
       <p>${esc(p.lead)}</p>
       <div class="row"><a class="btn gold" href="${signupHref(r)}">${icon('user')} ${p.cta}</a>
-        <button class="btn ghost" type="button" data-act="jn-scroll">${icon('grid')} كل المزايا</button></div>
+        <button class="btn ghost" type="button" data-act="jn-scroll" data-to="jn-features">${icon('grid')} كل المزايا</button></div>
     </div>
     <div class="jn-hero-art"><span class="jn-hero-ic">${icon(p.icon, 64)}</span>${pingoPoint('jn-hero-pp')}</div>
   </section>
@@ -227,18 +283,20 @@ function rolePage(r: JoinRole): string {
   <div class="jn-split">
     <div class="card jn-steps"><h2>${icon('bolt', 22)} كيف تبدأ</h2>
       <ol>${p.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join('')}</ol></div>
-    <div class="card jn-price"><h2>${icon('money', 22)} ${r === 'player' ? 'السعر' : 'أسعار الإطلاق'}</h2>
-      <div class="jn-plans">${p.prices.map((x) => `<div class="jn-plan"><b>${x.amount}</b><span>${x.unit}</span>${x.note ? `<em>${x.note}</em>` : ''}</div>`).join('')}</div>
-      <p class="muted small">${p.priceNote}</p>
-      <a class="btn green block" href="${signupHref(r)}">${icon('user')} ${p.cta}</a></div>
+    <div class="card jn-early"><h2>${icon('spark', 22)} بينجو قريباً</h2>
+      <p class="muted">سجّل الآن لتكون من أوائل ${p.name} على بينجو، وشاهد مزايا كل الأدوار في صفحة «قريباً».</p>
+      <a class="btn green block" href="${signupHref(r)}">${icon('user')} ${p.cta}</a>
+      <a class="btn soft block" href="#/soon">${icon('eye')} صفحة بينجو قريباً</a></div>
   </div>
-  <div class="sec-head"><h2>${icon('users', 22)} بينجو لغيرك أيضاً</h2><a class="more" href="#/join">الكل ${icon('chevron', 16)}</a></div>
+  <div class="sec-head"><h2>${icon('users', 22)} بينجو لغيرك أيضاً</h2><a class="more" href="#/soon">الكل ${icon('chevron', 16)}</a></div>
   <div class="jn-roles small">${others.map((x) => `<a class="jn-role jr-${x}" href="#/join/${x}"><span class="jn-role-ic">${icon(PAGES[x].icon, 24)}</span><b>${PAGES[x].name}</b><small>${PAGES[x].tag}</small></a>`).join('')}</div>
   ${contact()}`;
 }
 
+/** #/join/<role> inside the site shell; #/join alone goes to the coming soon page. */
 export function route(parts: string[]): string | null {
   if (parts[0] !== 'join') return null;
   const r = parts[1] as JoinRole;
-  return JOIN_ROLES.includes(r) ? rolePage(r) : overview();
+  if (!JOIN_ROLES.includes(r)) { location.hash = '#/soon'; return null; }
+  return rolePage(r);
 }

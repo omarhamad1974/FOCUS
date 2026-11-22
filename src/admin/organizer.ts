@@ -25,6 +25,7 @@ import { avatar, confetti, esc, groupColor, toast } from '../ui/util';
 import { host } from './host';
 import * as api from './api';
 import * as invites from '../pages/invites';
+import * as lists from '../pages/playerLists';
 import { countChips, ensureSim, payBox, paidTick, personLine, playerGrid, sample, statTile, stepper, tip } from './ui';
 
 /* ------------------------------------------------------------------ state */
@@ -99,7 +100,8 @@ function overview(): string {
   const left = list.reduce((s, x) => { const p = progress(x); return s + (x.stage === 'setup' ? 0 : Math.max(0, p.total - p.done)); }, 0);
   const money3 = totals(list.flatMap((x) => feeLines(x, payKeys(x))));
   return `<section class="banner b-org slim"><div><h1>${icon('trophy', 26)} ${t('desk.org.title')}</h1><p>${t('desk.org.hint')}</p></div>
-    <button class="btn gold" data-act="dk-new-open">➕ ${t('desk.org.new')}</button></section>
+    <span class="row"><a class="btn soft" href="#/desk/org/players" title="${esc(t('pl.open'))}">⭐ ${t('pl.title')}</a>
+    <button class="btn gold" data-act="dk-new-open">➕ ${t('desk.org.new')}</button></span></section>
   <div class="stats dash-stats">
     ${statTile('trophy', n(list.filter((x) => stepOf(x) < 4).length), 'desk.org.statRunning')}
     ${statTile('bell', n(pending), 'desk.org.statPending', pending > 0)}
@@ -215,7 +217,8 @@ function registerPanel(tm: Tournament): string {
       ${pending.length > 1 ? `<button class="btn green small" data-act="dk-approve-all">${icon('check', 14)} ${t('desk.org.approveAll')}</button>` : ''}</h3>
     ${pending.length ? pending.map((r) => personLine(regPhoto(r), r.full_name ?? '', esc(r.club ?? ''), `
       <button class="btn small green" data-act="dk-decide" data-id="${r.id}" data-s="approved">${icon('check', 14)} ${t('dash.accept')}</button>
-      <button class="btn small ghost" data-act="dk-decide" data-id="${r.id}" data-s="rejected" title="${esc(t('reg.reject'))}">${icon('x', 14)}</button>`, 'pend')).join('')
+      <button class="btn small ghost" data-act="dk-decide" data-id="${r.id}" data-s="rejected" title="${esc(t('reg.reject'))}">${icon('x', 14)}</button>
+      <button class="btn small ghost" data-act="dk-ban" data-id="${r.player_id}" title="${esc(t('pl.blockTip'))}" aria-label="${esc(t('pl.blockTip'))}">🚫</button>`, 'pend')).join('')
       : `<p class="muted small">${t('dash.noWaiting')}</p>`}
     <h3 class="dk-sub">✅ ${t('reg.approved')} (${n(approved.length)}${reg.maxPlayers ? ` / ${n(reg.maxPlayers)}` : ''})</h3>
     ${approved.length ? `<div class="dk-faces">${approved.map((r) => `<span class="dk-face" title="${esc(r.full_name ?? '')}">${regPhoto(r)}<small dir="auto">${esc((r.full_name ?? '').split(' ')[0])}</small></span>`).join('')}</div>`
@@ -389,6 +392,10 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
     case 'dk-new-groups':
       draft.groups = Number(el.dataset.v) || 4;
       keepDraft(); render(); return true;
+    case 'dk-ban':
+      regCache.clear();
+      lists.askBlock(el.dataset.id ?? '');
+      return true;
     case 'dk-join-count':
       joinCount = Number(el.dataset.v) || 8; render(); return true;
     case 'dk-pick-toggle':

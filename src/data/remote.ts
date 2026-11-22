@@ -350,6 +350,7 @@ export function errorCode(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e);
   if (/registration closed/i.test(m)) return 'closed';
   if (/tournament full/i.test(m)) return 'full';
+  if (/player blocked/i.test(m)) return 'blocked';
   if (/invitation not found/i.test(m)) return 'inviteGone';
   if (/Invalid login credentials/i.test(m)) return 'badLogin';
   if (/mobile already registered/i.test(m)) return 'mobileTaken';

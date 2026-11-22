@@ -3,9 +3,11 @@
  * English dictionary can be added later with the same keys.
  */
 import { arDesk } from './ar-desk';
+import { arLists } from './ar-lists';
 
 export const ar = {
   ...arDesk,
+  ...arLists,
   'app.name': 'بينجو',
   'app.tagline': 'بطولات تنس الطاولة بسهولة',
 
@@ -250,6 +252,7 @@ export const ar = {
   'auth.err.unknown': 'حدث خطأ، حاول مرة أخرى',
   'auth.err.closed': 'التسجيل في هذه البطولة مغلق',
   'auth.err.full': 'اكتمل عدد اللاعبين في هذه البطولة',
+  'auth.err.blocked': 'لا يمكن إضافة هذا اللاعب لهذه البطولة: هو في القائمة السوداء',
   'auth.err.inviteGone': 'هذه الدعوة لم تعد متاحة',
   'auth.err.required': 'أكمل الاسم ورقم الموبايل وكلمة المرور',
 

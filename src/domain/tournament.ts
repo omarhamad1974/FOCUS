@@ -334,6 +334,52 @@ export function addPlayerToSetup(t: Tournament, name: string, directoryId?: stri
   return id;
 }
 
+/** Add a player straight to the waiting list (in the tournament, in no group yet). Setup stage only. */
+export function addPlayerToWaiting(t: Tournament, name: string, directoryId?: string, accountId?: string): string {
+  if (t.stage !== 'setup') throw new Error('locked');
+  if (directoryId && t.players.some((p) => p.directoryId === directoryId)) throw new Error('duplicate');
+  if (accountId && t.players.some((p) => p.accountId === accountId || p.profileId === accountId)) throw new Error('duplicate');
+  const id = uid();
+  t.players.push({ id, name, directoryId, ...(accountId ? { accountId } : {}) });
+  return id;
+}
+
+/** Players can see the group draw: always once groups have started, during setup only after publishing. */
+export function groupsVisible(t: Tournament): boolean {
+  return t.stage !== 'setup' || !!t.groupsPublished;
+}
+
+/** Show or hide the group draw for players during setup. */
+export function publishGroups(t: Tournament, on = true): void {
+  if (on) t.groupsPublished = true; else delete t.groupsPublished;
+}
+
+export interface BoardSummary {
+  /** Places taken in all groups: a player filling a second group counts twice. */
+  places: number;
+  /** Different players in groups. */
+  placed: number;
+  /** Extra places taken by players who also fill another group. */
+  extra: number;
+  waiting: number;
+  groups: { id: string; name: string; count: number; extra: number; short: boolean }[];
+}
+
+/** Counts for the organizer's summary bar on the group board. */
+export function boardSummary(t: Tournament): BoardSummary {
+  const placedSet = new Set(t.groups.flatMap((g) => g.playerIds));
+  const biggest = Math.max(0, ...t.groups.map((g) => g.playerIds.length));
+  const groups = t.groups.map((g) => ({
+    id: g.id, name: g.name, count: g.playerIds.length, extra: g.extraIds?.length ?? 0,
+    short: g.playerIds.length < 2 || g.playerIds.length < biggest,
+  }));
+  const places = groups.reduce((s, g) => s + g.count, 0);
+  return {
+    places, placed: placedSet.size, extra: groups.reduce((s, g) => s + g.extra, 0),
+    waiting: t.players.filter((p) => !placedSet.has(p.id)).length, groups,
+  };
+}
+
 export function removePlayerFromSetup(t: Tournament, playerId: string): void {
   if (t.stage !== 'setup') throw new Error('locked');
   t.players = t.players.filter((p) => p.id !== playerId);

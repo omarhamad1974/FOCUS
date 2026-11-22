@@ -5,7 +5,7 @@ import type { Post, PostCategory, PostLevel } from '../data/content';
 import { canWriteNews, hint, isAdmin, loading, render } from '../app/ctx';
 import { academyArt, academyHero, empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
-import { avatarOf, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast, zone } from '../ui/util';
 import * as news from './news';
 
 type Cat = PostCategory | 'all';
@@ -120,12 +120,15 @@ function listPage(): string {
     <ol class="path-steps">${path.map((p, i) => `<li class="${done.has(p.id) ? 'done' : ''}"><a href="#/learn/${p.id}">
       <span class="ps-n">${done.has(p.id) ? icon('check', 18) : i + 1}</span><span dir="auto">${esc(p.title)}</span></a></li>`).join('')}</ol>
   </section>` : ''}
+  <section class="zone z-blue">
+  <h2 class="sec">${icon('book', 22)} ${t('acad.allLessons')}</h2>
   <div class="acad-tools">
     <label class="acad-search">${icon('search', 18)}<input class="input" type="search" data-act="learn-q" value="${esc(query)}" placeholder="${esc(t('acad.search'))}" aria-label="${esc(t('acad.search'))}"></label>
     <div class="chips-row">${(['all', ...content.POST_LEVELS] as const).map((l) => `<button class="pill ${level === l ? 'on' : ''}" data-act="learn-level" data-v="${l}">
       ${l === 'all' ? t('acad.allLevels') : levelBadge(l)}</button>`).join('')}</div>
   </div>
-  <div id="acad-results">${results(list)}</div>`;
+  <div id="acad-results">${results(list)}</div>
+  </section>`;
 }
 
 function lessonPage(id: string): string {
@@ -161,7 +164,7 @@ function lessonPage(id: string): string {
       <button class="btn ghost small" data-act="news-delete" data-id="${p.id}">${icon('trash', 16)} ${t('news.delete')}</button></div>` : ''}
   </article>
   ${prev || next ? `<div class="step-links">${step(prev, 'prev')}${step(next, 'next')}</div>` : ''}
-  ${more.length ? `<h2 class="sec">${icon('grad', 22)} ${t('acad.more')}</h2><div class="grid">${more.map((x) => lessonCard(x)).join('')}</div>` : ''}`;
+  ${more.length ? zone('blue', `<h2 class="sec">${icon('grad', 22)} ${t('acad.more')}</h2><div class="grid">${more.map((x) => lessonCard(x)).join('')}</div>`) : ''}`;
 }
 
 export function route(parts: string[]): string | null {

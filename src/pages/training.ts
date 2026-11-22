@@ -7,7 +7,7 @@ import { empty, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
 import * as pay from '../data/pay';
 import * as payUi from '../ui/pay';
-import { avatarOf, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast, zone } from '../ui/util';
 import { byDay, dayKey, slotEnd, slotStarts } from '../domain/training';
 import { becomePrompt } from './shop';
 
@@ -126,11 +126,11 @@ function listPage(): string {
   const shown = slots.filter((s) => who === 'all' || s.trainer_id === who);
   return `${banner()}
   ${hint('tr.howTo')}
-  ${trainers.length ? `<h2 class="sec">${icon('users', 22)} ${t('tr.trainers')}</h2><div class="grid">${trainers.map(trainerCard).join('')}</div>` : ''}
-  <h2 class="sec">${icon('calendar', 22)} ${t('tr.available')}</h2>
+  ${trainers.length ? zone('blue', `<h2 class="sec">${icon('users', 22)} ${t('tr.trainers')}</h2><div class="grid">${trainers.map(trainerCard).join('')}</div>`) : ''}
+  ${zone('green', `<h2 class="sec">${icon('calendar', 22)} ${t('tr.available')}</h2>
   ${trainers.length > 1 ? `<div class="chips-row"><button class="pill ${who === 'all' ? 'on' : ''}" data-act="tr-who" data-v="all">${t('news.all')}</button>
     ${trainers.map((tr) => `<button class="pill ${who === tr.id ? 'on' : ''}" data-act="tr-who" data-v="${tr.id}" dir="auto">${esc(tr.full_name)}</button>`).join('')}</div>` : ''}
-  ${dayPicker(shown, true)}`;
+  ${dayPicker(shown, true)}`)}`;
 }
 
 function trainerPage(id: string): string {
@@ -144,8 +144,8 @@ function trainerPage(id: string): string {
   ${tr.bio ? `<div class="card"><p dir="auto">${esc(tr.bio)}</p></div>` : ''}
   ${trainerContact(tr.id)}
   ${locs.length ? `<div class="card"><h3>${icon('map', 20)} ${t('tr.locations')}</h3>${locs.map((l) => locRow(l)).join('')}</div>` : ''}
-  <h2 class="sec">${icon('calendar', 22)} ${t('tr.available')}</h2>
-  ${dayPicker(slots.filter((s) => s.trainer_id === id), false)}`;
+  ${zone('green', `<h2 class="sec">${icon('calendar', 22)} ${t('tr.available')}</h2>
+  ${dayPicker(slots.filter((s) => s.trainer_id === id), false)}`)}`;
 }
 
 /** WhatsApp and payment methods of a trainer (loaded once). */

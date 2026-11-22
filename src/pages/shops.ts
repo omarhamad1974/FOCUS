@@ -12,7 +12,7 @@ import { authErr, hint, isAdmin, isSeller, loading, n, render, session } from '.
 import { cover, empty, placeholder, skeleton } from '../ui/art';
 import { icon } from '../ui/icons';
 import { followButton } from './alerts';
-import { avatarOf, esc, toast } from '../ui/util';
+import { avatarOf, esc, toast, zone } from '../ui/util';
 import { nameKey } from '../domain/tournament';
 import * as shop from './shop';
 
@@ -199,8 +199,8 @@ function shopPage(id: string): string {
     ${s.hours ? `<p>${icon('clock', 18)} <b>${t('shops.hours')}:</b> <span dir="auto">${esc(s.hours)}</span></p>` : ''}
     ${s.about ? `<h3>${icon('book', 18)} ${t('shops.about')}</h3><p dir="auto">${esc(s.about).replace(/\n/g, '<br>')}</p>` : ''}
   </div>` : ''}
-  <div class="sec-head"><h2>${icon('box', 22)} ${t('shops.products')}</h2></div>
-  ${prods === null ? skeleton(3) : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shops.noProducts')}</p>`}`;
+  ${zone('red', `<div class="sec-head"><h2>${icon('box', 22)} ${t('shops.products')}</h2></div>
+  ${prods === null ? skeleton(3) : prods.length ? `<div class="grid products">${prods.map(shop.productCard).join('')}</div>` : `<p class="muted">${t('shops.noProducts')}</p>`}`)}`;
 }
 
 /* -------------------------------------------------------------- editor */

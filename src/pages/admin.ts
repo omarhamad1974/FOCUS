@@ -5,7 +5,7 @@ import type { AdminCounts, Post, Product, RoleRequest } from '../data/content';
 import * as remote from '../data/remote';
 import { remoteStatus } from '../domain/tournament';
 import { authErr, hint, money, n, preview, PREVIEWS, render, session, type Preview } from '../app/ctx';
-import { CONFIRM_WORD, confirmed, holdsRole, planRoleRemoval, roleOff, type BulkRole } from '../domain/bulk';
+import { CONFIRM_WORD, confirmed, holdsRole, isTempAccount, planRoleRemoval, roleOff, type BulkRole } from '../domain/bulk';
 import { cover } from '../ui/art';
 import { icon } from '../ui/icons';
 import { avatarOf, esc, toast } from '../ui/util';
@@ -186,10 +186,13 @@ function bulkItems(kind: BulkKind): BulkItem[] {
   const me = session.profile?.id;
   return (profiles ?? []).filter((p) => p.id !== me && holdsRole(p, kind)).map((p) => ({
     id: p.id, title: p.full_name || '—',
-    sub: [p.club ? esc(p.club) : '', ...(['organizer', 'seller', 'trainer'] as const).filter((r) => holdsRole(p, r)).map((r) => `<span class="badge ${r === kind ? 'red' : ''}">${t(`roles.${r}` as MessageKey)}</span>`)].filter(Boolean).join(' '),
+    sub: [isTempAccount(p) ? `<span class="badge gold">${t('batch.temp')}</span>` : '', p.club ? esc(p.club) : '', ...(['organizer', 'seller', 'trainer'] as const).filter((r) => holdsRole(p, r)).map((r) => `<span class="badge ${r === kind ? 'red' : ''}">${t(`roles.${r}` as MessageKey)}</span>`)].filter(Boolean).join(' '),
     pic: `<span class="bulk-av">${avatarOf(p)}</span>`,
   }));
 }
+
+/** Batch players nobody has taken over yet (shown with the «حساب مؤقت» badge). */
+const tempIds = () => (profiles ?? []).filter((p) => p.id !== session.profile?.id && isTempAccount(p)).map((p) => p.id);
 
 function bulkView(kindPart: string | undefined): string {
   const kind = KINDS.some(([k]) => k === kindPart) ? kindPart as BulkKind : null;
@@ -208,9 +211,12 @@ function bulkView(kindPart: string | undefined): string {
   const actions = items.length && !bulk.confirm ? `<div class="row bulk-actions">
     <button class="btn red" data-act="adm-bulk-ask" data-v="sel" ${sel.length ? '' : 'disabled'}>${icon('trash', 16)} ${t('bulk.deleteSelected', { n: sel.length })}</button>
     <button class="btn ghost" data-act="adm-bulk-ask" data-v="all">${icon('trash', 16)} ${t('bulk.deleteAll', { n: items.length })}</button></div>` : '';
+  const temps = kind === 'player' ? tempIds() : [];
+  const tempBox = kind === 'player' && !bulk.confirm ? `<div class="bulk-temp">${hint('bulk.tempHint')}
+    <button class="btn gold" data-act="adm-bulk-ask" data-v="temp" ${temps.length ? '' : 'disabled'}>${icon('trash', 16)} ${t('bulk.deleteTemp', { n: temps.length })}</button></div>` : '';
   const label = t(KINDS.find(([k]) => k === kind)![2]);
   return `${intro}<div class="card"><h2>${icon(KINDS.find(([k]) => k === kind)![1], 22)} ${label}</h2>${isRole(kind) ? hint(`bulk.roleHint.${kind}` as MessageKey) : ''}
-    ${bulk.confirm ? confirmBox(kind, label) : ''}${actions}${list}</div>`;
+    ${bulk.confirm ? confirmBox(kind, label) : ''}${tempBox}${actions}${list}</div>`;
 }
 
 function confirmBox(kind: BulkKind, label: string): string {
@@ -335,7 +341,7 @@ export async function onClick(act: string, el: HTMLElement): Promise<void> {
       reset(); render(); return;
     case 'adm-bulk-ask':
       if (!bulk.kind) return;
-      bulk.confirm = el.dataset.v === 'all' ? bulkItems(bulk.kind).map((x) => x.id) : [...bulk.selected];
+      bulk.confirm = el.dataset.v === 'all' ? bulkItems(bulk.kind).map((x) => x.id) : el.dataset.v === 'temp' ? tempIds() : [...bulk.selected];
       render();
       document.getElementById('bulkWord')?.focus();
       return;

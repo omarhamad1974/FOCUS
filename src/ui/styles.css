@@ -884,6 +884,7 @@ button.slot:not(:disabled):hover, a.slot:hover { border-color: var(--table); tra
 .bulk-kind.on { border-color: var(--red); background: #fde7e8; }
 .bulk-kind.on .ic { color: var(--red); }
 .bulk-actions { margin-block: 6px 12px; flex-wrap: wrap; }
+.bulk-temp { background: color-mix(in srgb, var(--gold, #f5b700) 12%, transparent); border-radius: 12px; padding: 10px 12px; margin-block: 8px; display: grid; gap: 8px; justify-items: start; }
 .bulk-all { display: flex; align-items: center; gap: 8px; font-weight: 700; padding: 8px 0; border-block-end: 1px solid var(--line); cursor: pointer; }
 .bulk-list { display: grid; gap: 2px; max-height: 60vh; overflow-y: auto; }
 .bulk-item { display: grid; grid-template-columns: auto 48px 1fr; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 12px; cursor: pointer; }

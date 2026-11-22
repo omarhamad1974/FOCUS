@@ -63,3 +63,11 @@ Also confirmed:
 - Database: migration 0013 (`invitations` table, `invite_players`, `cancel_invitation`, `answer_invitation`, `sim_answer_invitations`; `public_profiles.is_organizer`). Code: `src/pages/invites.ts`.
 - Biography (optional, `profiles.bio`, 600 chars): organizers, trainers and sellers edit it in a card at the top of their desk (or on #/me). Shown on the new public page `#/u/<id>` (linked from the organizer name on tournament pages and the seller box on products), on the trainer page and on product pages.
 - The tournament-page simulation ("محاكاة البطولة") now uses the 40 registered demo players first, so simulated players show real-looking photos.
+
+## Player blacklists and favourites, 2026-11-22
+- Organizer's blacklist (#/desk/org/players, button «لاعبيني» on the organizer desk, or 🚫 beside a pending request): the player cannot join, be invited to or be added to that organizer's tournaments; other organizers' tournaments are not affected. Optional private reason. Taking a player off the list is one tap.
+- Admin's site-wide blacklist (#/desk/admin/blacklist, tile on the admin desk): the player cannot join any tournament. Organizers see these players marked and cannot pick them.
+- Blacklisting rejects the player's pending/approved entries in the owner's tournaments that are still in draft or open registration (all tournaments for the admin list) and cancels pending invitations. Started tournaments are untouched. After unblocking, the old entry stays "rejected"; the organizer can add the player again.
+- Enforced in the database (migration 0016): trigger on `registrations` raises `player blocked` for any path to pending/approved; trigger on `invitations` skips blocked players; `waitlist_add` and `sim_join` skip them. Players get only `my_blocks()` (whose tournaments), never reasons.
+- Favourites (⭐ on the same page, plus "players from your tournaments" suggestions). In a tournament's invitation card the favourites appear as photos: pick all in one tap, then "invite" or "add directly" (`org_add_players`: approved straight away, within the player limit).
+- Not enforced: players typed by hand into a tournament's own player list (names without accounts) are not checked.

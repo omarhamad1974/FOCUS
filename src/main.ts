@@ -26,6 +26,7 @@ import * as training from './pages/training';
 import * as faq from './pages/faq';
 import * as claim from './pages/claim';
 import * as desk from './admin';
+import * as lists from './pages/playerLists';
 import * as deskApi from './admin/api';
 import * as invites from './pages/invites';
 import * as profile from './pages/profile';
@@ -97,7 +98,7 @@ async function refreshFromServer(): Promise<void> {
     myRegs = session.profile ? await remote.myRegistrations() : [];
     myRoleReqs = null;
     await content.people(data.tournaments.map((x) => x.organizerId ?? '')).catch(() => undefined);
-    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); hallsPage.reset(); payUi.forget();
+    news.reset(); shop.reset(); training.reset(); admin.reset(); desk.reset(); invites.reset(); lists.reset(); hallsPage.reset(); payUi.forget();
     regCache.clear();
     assisting.clear();
     if (session.profile) {
@@ -346,6 +347,8 @@ function cardAction(tm: Tournament, st: PublicStatus): string {
   const mine = myRegs.find((r) => r.tournament_id === tm.id && (r.status === 'pending' || r.status === 'approved'));
   if (mine) return `<span class="badge ${mine.status === 'approved' ? 'green' : 'gold'} tc-mine">${mine.status === 'approved' ? `${icon('check', 14)} ${t('tl.joined')}` : `⏳ ${t('tl.waiting')}`}</span>`;
   const reg = registrationOf(tm);
+  const blocked = lists.playerBlocked(tm);
+  if (blocked) return lists.blockedNotice(blocked, true);
   if (reg.maxPlayers && tm.players.length >= reg.maxPlayers) return `<span class="badge">${t('tl.full')}</span>`;
   return `<button class="btn small tc-join" data-act="join" data-tid="${tm.id}" ${busy ? 'disabled' : ''}>${icon('ball', 16)} ${t('reg.join')}</button>`;
 }
@@ -1968,6 +1971,7 @@ function registerView(tm: Tournament): string {
           : `<p class="small muted">🔒 ${t('reg.withdrawClosed')}</p>`) : ''}`;
     } else if (mine?.status === 'rejected') action = `<div class="err">${t('reg.status.rejected')}</div>`;
     else if (invites.pendingFor(tm.id)) action = invites.forTournament(tm.id);
+    else if (reg.open && lists.playerBlocked(tm)) action = lists.blockedNotice(lists.playerBlocked(tm)!);
     else if (reg.open) action = `<button class="btn green block" data-act="join" ${busy ? 'disabled' : ''}>🏓 ${t('reg.join')}</button>`;
     const orgWa = tm.organizerId ? payUi.waButton(pay.settingsNow(tm.organizerId), t('reg.waText', { name: tm.name }), 'reg.contactOrg') : '';
     return `<div class="card">${status}${action}${orgWa ? `<div class="row" style="margin-block-start:8px">${orgWa}</div>` : ''}
@@ -2294,6 +2298,7 @@ document.addEventListener('click', (e) => {
   const tm = el.dataset.tid ? findT(el.dataset.tid) : here.tm;
   const m = here.m;
   if (act.startsWith('inv-')) { void invites.onClick(act, el); return; }
+  if (act.startsWith('pl-')) { void lists.onClick(act, el); return; }
   if (act.startsWith('dk-')) { void desk.onClick(act, el); return; }
   if (act.startsWith('pay-')) { void payUi.onClick(act, el); return; }
   if (act.startsWith('hl-')) { void hallsPage.onClick(act, el); return; }
@@ -2627,7 +2632,7 @@ function syncInputs(): void {
 let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
-  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el)) return;
+  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el) || lists.onInput(el)) return;
   if (admin.onInput(el as HTMLInputElement)) return;
   if (el.dataset.act === 'assist-q') {
     const q = (el as HTMLInputElement).value.trim();

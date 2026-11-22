@@ -14,6 +14,7 @@ import { simPlayers, simPlayersNow } from '../admin/api';
 import { icon } from '../ui/icons';
 import { avatar, avatarOf, confetti, esc, toast } from '../ui/util';
 import type { Tournament } from '../domain/types';
+import * as lists from './playerLists';
 
 export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 
@@ -144,6 +145,7 @@ const STATUS_BADGE: Record<InviteStatus, string> = { pending: 'gold', accepted: 
  */
 export function orgCard(tm: Tournament, inside: Set<string>): string {
   loadFor(tm.id);
+  lists.ensure();
   insideNow = inside;
   if (missing) return `<div class="card"><h2>📨 ${t('inv.orgTitle')}</h2><p class="err">${t('inv.needSql')}</p></div>`;
   const rows = byT.get(tm.id);
@@ -157,6 +159,12 @@ export function orgCard(tm: Tournament, inside: Set<string>): string {
   const counts = (s: InviteStatus) => live.filter((r) => r.status === s).length;
   const result = (p: content.PublicProfile) => {
     const on = picked.has(p.id);
+    const banned = lists.blockedFor(tm, p.id);
+    if (banned) {
+      return `<span class="inv-hit off" title="${esc(t(banned === 'site' ? 'pl.blockedSite' : 'pl.blocked'))}">
+      ${avatarOf(p)}<span class="inv-who"><b dir="auto">${esc(p.full_name)}</b>${p.club ? `<small class="muted" dir="auto">${esc(p.club)}</small>` : ''}</span>
+      <span class="badge red">🚫 ${t(banned === 'site' ? 'pl.blockedSite' : 'inv.blockedBadge')}</span></span>`;
+    }
     return `<button class="inv-hit ${on ? 'on' : ''}" data-act="inv-pick" data-id="${p.id}" aria-pressed="${on}">
       ${avatarOf(p)}<span class="inv-who"><b dir="auto">${esc(p.full_name)}</b>${p.club ? `<small class="muted" dir="auto">${esc(p.club)}</small>` : ''}</span>
       <span class="badge ${on ? 'green' : 'blue'}">${on ? `${icon('check', 12)} ${t('inv.picked')}` : `${icon('plus', 12)} ${t('inv.pick')}`}</span></button>`;
@@ -165,11 +173,14 @@ export function orgCard(tm: Tournament, inside: Set<string>): string {
     <div class="row between"><h2>📨 ${t('inv.orgTitle')}</h2>
       ${live.length ? `<span class="row" style="gap:4px">${(['pending', 'accepted', 'declined'] as InviteStatus[]).map((s) => counts(s) ? `<span class="badge ${STATUS_BADGE[s]}">${n(counts(s))} ${t(`inv.st.${s}` as MessageKey)}</span>` : '').join('')}</span>` : ''}</div>
     <p class="hint">${esc(t('inv.orgHint'))}</p>
+    ${favStrip(tm, skip)}
     <input class="input" id="invQ" data-act="inv-q" data-tid="${esc(tm.id)}" value="${esc(query)}" placeholder="${esc(t('inv.searchPh'))}" dir="auto" autocomplete="off">
     <div id="invRes" class="inv-hits">${query.length >= 2 && !shown.length ? `<p class="small muted">${t('inv.noHits')}</p>` : shown.map(result).join('')}</div>
     ${picked.size ? `<div class="inv-picked">${[...picked.values()].map((p) => `<span class="chip ro">${avatarOf(p)}<span dir="auto">${esc(p.full_name.split(' ')[0])}</span>
         <button class="btn ghost small" data-act="inv-pick" data-id="${p.id}" aria-label="${esc(t('inv.unpick'))}">${icon('x', 12)}</button></span>`).join('')}</div>
-      <button class="btn green block" data-act="inv-send" data-tid="${esc(tm.id)}" ${busy ? 'disabled' : ''}>📨 ${t('inv.send', { n: n(picked.size) })}</button>` : ''}
+      <div class="inv-go"><button class="btn green" data-act="inv-send" data-tid="${esc(tm.id)}" ${busy ? 'disabled' : ''}>📨 ${t('inv.send', { n: n(picked.size) })}</button>
+      <button class="btn gold" data-act="inv-add" data-tid="${esc(tm.id)}" title="${esc(t('inv.addNowTip'))}" ${busy || tm.registration?.open === false ? 'disabled' : ''}>➕ ${t('inv.addNow', { n: n(picked.size) })}</button></div>
+      <p class="small muted">${t('inv.addNowTip')}</p>` : ''}
     <div class="inv-sim">
       <span class="badge gold">${t('desk.sim.badge')}</span>
       <div class="choice sim-counts">${[4, 8, 16].map((c) => `<button data-act="inv-sim-count" data-v="${c}" aria-pressed="${simCount === c}">${n(c)}</button>`).join('')}</div>
@@ -182,6 +193,24 @@ export function orgCard(tm: Tournament, inside: Set<string>): string {
         <small dir="auto">${esc((p?.full_name ?? '…').split(' ')[0])}</small><i class="badge ${STATUS_BADGE[r.status]}">${t(`inv.st.${r.status}` as MessageKey)}</i>
         ${r.status === 'pending' ? `<button class="inv-x" data-act="inv-cancel" data-id="${r.id}" data-tid="${esc(tm.id)}" title="${esc(t('inv.cancel'))}" aria-label="${esc(t('inv.cancel'))}">${icon('x', 12)}</button>` : ''}</span>`;
     }).join('')}</div>` : ''}
+  </div>`;
+}
+
+/** Favourite players as photos to pick in one tap (those already in, invited or blocked are left out). */
+function favStrip(tm: Tournament, skip: (id: string) => boolean): string {
+  const all = lists.favourites();
+  const free = all.filter((id) => !skip(id) && !lists.blockedFor(tm, id));
+  const allOn = free.length > 0 && free.every((id) => picked.has(id));
+  return `<div class="inv-favs">
+    <div class="row between"><h3 class="dk-sub">⭐ ${t('inv.favTitle')} <small class="muted">${n(free.length)}</small></h3>
+      <span class="row" style="gap:6px">${free.length > 1 ? `<button class="btn soft small" data-act="inv-pick-favs" aria-pressed="${allOn}">${allOn ? t('desk.sim.clearPick') : t('inv.favAll', { n: n(free.length) })}</button>` : ''}
+      <a class="btn ghost small" href="#/desk/org/players">${t('inv.favManage')}</a></span></div>
+    ${free.length ? `<p class="small muted">${t('inv.favHint')}</p><div class="pick-grid inv-fav-grid">${free.map((id) => {
+      const p = content.person(id);
+      const on = picked.has(id);
+      return `<button class="pick ${on ? 'on' : ''}" data-act="inv-pick" data-id="${id}" aria-pressed="${on}" title="${esc(p?.full_name ?? '')}">
+        ${avatarOf(p)}<span dir="auto">${esc((p?.full_name ?? '…').split(' ')[0])}</span>${on ? `<i class="pick-ok">${icon('check', 14)}</i>` : ''}<i class="fav-star">⭐</i></button>`;
+    }).join('')}</div>` : `<p class="small muted">${all.length ? t('inv.favNone') : t('pl.favEmpty')}</p>`}
   </div>`;
 }
 
@@ -233,7 +262,7 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
         break;
       }
       case 'inv-pick': {
-        const p = hits.find((x) => x.id === id) ?? picked.get(id);
+        const p = hits.find((x) => x.id === id) ?? picked.get(id) ?? content.person(id);
         if (picked.has(id)) picked.delete(id); else if (p) picked.set(id, p);
         render();
         return true;
@@ -245,6 +274,30 @@ export async function onClick(act: string, el: HTMLElement): Promise<boolean> {
         toast(`📨 ${t('inv.sentToast', { n: n(sent) })}`);
         picked.clear(); hits = []; query = '';
         loadFor(tid, true);
+        break;
+      }
+      case 'inv-pick-favs': {
+        const tm = host.tournaments().find((x) => x.id === (el.closest<HTMLElement>('.inv-card')?.dataset.tid ?? ''));
+        const rows = byT.get(tm?.id ?? '') ?? [];
+        const invited = new Set(rows.filter((r) => r.status === 'pending' || r.status === 'accepted').map((r) => r.player_id));
+        const free = lists.favourites().filter((x) => !insideNow.has(x) && !invited.has(x) && !lists.blockedFor(tm ?? null, x));
+        const allOn = free.every((x) => picked.has(x));
+        for (const x of free) {
+          const p = content.person(x);
+          if (allOn) picked.delete(x); else if (p) picked.set(x, p);
+        }
+        render();
+        return true;
+      }
+      case 'inv-add': {
+        if (!picked.size) return true;
+        busy = true; render();
+        const added = await rpc<number>('org_add_players', { t: tid, accounts: [...picked.keys()] });
+        toast(t('inv.addedToast', { n: n(added) }));
+        if (added) confetti();
+        picked.clear(); hits = []; query = '';
+        loadFor(tid, true);
+        regsChanged(tid);
         break;
       }
       case 'inv-cancel':

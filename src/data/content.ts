@@ -14,6 +14,8 @@ export interface PublicProfile {
   bio: string | null;
   is_seller: boolean;
   is_trainer: boolean;
+  /** Hall owner; from migration 0017. */
+  is_hall?: boolean;
   avatar_url: string | null;
   gender?: 'male' | 'female' | null;
   /** Organizer (or admin); from migration 0013, missing before it. */
@@ -60,7 +62,7 @@ export async function trainers(): Promise<PublicProfile[]> {
 
 /* ------------------------------------------------------------- roles */
 
-export type ExtraRole = 'organizer' | 'seller' | 'trainer';
+export type ExtraRole = 'organizer' | 'seller' | 'trainer' | 'hall';
 
 export interface RoleRequest {
   id: string;
@@ -89,7 +91,7 @@ export async function decideRoleRequest(id: string, approve: boolean): Promise<v
   check(await db().rpc('decide_role_request', { req: id, approve }));
 }
 
-export async function setRoles(id: string, roles: { is_organizer?: boolean; is_seller?: boolean; is_trainer?: boolean; role?: string }): Promise<void> {
+export async function setRoles(id: string, roles: { is_organizer?: boolean; is_seller?: boolean; is_trainer?: boolean; is_hall?: boolean; role?: string }): Promise<void> {
   check(await db().from('profiles').update(roles).eq('id', id));
 }
 
@@ -183,6 +185,8 @@ export interface Order {
   phone: string | null;
   note: string | null;
   status: OrderStatus;
+  /** Pingo discount (percent) the shop gave on this order; 0 or missing = none. */
+  promo_pct?: number;
   created_at: string;
 }
 
@@ -234,6 +238,55 @@ export async function salesOrders(): Promise<Order[]> {
 export async function myBuyers(): Promise<Map<string, { full_name: string; phone: string | null }>> {
   const rows = check(await db().rpc('my_buyers')) as { order_id: string; full_name: string; phone: string | null }[];
   return new Map(rows.map((r) => [r.order_id, r]));
+}
+
+/* ------------------------------------------------------------ shops */
+
+/** A seller's sports shop page with an optional promotion for Pingo players (migration 0018). */
+export interface Shop {
+  owner_id: string;
+  name: string;
+  tagline: string | null;
+  about: string | null;
+  logo_url: string | null;
+  cover_url: string | null;
+  city: string | null;
+  address: string | null;
+  map_url: string | null;
+  hours: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  promo_title: string | null;
+  promo_details: string | null;
+  promo_pct: number | null;
+  /** Only signed-in players can read it; missing for visitors. */
+  promo_code?: string | null;
+  promo_until: string | null;
+  active: boolean;
+  hidden: boolean;
+  featured: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Columns a visitor may read (everything but the promotion code). */
+const SHOP_PUBLIC = 'owner_id,name,tagline,about,logo_url,cover_url,city,address,map_url,hours,phone,whatsapp,promo_title,promo_details,promo_pct,promo_until,active,hidden,featured,created_at,updated_at';
+
+export async function listShops(): Promise<Shop[]> {
+  const signedIn = !!(await getSession());
+  return check(await db().from('shops').select(signedIn ? '*' : SHOP_PUBLIC).order('featured', { ascending: false }).order('updated_at', { ascending: false })) as unknown as Shop[];
+}
+
+export type ShopFields = Omit<Shop, 'owner_id' | 'hidden' | 'featured' | 'created_at' | 'updated_at'>;
+
+/** Opens or updates the signed-in seller's shop. */
+export async function saveShop(f: ShopFields, exists: boolean): Promise<Shop> {
+  const q = exists ? db().from('shops').update(f).eq('owner_id', (await getSession())!.user.id) : db().from('shops').insert(f);
+  return check(await q.select('*').single()) as Shop;
+}
+
+export async function setShopFlags(ownerId: string, f: { hidden?: boolean; featured?: boolean }): Promise<void> {
+  check(await db().from('shops').update(f).eq('owner_id', ownerId));
 }
 
 /* ---------------------------------------------------------- training */
@@ -360,7 +413,7 @@ export async function removeAssistant(tournamentId: string, userId: string): Pro
 
 /* ------------------------------------------------------------- admin */
 
-export type AdminCounts = Record<'users' | 'organizers' | 'sellers' | 'trainers' | 'tournaments' | 'running' | 'posts' | 'products' | 'pendingProducts' | 'pendingRoles' | 'orders' | 'bookings', number>;
+export type AdminCounts = Record<'users' | 'organizers' | 'sellers' | 'trainers' | 'halls' | 'hallBookings' | 'tournaments' | 'running' | 'posts' | 'products' | 'pendingProducts' | 'pendingRoles' | 'orders' | 'bookings', number>;
 
 export async function adminCounts(): Promise<AdminCounts | null> {
   return check(await db().rpc('admin_counts')) as AdminCounts | null;

@@ -63,3 +63,18 @@ Also confirmed:
 - Database: migration 0013 (`invitations` table, `invite_players`, `cancel_invitation`, `answer_invitation`, `sim_answer_invitations`; `public_profiles.is_organizer`). Code: `src/pages/invites.ts`.
 - Biography (optional, `profiles.bio`, 600 chars): organizers, trainers and sellers edit it in a card at the top of their desk (or on #/me). Shown on the new public page `#/u/<id>` (linked from the organizer name on tournament pages and the seller box on products), on the trainer page and on product pages.
 - The tournament-page simulation ("محاكاة البطولة") now uses the 40 registered demo players first, so simulated players show real-looking photos.
+
+## Sports shops with Pingo promotions, 2026-11-22
+- A seller opens one shop page (`#/shops/edit`, also from the seller desk card «متجري الرياضي»): name, tagline, logo, cover, city, address, map link, hours, phone, WhatsApp, about, and a promotion for Pingo players (title, details, discount %, code, end date). «املأ ببيانات تجريبية» fills a demo shop.
+- Section `#/shops` (tab beside the products list in المتجر): search, city chips, "with offers only". Shop page `#/shops/<seller id>`: WhatsApp/call/map buttons, promotion card, the shop's approved products. Home page strip «متاجر بعروض للاعبي بينجو».
+- Promotion: the discount % is applied by the database to every new order of that seller (trigger on orders, `orders.promo_pct`), and product cards show the struck price and the Pingo price to signed-in players. The code and the "Pingo pass" (player photo + name + code) show only to signed-in players; visitors cannot read `shops.promo_code`.
+- Products keep the admin approval. The admin can hide or feature a shop from its page.
+- Database: migration 0018_sports_shops.sql (`shops` table, `shop_discount()`, `apply_shop_discount` trigger). Code: `src/pages/shops.ts`, text `src/i18n/ar-shops.ts`.
+
+## Player blacklists and favourites, 2026-11-22
+- Organizer's blacklist (#/desk/org/players, button «لاعبيني» on the organizer desk, or 🚫 beside a pending request): the player cannot join, be invited to or be added to that organizer's tournaments; other organizers' tournaments are not affected. Optional private reason. Taking a player off the list is one tap.
+- Admin's site-wide blacklist (#/desk/admin/blacklist, tile on the admin desk): the player cannot join any tournament. Organizers see these players marked and cannot pick them.
+- Blacklisting rejects the player's pending/approved entries in the owner's tournaments that are still in draft or open registration (all tournaments for the admin list) and cancels pending invitations. Started tournaments are untouched. After unblocking, the old entry stays "rejected"; the organizer can add the player again.
+- Enforced in the database (migration 0016): trigger on `registrations` raises `player blocked` for any path to pending/approved; trigger on `invitations` skips blocked players; `waitlist_add` and `sim_join` skip them. Players get only `my_blocks()` (whose tournaments), never reasons.
+- Favourites (⭐ on the same page, plus "players from your tournaments" suggestions). In a tournament's invitation card the favourites appear as photos: pick all in one tap, then "invite" or "add directly" (`org_add_players`: approved straight away, within the player limit).
+- Not enforced: players typed by hand into a tournament's own player list (names without accounts) are not checked.

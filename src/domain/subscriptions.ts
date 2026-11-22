@@ -6,15 +6,18 @@
  * (Omar's choice, 2026-11-22).
  */
 
-export type SubRole = 'organizer' | 'trainer' | 'seller';
+export type SubRole = 'organizer' | 'trainer' | 'seller' | 'hall';
 export type SubPlan = 'monthly' | 'yearly' | 'per_product' | 'unlimited';
-export const SUB_ROLES: SubRole[] = ['organizer', 'trainer', 'seller'];
+export const SUB_ROLES: SubRole[] = ['organizer', 'trainer', 'seller', 'hall'];
 
 export interface PlanSettings {
   org_month: number;
   org_year: number;
   trainer_month: number;
   trainer_year: number;
+  /** Hall owners (0017). Placeholder prices until Omar sends his. */
+  hall_month: number;
+  hall_year: number;
   seller_per_product: number;
   seller_max_products: number;
   seller_unlimited: number;
@@ -24,6 +27,7 @@ export interface PlanSettings {
 export const DEFAULT_PRICES: PlanSettings = {
   org_month: 500, org_year: 5000,
   trainer_month: 500, trainer_year: 5000,
+  hall_month: 500, hall_year: 5000,
   seller_per_product: 20, seller_max_products: 20, seller_unlimited: 500,
 };
 
@@ -69,14 +73,14 @@ export const clampProducts = (n: number, s: PlanSettings) =>
 /** Price of one period of `plan` (a month, or a year for "yearly"). */
 export function priceOf(s: PlanSettings, role: SubRole, plan: SubPlan, products = 1): number {
   if (role === 'seller') return plan === 'unlimited' ? s.seller_unlimited : s.seller_per_product * clampProducts(products, s);
-  const [m, y] = role === 'organizer' ? [s.org_month, s.org_year] : [s.trainer_month, s.trainer_year];
+  const [m, y] = role === 'organizer' ? [s.org_month, s.org_year] : role === 'hall' ? [s.hall_month, s.hall_year] : [s.trainer_month, s.trainer_year];
   return plan === 'yearly' ? y : m;
 }
 
 /** How much a yearly plan saves against 12 monthly payments (0 when it does not). */
-export function yearlySaving(s: PlanSettings, role: 'organizer' | 'trainer'): { amount: number; pct: number } {
-  const m = role === 'organizer' ? s.org_month : s.trainer_month;
-  const y = role === 'organizer' ? s.org_year : s.trainer_year;
+export function yearlySaving(s: PlanSettings, role: 'organizer' | 'trainer' | 'hall'): { amount: number; pct: number } {
+  const m = priceOf(s, role, 'monthly');
+  const y = priceOf(s, role, 'yearly');
   const amount = Math.max(0, m * 12 - y);
   return { amount, pct: m > 0 ? Math.round((amount / (m * 12)) * 100) : 0 };
 }
@@ -180,7 +184,7 @@ export interface Revenue {
 
 export function revenue(subs: Subscription[], today = todayIso()): Revenue {
   const month = today.slice(0, 7);
-  const out: Revenue = { collected: 0, thisMonth: 0, due: 0, byRole: { organizer: 0, trainer: 0, seller: 0 }, paidCount: 0, count: subs.length };
+  const out: Revenue = { collected: 0, thisMonth: 0, due: 0, byRole: { organizer: 0, trainer: 0, seller: 0, hall: 0 }, paidCount: 0, count: subs.length };
   for (const s of subs) {
     const a = Math.max(0, Number(s.amount) || 0);
     if (!s.paid) { out.due += a; continue; }

@@ -21,6 +21,7 @@ import { accountOf, daysUntil, homeTournaments, matchesLocation, matchesTime, PU
 import * as admin from './pages/admin';
 import * as content from './data/content';
 import * as news from './pages/news';
+import * as academy from './pages/academy';
 import * as shop from './pages/shop';
 import * as training from './pages/training';
 import * as faq from './pages/faq';
@@ -240,11 +241,11 @@ function workspaceBar(): string {
     ${links.map(([href, ic, label, tip, on]) => `<a class="ws-btn" href="${href}" title="${esc(t(tip))}" ${on ? 'aria-current="page"' : ''}>${icon(ic, 18)}<span>${t(label)}</span></a>`).join('')}</nav>`;
 }
 
-type Section = 'home' | 'tournaments' | 'news' | 'shop' | 'training' | 'me';
+type Section = 'home' | 'tournaments' | 'news' | 'learn' | 'shop' | 'training' | 'me';
 
 function section(): Section {
   const p = location.hash.replace(/^#\/?/, '').split('/')[0];
-  if (p === 'news' || p === 'shop' || p === 'training') return p;
+  if (p === 'news' || p === 'learn' || p === 'shop' || p === 'training') return p;
   if (p === 'tournaments' || p === 't' || p === 'new' || p === 'org') return 'tournaments';
   if (p === 'me' || p === 'login' || p === 'admin' || p === 'players') return 'me';
   return 'home';
@@ -256,7 +257,7 @@ function navItems(): [Section, string, string, MessageKey][] {
     ['tournaments', '#/tournaments', 'trophy', 'nav.tournaments'],
   ];
   if (online()) {
-    items.push(['news', '#/news', 'news', 'nav.news'], ['shop', '#/shop', 'shop', 'nav.shop'], ['training', '#/training', 'coach', 'nav.training']);
+    items.push(['news', '#/news', 'news', 'nav.news'], ['learn', '#/learn', 'grad', 'acad.title'], ['shop', '#/shop', 'shop', 'nav.shop'], ['training', '#/training', 'coach', 'nav.training']);
     items.push(['me', session.profile ? '#/me' : '#/login', 'user', session.profile ? 'nav.me' : 'auth.login']);
   }
   return items;
@@ -288,8 +289,8 @@ function shell(body: string): void {
     <button class="btn small soft" data-act="pv-set" data-v="off">${icon('x', 14)} ${t('sim.exit')}</button></div>` : ''}
   ${workspaceBar()}
   <main class="page">${body}</main>
-  ${nav.length > 2 ? `<nav class="bottomnav" aria-label="${esc(t('nav.label'))}">${nav.map(([k, href, ic, label]) =>
-    `<a href="${href}" ${sec === k ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}
+  ${nav.length > 2 ? `<nav class="bottomnav" aria-label="${esc(t('nav.label'))}">${nav.filter(([k]) => k !== 'learn').map(([k, href, ic, label]) =>
+    `<a href="${href}" ${sec === k || (sec === 'learn' && k === 'news') ? 'aria-current="page"' : ''}>${icon(ic, 22)}<span>${t(label)}</span></a>`).join('')}</nav>` : ''}
   ${faq.supportButton()}`;
 }
 
@@ -410,6 +411,7 @@ function homePage(): string {
   if (!online()) return tournamentsPage();
   if (session.loading) return `<div class="card center muted"><span class="spin"></span> ${t('sync.loading')}</div>`;
   const posts = news.latest(5);
+  const lessons = academy.latest(3);
   const prods = shop.featured(4);
   const free = training.openSlots(6);
   if (!posts) news.load();
@@ -428,6 +430,10 @@ function homePage(): string {
     ${feature('#/shop', 'shop', 'nav.shop', 'home.fShop', 'f3')}
     ${feature('#/news', 'news', 'nav.news', 'home.fNews', 'f4')}
   </div>
+  <div class="sec-head"><h2>${icon('grad', 22)} ${t('acad.title')}</h2>${more('#/learn')}</div>
+  ${lessons === null ? '<div class="sk-row"></div>' : lessons.length
+    ? `<p class="muted sec-sub">${t('acad.homeText')}</p><div class="grid acad-home">${lessons.map((p) => academy.lessonCard(p)).join('')}</div>`
+    : `<p class="muted">${t('acad.empty')}</p>`}
   <a class="card faq-cta jn-home rise" href="#/soon"><span class="faq-ic">${icon('spark', 26)}</span>
     <span><b>بينجو لمين؟</b><br><small class="muted">لاعب، منظم بطولات، مدرب أو بائع: اعرف مزايا كل دور</small></span>${icon('chevron', 18)}</a>
   <a class="card faq-cta rise" href="#/faq"><span class="faq-ic">${icon('help', 26)}</span>
@@ -2192,9 +2198,9 @@ function draw(): void {
     shell(wizardPage());
   } else if (parts[0] === 'tournaments') {
     shell(tournamentsPage(parts[1]));
-  } else if (['news', 'shop', 'training'].includes(parts[0])) {
+  } else if (['news', 'learn', 'shop', 'training'].includes(parts[0])) {
     if (!online()) { shell(empty('spark', t('nav.onlineOnly'))); return; }
-    shell(news.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? '');
+    shell(news.route(parts) ?? academy.route(parts) ?? shop.route(parts) ?? training.route(parts) ?? '');
   } else if (parts[0] === 'faq') {
     shell(faq.route(parts) ?? '');
     if (parts[1]) document.getElementById(`faq-${parts[1]}`)?.scrollIntoView({ block: 'start' });
@@ -2276,6 +2282,7 @@ document.addEventListener('click', (e) => {
   const m = here.m;
   if (act.startsWith('inv-')) { void invites.onClick(act, el); return; }
   if (act.startsWith('dk-')) { void desk.onClick(act, el); return; }
+  if (act.startsWith('learn-')) { academy.onClick(act, el); return; }
   if (/^(news|shop|tr)-/.test(act)) {
     void (act.startsWith('news-') ? news.onClick(act, el) : act.startsWith('shop-') ? shop.onClick(act, el) : training.onClick(act, el));
     return;
@@ -2606,7 +2613,7 @@ function syncInputs(): void {
 let assistTimer = 0;
 document.addEventListener('input', (e) => {
   const el = e.target as HTMLElement;
-  if (shop.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el)) return;
+  if (academy.onInput(el as HTMLInputElement) || shop.onInput(el as HTMLInputElement) || claim.onInput(el) || invites.onInput(el)) return;
   if (admin.onInput(el as HTMLInputElement)) return;
   if (el.dataset.act === 'assist-q') {
     const q = (el as HTMLInputElement).value.trim();
@@ -2906,7 +2913,7 @@ if (online()) {
 }
 
 window.addEventListener('hashchange', () => {
-  if (location.hash === '#/login' && /^#\/(t|news|shop|training|claim|desk)\//.test(lastHash)) {
+  if (location.hash === '#/login' && /^#\/(t|news|learn|shop|training|claim|desk)\//.test(lastHash)) {
     try { localStorage.setItem(RETURN_KEY, lastHash); } catch { /* ignore */ }
   }
   lastHash = location.hash;

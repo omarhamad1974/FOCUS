@@ -1,68 +1,55 @@
-# Pingo and Cloudflare
+# Pingo on Cloudflare
 
-Pingo is built by GitHub Actions and served by GitHub Pages at
-<https://omarhamad1974.github.io/Pingo/>. The app uses relative paths and `#/` routes,
-so it runs unchanged at any address: a sub-folder, a `*.pages.dev` address, or your own domain.
+The code stays on GitHub (versioning, pull requests, the Supabase workflow).
+Two hosts build the same code from `main`:
 
-## Today: no domain yet
+| Host | Address | How it deploys |
+|------|---------|----------------|
+| Cloudflare Workers (main) | `https://pingo.<your-subdomain>.workers.dev` | Cloudflare Workers Builds, connected to the GitHub repo, reads `wrangler.jsonc` |
+| GitHub Pages (backup) | <https://omarhamad1974.github.io/Pingo/> | `.github/workflows/pages.yml` |
 
-Nothing has to change. Cloudflare's main job (DNS, HTTPS, caching for your own name) needs a domain.
+The app uses relative paths and `#/` routes, so it runs unchanged at either address.
+Both use the same Supabase project, so all data is shared.
 
-Optional, only if you want to try Cloudflare now: publish a second copy on a free
-`pingo.pages.dev` address. The site workflow does this by itself once two secrets exist.
-Keep in mind it is a second address: people signed in on one are not signed in on the other,
-and an installed phone app belongs to the address it was installed from.
+## How the Cloudflare build works
 
-1. Make a free account at <https://dash.cloudflare.com/sign-up>.
-2. Copy your **Account ID**: Cloudflare dashboard > Workers & Pages > right-hand side.
-3. Make an API token: My Profile > API Tokens > Create Token > Create Custom Token.
-   Permission: **Account > Cloudflare Pages > Edit**. Create it and copy it (shown once).
-4. In GitHub open <https://github.com/omarhamad1974/Pingo/settings/secrets/actions> and add two
-   repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-5. Run the "Test and deploy to GitHub Pages" workflow on `main` (or merge anything).
-   The log of the step "Also publish to Cloudflare Pages" prints the address
-   (if `pingo` is taken, Cloudflare picks a name like `pingo-abc.pages.dev`).
-6. Supabase > Authentication > URL Configuration > Redirect URLs: add `https://<that address>/**`.
+`wrangler.jsonc` tells Cloudflare to run `npm run build` and serve the files in `dist/`.
+Every push to `main` deploys the live site. Pushes to other branches upload a preview version
+(shown as the "Workers Builds: pingo" check on a pull request) without touching the live site.
 
-To stop it, delete the two secrets. GitHub Pages keeps working either way.
+Cloudflare dashboard > Workers & Pages > **pingo** > Settings > Build should show:
 
-## Later: your own domain (recommended path)
+- Git repository: `omarhamad1974/Pingo`, production branch `main`
+- Build command: `npm run build` (or empty: `wrangler.jsonc` also runs it)
+- Deploy command: `npx wrangler deploy`
+- Non-production branch deploy command: `npx wrangler preview` (needs the `previews` block in `wrangler.jsonc`)
 
-Keep GitHub Pages as the host and let Cloudflare handle the domain. Fewest moving parts,
-still free, and the old github.io address forwards to the new domain automatically.
+## Supabase settings (one time)
 
-1. **Buy the domain.** Easiest at Cloudflare itself (Domain Registration > Register Domains,
-   sold at cost). If you buy elsewhere, add the site to Cloudflare and change the domain's
-   nameservers at the seller to the two Cloudflare gives you.
-2. **DNS records** in Cloudflare > your domain > DNS > Records (example domain `pingo.app`):
+Supabase > Authentication > URL Configuration:
 
-   | Type  | Name  | Content                   | Proxy     |
-   |-------|-------|---------------------------|-----------|
-   | A     | `@`   | `185.199.108.153`         | DNS only  |
-   | A     | `@`   | `185.199.109.153`         | DNS only  |
-   | A     | `@`   | `185.199.110.153`         | DNS only  |
-   | A     | `@`   | `185.199.111.153`         | DNS only  |
-   | CNAME | `www` | `omarhamad1974.github.io` | DNS only  |
+- **Site URL**: the workers.dev address, with a trailing `/`
+- **Redirect URLs**: add `https://pingo.<your-subdomain>.workers.dev/**` and keep
+  `https://omarhamad1974.github.io/Pingo/**`
 
-   Leave the cloud grey (DNS only) so GitHub can issue the HTTPS certificate.
-3. **GitHub**: <https://github.com/omarhamad1974/Pingo/settings/pages> > Custom domain >
-   type `pingo.app` > Save. When the DNS check is green, tick **Enforce HTTPS**
-   (the certificate can take up to an hour). No CNAME file is needed because the site
-   deploys with GitHub Actions.
-4. **Supabase** > Authentication > URL Configuration:
-   Site URL `https://pingo.app/`, and add `https://pingo.app/**` to Redirect URLs
-   (keep the github.io entry for a while).
-5. Tell Claude the domain: the push-notification contact address in
+Without this, password-reset emails from the Cloudflare address are refused.
+
+## What users notice
+
+- Each address keeps its own sign-in and its own installed app. Someone who installed the app
+  from github.io keeps using it there; to move, they open the new address, sign in once and
+  install again.
+- Share the Cloudflare address from now on.
+
+## Later: your own domain
+
+1. Buy it at Cloudflare (Domain Registration > Register Domains, sold at cost), or move an
+   existing domain's nameservers to Cloudflare.
+2. Workers & Pages > **pingo** > Settings > Domains & Routes > Add > Custom domain > type the
+   domain. Cloudflare creates the DNS record and HTTPS certificate itself.
+3. Supabase: change Site URL to `https://<domain>/` and add `https://<domain>/**` to Redirect URLs.
+4. Tell Claude the domain: the push-notification contact address in
    `supabase/functions/send-push/index.ts` gets updated to it.
-6. Tell users: an installed phone app has to be installed again from the new address,
-   and everyone signs in once more there.
-
-Optional after HTTPS works: turn the cloud orange (Proxied) to use Cloudflare's cache and
-protection, and set SSL/TLS mode to **Full (strict)**.
-
-### Alternative: host on Cloudflare Pages instead
-
-Set up the `pages.dev` copy above, then Cloudflare > Workers & Pages > your project >
-Custom domains > add the domain. Cloudflare adds the DNS record itself. GitHub Pages can stay
-on as a backup. Pick this only if you want Cloudflare to be the host; otherwise the path above
-is simpler.
+5. Optional: to send github.io visitors to the domain too, GitHub repo > Settings > Pages >
+   Custom domain is **not** the way (that would point the domain at GitHub). Instead ask Claude
+   to add a small redirect page to the GitHub Pages build.

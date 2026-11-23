@@ -378,6 +378,7 @@ export function errorCode(e: unknown): string {
   if (/mobile already registered/i.test(m)) return 'mobileTaken';
   if (/bad mobile/i.test(m)) return 'badMobile';
   if (/^required$/.test(m)) return 'required';
+  if (/name required/i.test(m)) return 'name';
   if (/same_password|should be different/i.test(m)) return 'samePassword';
   if (/Email not confirmed/i.test(m)) return 'notConfirmed';
   if (/already registered|already been registered/i.test(m)) return 'exists';

@@ -92,10 +92,10 @@ Deno.serve(async (req) => {
   if (body.action === 'create') {
     // One account made by an organizer or the admin. With a mobile it signs in with the mobile
     // (password "pingo123" unless one is given); an email still works for staff accounts.
-    const full_name = String(body.full_name ?? '').trim();
+    const full_name = text(body.full_name);
     const email = String(body.email ?? '').trim();
     const password = String(body.password ?? '').trim();
-    if (!full_name) return json({ error: 'full_name required' }, 400);
+    if (!nameOk(full_name)) return json({ error: 'full_name required' }, 400);
     if (password && password !== DEFAULT_PASSWORD && password.length < 6) return json({ error: 'Password should be at least 6 characters' }, 400);
     const roles = Array.isArray(body.roles) ? body.roles.map(String) : [];
     let id: string | undefined;
@@ -273,6 +273,8 @@ function normalizeMobile(raw: unknown): string | null {
 }
 const mobileEmail = (m: string) => `${m}@${MOBILE_DOMAIN}`;
 const text = (v: unknown, max = 80) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+/** A real name: 2+ characters with a letter, never blank or a mobile (= isRealName in src/domain/mobile.ts, public.is_real_name in SQL). */
+const nameOk = (s: string) => s.length >= 2 && /\p{L}/u.test(s);
 const genderOf = (v: unknown) => (['male', 'female'].includes(String(v)) ? String(v) : '');
 const yearOf = (v: unknown) => { const y = Number(String(v ?? '').replace(/\D/g, '')); return y >= 1920 && y <= 2025 ? y : null; };
 
@@ -281,7 +283,7 @@ async function signup(service: any, body: Record<string, unknown>): Promise<Resp
   const full_name = text(body.full_name);
   const mobile = normalizeMobile(body.mobile);
   const password = String(body.password ?? '');
-  if (!full_name) return json({ error: 'full_name required' }, 400);
+  if (!nameOk(full_name)) return json({ error: 'full_name required' }, 400);
   if (!mobile) return json({ error: 'bad mobile' }, 400);
   if (password.length < 6) return json({ error: 'Password should be at least 6 characters' }, 400);
   const { data: existing, error: exErr } = await service.rpc('account_by_mobile', { m: mobile });
@@ -314,7 +316,8 @@ async function addPlayers(service: any, raw: unknown[], password: string): Promi
     const mobile = normalizeMobile(r?.mobile);
     const o: PlayerOut = { full_name, mobile: mobile ?? text(r?.mobile, 30), id: null, player_id: null, kind: 'bad_mobile' };
     out.push(o);
-    if (!full_name || !mobile || seen.has(mobile)) continue;
+    if (!nameOk(full_name)) { o.kind = 'failed'; o.error = 'full_name required'; continue; }
+    if (!mobile || seen.has(mobile)) continue;
     seen.add(mobile);
     todo.push({ out: o, club: text(r.club), gender: genderOf(r.gender), year: yearOf(r.birth_year), directory: text(r.directory_id, 40) || null,
       // Simulation: one of the demo portraits shipped with the app (public/demo/players).

@@ -1,0 +1,8 @@
+{
+  // Cloudflare Workers Builds deploys the site from this file.
+  // It builds with Vite and serves the static files in dist/.
+  "name": "pingo",
+  "compatibility_date": "2025-09-01",
+  "build": { "command": "npm run build" },
+  "assets": { "directory": "./dist" }
+}

@@ -121,20 +121,22 @@ export function linkButton(cls = 'btn ghost'): string {
 
 /** A tiny phone screen with one part lit up: the drawings in each step. */
 const phone = (inner: string, cls = '') => `<div class="mk ${cls}" aria-hidden="true"><div class="mk-screen">${inner}</div></div>`;
+/** The address bar shows this site's real host, so the drawings stay right after a domain change. */
+const HOST = typeof location !== 'undefined' && location.hostname ? location.hostname : 'omarhamad1974.github.io';
 const pageLines = '<div class="mk-page"><i></i><i></i><i class="s"></i><i></i><i class="s"></i></div>';
 const appIcon = (label = true) => `<span class="mk-app"><img src="${base()}brand/icon-192.png" alt="">${label ? '<small>بينجو</small>' : ''}</span>`;
 
-const IOS_BAR = phone(`<div class="mk-url">${icon('search', 10)}<span class="mk-u">omarhamad1974.github.io</span></div>${pageLines}
+const IOS_BAR = phone(`<div class="mk-url">${icon('search', 10)}<span class="mk-u">${HOST}</span></div>${pageLines}
   <div class="mk-bar">${icon('back', 14)}${icon('chevron', 14)}<span class="mk-hit">${icon('share', 16)}</span>${icon('book', 14)}${icon('copy', 14)}</div>`);
 const IOS_SHEET = phone(`${pageLines}<div class="mk-sheet"><div class="mk-row">${icon('copy', 12)} نسخ</div>
   <div class="mk-row">${icon('star', 12)} إضافة إلى المفضلة</div>
   <div class="mk-row mk-hit">${icon('plusSquare', 12)} إضافة إلى الشاشة الرئيسية</div></div>`);
 const IOS_ADD = phone(`<div class="mk-dialog"><div class="mk-dhead"><span>إلغاء</span><b>الشاشة الرئيسية</b><span class="mk-hit mk-word">إضافة</span></div>
-  <div class="mk-dbody">${appIcon(false)}<div><b>بينجو</b><small>github.io</small></div></div>
+  <div class="mk-dbody">${appIcon(false)}<div><b>بينجو</b><small>${HOST}</small></div></div>
   <div class="mk-toggle"><span>فتح كتطبيق ويب</span><i class="on"></i></div></div>`);
 const HOME = phone(`<div class="mk-home">${'<span class="mk-blank"></span>'.repeat(6)}<span class="mk-hit mk-round">${appIcon()}</span>${'<span class="mk-blank"></span>'.repeat(5)}</div>`, 'mk-wall');
 
-const AND_MENU = phone(`<div class="mk-url">${icon('search', 10)}<span class="mk-u">omarhamad1974.github.io</span> <span class="mk-hit mk-round">${icon('dotsV', 14)}</span></div>${pageLines}`);
+const AND_MENU = phone(`<div class="mk-url">${icon('search', 10)}<span class="mk-u">${HOST}</span> <span class="mk-hit mk-round">${icon('dotsV', 14)}</span></div>${pageLines}`);
 const AND_LIST = phone(`<div class="mk-menu"><div class="mk-row">${icon('plus', 12)} علامة تبويب جديدة</div>
   <div class="mk-row">${icon('star', 12)} الإشارات المرجعية</div>
   <div class="mk-row mk-hit">${icon('download', 12)} تثبيت التطبيق</div>
@@ -142,7 +144,7 @@ const AND_LIST = phone(`<div class="mk-menu"><div class="mk-row">${icon('plus', 
 const AND_OK = phone(`${pageLines}<div class="mk-sheet"><div class="mk-dbody">${appIcon(false)}<div><b>تثبيت التطبيق</b><small>بينجو</small></div></div>
   <div class="mk-btns"><span>إلغاء</span><span class="mk-hit mk-word">تثبيت</span></div></div>`);
 
-const PC_BAR = phone(`<div class="mk-url">${icon('search', 10)}<span class="mk-u">omarhamad1974.github.io</span> <span class="mk-hit mk-round">${icon('download', 13)}</span></div>${pageLines}`, 'mk-wide');
+const PC_BAR = phone(`<div class="mk-url">${icon('search', 10)}<span class="mk-u">${HOST}</span> <span class="mk-hit mk-round">${icon('download', 13)}</span></div>${pageLines}`, 'mk-wide');
 const PC_OK = phone(`${pageLines}<div class="mk-pop"><div class="mk-dbody">${appIcon(false)}<div><b>تثبيت التطبيق؟</b><small>بينجو</small></div></div>
   <div class="mk-btns"><span class="mk-hit mk-word">تثبيت</span><span>إلغاء</span></div></div>`, 'mk-wide');
 const PC_WIN = phone(`<div class="mk-win"><span>${appIcon(false)} بينجو</span></div>${pageLines}`, 'mk-wide');

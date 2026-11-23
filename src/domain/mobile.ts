@@ -57,6 +57,16 @@ export function loginEmail(identifier: string): string | null {
 
 /* ------------------------------------------------------------ batch rows */
 
+/**
+ * A real name: at least 2 characters and at least one letter (Arabic or English), so a blank
+ * field or a mobile typed in the name box is refused. Same rule as nameOk in the admin-users
+ * function and public.is_real_name in SQL (migration 0023): keep the three equal.
+ */
+export function isRealName(raw: string | null | undefined): boolean {
+  const s = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  return s.length >= 2 && /\p{L}/u.test(s);
+}
+
 export interface PlayerRow {
   full_name: string;
   mobile: string;
@@ -136,7 +146,7 @@ export function rowsFromTable(table: string[][]): ParsedRows {
     const text = r.filter(Boolean).join(' · ');
     const name = cols.name !== undefined ? (r[cols.name] ?? '').replace(/^\s*(\d+\s*[.)\-]|[-•*])\s*/, '').trim() : '';
     const rawMobile = cols.mobile !== undefined ? r[cols.mobile] ?? '' : '';
-    if (!name) { out.problems.push({ line, text, reason: 'noName' }); return; }
+    if (!isRealName(name)) { out.problems.push({ line, text, reason: 'noName' }); return; }
     if (!rawMobile) { out.problems.push({ line, text, reason: 'noMobile' }); return; }
     const mobile = normalizeMobile(rawMobile);
     if (!mobile) { out.problems.push({ line, text, reason: 'badMobile' }); return; }

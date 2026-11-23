@@ -3,7 +3,7 @@
 insert into auth.users values
  ('00000000-0000-0000-0000-00000000000a','omar@x.com','{"full_name":"عمر حمد","phone":"0100"}'),
  ('00000000-0000-0000-0000-00000000000b','p1@x.com','{"full_name":"Lina","birth_year":"2005"}'),
- ('00000000-0000-0000-0000-00000000000c','p2@x.com','{}'),('00000000-0000-0000-0000-00000000000d','p3@x.com','{}');
+ ('00000000-0000-0000-0000-00000000000c','p2@x.com','{"full_name":"Player Two"}'),('00000000-0000-0000-0000-00000000000d','p3@x.com','{"full_name":"Player Three"}');
 select id, full_name, role, birth_year from profiles order by id;
 -- bootstrap admin from SQL editor (no jwt)
 update profiles set role='admin' where id=(select id from auth.users where email='omar@x.com');

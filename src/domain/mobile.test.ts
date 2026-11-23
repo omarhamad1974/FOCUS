@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoPhoto, loginEmail, mobileOfEmail, normalizeMobile, parseCsv, parsePasted, rowsFromTable } from './mobile';
+import { demoPhoto, isRealName, loginEmail, mobileOfEmail, normalizeMobile, parseCsv, parsePasted, rowsFromTable } from './mobile';
 import { sheetRows, unzip, readXlsx } from './xlsx';
 import { deflateRawSync } from 'node:zlib';
 
@@ -103,5 +103,24 @@ describe('xlsx', () => {
     expect((await unzip(buf, () => true)).size).toBe(4);
     const table = await readXlsx(buf);
     expect(rowsFromTable(table).rows).toEqual([{ full_name: 'أحمد علي', mobile: '01001234567' }]);
+  });
+});
+
+describe('isRealName', () => {
+  it('needs 2+ characters with a letter', () => {
+    expect(isRealName('أحمد')).toBe(true);
+    expect(isRealName('Ahmed Ali')).toBe(true);
+    expect(isRealName('محمد 2')).toBe(true);
+    expect(isRealName('')).toBe(false);
+    expect(isRealName('   ')).toBe(false);
+    expect(isRealName('ع')).toBe(false);
+    expect(isRealName('01001234567')).toBe(false);
+    expect(isRealName('٠١٠٠١٢٣٤٥٦٧')).toBe(false);
+    expect(isRealName(null)).toBe(false);
+  });
+  it('a file row whose name is a mobile is reported, not imported', () => {
+    const r = rowsFromTable([['الاسم', 'الموبايل'], ['01001112222', '01001112222'], ['سارة', '01003334444']]);
+    expect(r.rows.map((x) => x.full_name)).toEqual(['سارة']);
+    expect(r.problems[0].reason).toBe('noName');
   });
 });

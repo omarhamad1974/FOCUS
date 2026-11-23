@@ -13,7 +13,7 @@ import type { BestOf, Bracket, Game, GamesResult, Group, Match, StageFormats, To
 import { avatar, avatarOf, confetti, esc, groupColor, toast, zone } from './ui/util';
 import { championCelebration } from './ui/champion';
 import { online, SUPPORT_WHATSAPP } from './config';
-import { DEFAULT_PASSWORD, loginEmail, normalizeMobile } from './domain/mobile';
+import { DEFAULT_PASSWORD, isRealName, loginEmail, normalizeMobile } from './domain/mobile';
 import * as remote from './data/remote';
 import { addExtraPlayer, addPlayerToSetup, addPlayerToWaiting, boardSummary, closeRegistration, groupsVisible, publishGroups, extraCandidates, groupsOf, isExtra, qualifyingRows, recordsPoints, removeExtraPlayer, reshuffleGroups, exactDirectoryMatch, groupOf, numberTables, registrationOf, removePlayerFromSetup, searchDirectory, setGroupTable, TABLE_MAX } from './domain/tournament';
 import { assisting, canOrganize, isAdmin, isAssistantFor, isHall, isSeller, isTrainer, preview, previewProfile, PREVIEWS, rendering, session, setRender, type Preview } from './app/ctx';
@@ -975,7 +975,7 @@ async function quickAdd(): Promise<void> {
   const name = val('qaName').trim();
   const raw = val('qaMobile');
   const mobile = normalizeMobile(raw);
-  if (!name) { toast(t('qa.needName')); document.getElementById('qaName')?.focus(); return; }
+  if (!isRealName(name)) { toast(t(name ? 'auth.err.name' : 'qa.needName')); document.getElementById('qaName')?.focus(); return; }
   if (!mobile) { toast(t(raw ? 'auth.err.badMobile' : 'dir.needMobile')); document.getElementById('qaMobile')?.focus(); return; }
   let dirId: string | undefined, account: string | undefined;
   if (online()) {
@@ -1745,6 +1745,7 @@ async function submitAuth(kind: 'login' | 'signup'): Promise<void> {
   const login = kind === 'login' ? val('aLogin') : val('aMobile'), password = val('aPass');
   if (!login || !password || (kind === 'signup' && !val('aName'))) { authMsg = t('auth.err.required'); route(); return; }
   if (!loginEmail(login) || (kind === 'signup' && !normalizeMobile(login))) { authMsg = t('auth.err.badMobile'); route(); return; }
+  if (kind === 'signup' && !isRealName(val('aName'))) { authMsg = t('auth.err.name'); route(); return; }
   if (kind === 'signup' && password.length < 6) { authMsg = t('auth.err.weakPassword'); route(); return; }
   if (kind === 'signup' && !genderVal('aGender')) { authMsg = t('auth.err.gender'); route(); return; }
   busy = true; authMsg = ''; forgotWa = ''; route();
@@ -1949,6 +1950,7 @@ async function saveUserEdit(): Promise<void> {
   const raw = val('ueMobile');
   const mobile = raw ? normalizeMobile(raw) : null;
   if (raw && !mobile) { toast(t('auth.err.badMobile')); return; }
+  if (val('ueName') && !isRealName(val('ueName'))) { toast(t('auth.err.name')); return; }
   try {
     await remote.updateProfile(p.id, {
       full_name: val('ueName') || p.full_name, club: val('ueClub') || null,
@@ -1969,7 +1971,7 @@ function createAccountCard(): string {
     `<label class="field"><span>${t(label)}</span><input class="input" id="${id}" type="${type}" ${extra}></label>`;
   return `<div class="card"><h2>➕ ${t('users.create')}</h2>${hint('users.createHint')}
     <form data-form="create-account" novalidate>
-      ${f('cName', 'auth.fullName', 'text', 'dir="auto"')}
+      ${f('cName', 'auth.fullName', 'text', 'dir="auto" required')}
       <div class="row"><div style="flex:1">${f('cMobile', 'auth.mobile', 'tel', 'dir="ltr" inputmode="tel" placeholder="01001234567"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
       ${f('cPass', 'users.passwordOptional', 'text', `dir="ltr" autocomplete="off" placeholder="${DEFAULT_PASSWORD}"`)}
       ${isAdmin() ? `<span class="lbl">${t('roles.give')}</span><div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="cRole-${r}"> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>` : ''}
@@ -2105,7 +2107,7 @@ function playersPage(): string {
   </div>
   <div class="card"><h2>➕ ${t('dir.add')}</h2>${hint('dir.addHint')}
     <form data-form="add-player" novalidate>
-      <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="pName" dir="auto"></label>
+      <label class="field"><span>${t('auth.fullName')}</span><input class="input" id="pName" dir="auto" required></label>
       <div class="row">
         <label class="field" style="flex:1"><span>${t('auth.mobile')}</span><input class="input" id="pPhone" type="tel" inputmode="tel" dir="ltr" placeholder="01001234567"></label>
         <label class="field" style="flex:1"><span>${t('auth.club')}</span><input class="input" id="pClub" dir="auto"></label>
@@ -2303,6 +2305,7 @@ async function onlineAction(act: string, el: HTMLElement, tm?: Tournament): Prom
         if (act === 'dir-new') {
           // A new player needs a mobile: it becomes their username (password "pingo123").
           const mobile = normalizeMobile(val('dirNewMobile'));
+          if (!isRealName(el.dataset.name)) { toast(t('auth.err.name')); return true; }
           if (!mobile) { toast(t(val('dirNewMobile') ? 'auth.err.badMobile' : 'dir.needMobile')); document.getElementById('dirNewMobile')?.focus(); return true; }
           const r = (await remote.addPlayers([{ full_name: el.dataset.name!, mobile }])).rows[0];
           if (!r?.player_id) throw new Error(r?.error ?? 'unknown');
@@ -2958,6 +2961,7 @@ document.addEventListener('submit', async (e) => {
     const name = val('pName');
     const mobile = normalizeMobile(val('pPhone'));
     if (!name || !val('pPhone')) { toast(t('auth.err.required')); return; }
+    if (!isRealName(name)) { toast(t('auth.err.name')); document.getElementById('pName')?.focus(); return; }
     if (!mobile) { toast(t('auth.err.badMobile')); return; }
     const year = Number(val('pYear').replace(/[^\d]/g, ''));
     try {
@@ -2978,7 +2982,8 @@ document.addEventListener('submit', async (e) => {
     busy = true; route();
     try {
       const mobile = normalizeMobile(form.mobile);
-      if (!form.name || !mobile) throw new Error(form.name ? 'bad mobile' : 'required');
+      if (!isRealName(form.name)) throw new Error('name required');
+      if (!mobile) throw new Error('bad mobile');
       await remote.createAccount({ full_name: form.name, mobile, password: form.pass, club: form.club, birth_year: '', roles });
       toast(`✅ ${t('users.created')} · ${mobile} / ${form.pass || DEFAULT_PASSWORD}`);
       people = null;
@@ -2994,6 +2999,7 @@ document.addEventListener('submit', async (e) => {
     return;
   }
   if (kind === 'me' && session.profile) {
+    if (val('mName') && !isRealName(val('mName'))) { toast(t('auth.err.name')); document.getElementById('mName')?.focus(); return; }
     const year = Number(val('mYear').replace(/[^\d]/g, ''));
     try {
       await remote.updateProfile(session.profile.id, {

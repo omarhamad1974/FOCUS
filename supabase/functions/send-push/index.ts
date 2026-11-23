@@ -22,7 +22,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
 // Push services ask for a contact; the public site address is enough.
-const CONTACT = 'https://omarhamad1974.github.io/FOCUS/';
+const CONTACT = 'https://omarhamad1974.github.io/Pingo/';
 
 interface Config {
   secret: string;

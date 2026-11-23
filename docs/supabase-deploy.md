@@ -33,7 +33,7 @@ uses its API key, not this password.
 
 ### 3. Add the secrets to GitHub
 
-1. Open <https://github.com/omarhamad1974/FOCUS/settings/secrets/actions>
+1. Open <https://github.com/omarhamad1974/Pingo/settings/secrets/actions>
    (repository **Settings → Secrets and variables → Actions**).
 2. Click **New repository secret** and add each of these, one at a time:
 
@@ -48,7 +48,7 @@ uses its API key, not this password.
 
 ### 4. Run it once
 
-1. Open <https://github.com/omarhamad1974/FOCUS/actions/workflows/supabase.yml>.
+1. Open <https://github.com/omarhamad1974/Pingo/actions/workflows/supabase.yml>.
 2. Click **Run workflow**, keep branch `main`, click the green **Run workflow** button.
 3. After 1 to 2 minutes the run shows a green tick. The step **Migration history now** lists
    `0001` to `0014` as applied on the live project.

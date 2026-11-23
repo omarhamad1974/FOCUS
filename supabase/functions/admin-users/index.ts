@@ -70,6 +70,8 @@ Deno.serve(async (req) => {
   if (!me || !(isAdmin || me.role === 'organizer' || me.is_organizer)) return json({ error: 'only organizers' }, 403);
 
   if (body.action === 'unconfirmed') {
+    // Sign-ups not yet confirmed show emails: admin only (organizer privacy, migration 0022).
+    if (!isAdmin) return json({ error: 'only an admin' }, 403);
     const { data, error } = await service.auth.admin.listUsers({ page: 1, perPage: 200 });
     if (error) return json({ error: error.message }, 500);
     const users = data.users
@@ -79,6 +81,7 @@ Deno.serve(async (req) => {
   }
 
   if (body.action === 'confirm') {
+    if (!isAdmin) return json({ error: 'only an admin' }, 403);
     const id = String(body.user_id ?? '');
     if (!id) return json({ error: 'user_id required' }, 400);
     const { error } = await service.auth.admin.updateUserById(id, { email_confirm: true });

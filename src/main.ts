@@ -1963,7 +1963,24 @@ async function saveUserEdit(): Promise<void> {
   route();
 }
 
+/** One player account made by an organizer or the admin (only the admin gives roles). */
+function createAccountCard(): string {
+  const f = (id: string, label: MessageKey, type = 'text', extra = '') =>
+    `<label class="field"><span>${t(label)}</span><input class="input" id="${id}" type="${type}" ${extra}></label>`;
+  return `<div class="card"><h2>➕ ${t('users.create')}</h2>${hint('users.createHint')}
+    <form data-form="create-account" novalidate>
+      ${f('cName', 'auth.fullName', 'text', 'dir="auto"')}
+      <div class="row"><div style="flex:1">${f('cMobile', 'auth.mobile', 'tel', 'dir="ltr" inputmode="tel" placeholder="01001234567"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
+      ${f('cPass', 'users.passwordOptional', 'text', `dir="ltr" autocomplete="off" placeholder="${DEFAULT_PASSWORD}"`)}
+      ${isAdmin() ? `<span class="lbl">${t('roles.give')}</span><div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="cRole-${r}"> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>` : ''}
+      <button class="btn green" type="submit" ${busy ? 'disabled' : ''}>➕ ${t('users.create')}</button>
+    </form>
+  </div>`;
+}
+
 function usersPage(): string {
+  // Organizers only create player accounts here; the list of all accounts is for the admin.
+  if (!isAdmin()) return createAccountCard();
   if (!people) { loadUsers(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
   if (isAdmin() && roleReqs === null) {
     roleReqs = [];
@@ -1989,18 +2006,8 @@ function usersPage(): string {
         <span><span dir="auto">${esc(u.full_name)}</span><br><span class="muted small" dir="ltr">${esc(u.email)}</span></span>
         <button class="btn green small" style="margin-inline-start:auto" data-act="confirm-user" data-id="${u.id}">✅ ${t('users.confirm')}</button></div>`).join('')
     : `<p class="muted">${t('users.noPending')}</p>`;
-  const f = (id: string, label: MessageKey, type = 'text', extra = '') =>
-    `<label class="field"><span>${t(label)}</span><input class="input" id="${id}" type="${type}" ${extra}></label>`;
   return `${requests}<div class="card"><h2>📨 ${t('users.pending')}</h2>${hint('users.pendingHint')}${pending}</div>
-  <div class="card"><h2>➕ ${t('users.create')}</h2>${hint('users.createHint')}
-    <form data-form="create-account" novalidate>
-      ${f('cName', 'auth.fullName', 'text', 'dir="auto"')}
-      <div class="row"><div style="flex:1">${f('cMobile', 'auth.mobile', 'tel', 'dir="ltr" inputmode="tel" placeholder="01001234567"')}</div><div style="flex:1">${f('cClub', 'auth.club', 'text', 'dir="auto"')}</div></div>
-      ${f('cPass', 'users.passwordOptional', 'text', `dir="ltr" autocomplete="off" placeholder="${DEFAULT_PASSWORD}"`)}
-      ${isAdmin() ? `<span class="lbl">${t('roles.give')}</span><div class="toggles">${EXTRA.map((r) => `<label class="tog check-tog"><input type="checkbox" id="cRole-${r}"> ${icon(ROLE_ICON[r], 16)} ${t(`roles.${r}` as MessageKey)}</label>`).join('')}</div>` : ''}
-      <button class="btn green" type="submit" ${busy ? 'disabled' : ''}>➕ ${t('users.create')}</button>
-    </form>
-  </div>
+  ${createAccountCard()}
   <div class="card"><h2>🛡️ ${t('users.all')}</h2>${hint('admin.hint')}
     ${people.map((p) => `<div class="chip ro user-row">${avatarOf(p)}<span><span dir="auto">${esc(p.full_name)}</span>
       ${p.phone ? `<br><span class="muted small" dir="ltr">📱 ${esc(p.phone)}</span>` : ''}
@@ -2059,7 +2066,7 @@ let mobileFor: string | null = null;
 let printable: claim.PrintItem[] = [];
 function playersPage(): string {
   if (!dir) { loadDir(); return `<div class="card center muted">⏳ ${t('reg.loading')}</div>`; }
-  if (linking && !people) { remote.listProfiles().then((p) => { people = p; route(); }).catch((e) => toast(authErr(e))); }
+  if (linking && !people) { (isAdmin() ? remote.listProfiles() : remote.listAccountNames()).then((p) => { people = p; route(); }).catch((e) => toast(authErr(e))); }
   const linkedProfiles = new Set(dir.filter((d) => d.profile_id).map((d) => d.profile_id));
   const shown = dirFilter ? searchDirectory(dir, dirFilter, 500) : dir;
   // Claim codes and temporary accounts are handled by the admin only.
@@ -2091,7 +2098,7 @@ function playersPage(): string {
   const coded = dir.filter((d) => codeOf(d));
   printable = coded.map((d) => ({ full_name: d.full_name, claim_code: codeOf(d)![0], club: d.club }));
   return `${adm ? claim.batchCard() : ''}
-  <div class="card"><h2>👥 ${t('dir.title')}</h2>${hint('dir.hint')}
+  <div class="card"><h2>👥 ${t('dir.title')}</h2>${hint('dir.hint')}${adm ? '' : hint('dir.privacy')}
     ${coded.length ? `<button type="button" class="btn soft small" data-act="dir-print" style="margin-block-end:8px">🖨️ ${t('batch.printAll')} (${n(coded.length)})</button>` : ''}
     <input class="input" id="dirFilter" data-act="dir-filter" placeholder="${esc(t('dir.search'))}" value="${esc(dirFilter)}" dir="auto">
     <div style="margin-block-start:8px">${shown.length ? shown.map(row).join('') : `<p class="muted">${t('dir.empty')}</p>`}</div>

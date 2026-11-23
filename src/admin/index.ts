@@ -16,6 +16,7 @@ import * as subs from './subs';
 import * as posters from './posters';
 import * as lists from '../pages/playerLists';
 import * as hall from './hall';
+import * as assist from './assist';
 import * as paySettings from './paySettings';
 import * as payUi from '../ui/pay';
 import * as wa from './whatsapp';
@@ -25,7 +26,7 @@ export { setHost } from './host';
 
 const roleOf = (parts: string[]): DeskRole | null => {
   const r = parts[1] as DeskRole;
-  return r === 'org' || r === 'trainer' || r === 'seller' || r === 'hall' || r === 'admin' ? r : null;
+  return r === 'org' || r === 'trainer' || r === 'seller' || r === 'hall' || r === 'assist' || r === 'admin' ? r : null;
 };
 const current = () => roleOf(location.hash.replace(/^#\/?/, '').split('/'));
 
@@ -39,10 +40,10 @@ export function page(parts: string[]): string | null {
     if (held.length) { location.hash = `#/desk/${held.includes('admin') && !role ? 'admin' : held[0]}`; return null; }
     return deskShell('org', empty('shield', t('desk.noRole'), `<a class="btn gold small" href="#/me">${t('desk.askRole')}</a>`));
   }
-  let body = role === 'org' ? (parts[2] === 'players' ? lists.orgPage() : organizer.page(parts)) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page() : role === 'hall' ? hall.page()
+  let body = role === 'org' ? (parts[2] === 'players' ? lists.orgPage() : organizer.page(parts)) : role === 'trainer' ? trainer.page() : role === 'seller' ? seller.page() : role === 'hall' ? hall.page() : role === 'assist' ? assist.page()
     : parts[2] === 'subs' ? subs.adminPage() : parts[2] === 'posters' ? posters.page(parts[3]) : parts[2] === 'blacklist' ? lists.adminPage() : adminDesk.page();
   // Subscription status, payment methods and the optional biography for every provider, on each tool's front page.
-  if (role !== 'admin' && !parts[2]) body = body.replace('</section>', () => `</section>${subs.card(role)}${paySettings.card(role)}${bio.card()}`);
+  if (role !== 'admin' && role !== 'assist' && !parts[2]) body = body.replace('</section>', () => `</section>${subs.card(role)}${paySettings.card(role)}${bio.card()}`);
   return deskShell(role, body, { org: organizer.pendingCount() });
 }
 

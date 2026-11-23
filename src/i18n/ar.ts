@@ -7,6 +7,7 @@ import { arShops } from './ar-shops';
 import { arLists } from './ar-lists';
 import { arHall } from './ar-hall';
 import { arCats } from './ar-cats';
+import { arFocus } from './ar-focus';
 
 export const ar = {
   ...arDesk,
@@ -14,6 +15,7 @@ export const ar = {
   ...arLists,
   ...arHall,
   ...arCats,
+  ...arFocus,
   'app.name': 'بينجو',
   'app.tagline': 'بطولات تنس الطاولة بسهولة',
 

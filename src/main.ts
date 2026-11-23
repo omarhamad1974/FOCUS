@@ -28,6 +28,8 @@ import * as training from './pages/training';
 import * as faq from './pages/faq';
 import * as claim from './pages/claim';
 import * as desk from './admin';
+import { deskShell } from './admin/shell';
+import * as focus from './app/focus';
 import * as lists from './pages/playerLists';
 import * as deskApi from './admin/api';
 import * as invites from './pages/invites';
@@ -240,6 +242,8 @@ function isMine(tm: Tournament): boolean {
  */
 function workspaceBar(): string {
   if (!online() || !session.profile) return '';
+  // Special roles (not the admin) get the focus mode switch instead: see app/focus.ts.
+  if (focus.roleModes().length) return focus.bar();
   const here = location.hash;
   const links: [string, string, MessageKey, MessageKey, boolean][] = [];
   if (canOrganize()) links.push(['#/desk/org', 'trophy', 'ws.myTournaments', 'ws.myTournamentsTip', here.startsWith('#/tournaments/mine')]);
@@ -278,6 +282,15 @@ function navItems(): [Section, string, string, MessageKey][] {
 function shell(body: string): void {
   const sec = section();
   document.body.classList.toggle('no-hints', !prefs.hints);
+  const pwBar = session.profile?.must_change_password && rendering.preview === 'off' && !location.hash.startsWith('#/password') ? `<div class="pw-bar" role="status">🔑 <span>${t('pw.banner')}</span>
+    <a class="btn small gold" href="#/password">${t('pw.bannerBtn')}</a></div>` : '';
+  const fm = focus.current();
+  if (fm !== 'player') {
+    // Role focus mode: the role's own frame and links, nothing else of the site.
+    document.body.dataset.section = 'desk';
+    app.innerHTML = deskShell(fm, body, {}, pwBar) + faq.supportButton();
+    return;
+  }
   document.body.dataset.section = sec;
   const nav = navItems();
   app.innerHTML = `
@@ -294,8 +307,7 @@ function shell(body: string): void {
     ${isAdmin() ? `<a class="helpbtn adminbtn" href="#/admin" title="${esc(t('adm.title'))}" aria-label="${esc(t('adm.title'))}">${icon('shield', 18)}</a>` : ''}
     <button class="helpbtn" data-act="hints" aria-pressed="${prefs.hints}" title="${t('common.help')}" aria-label="${t('common.help')}">؟</button>
   </header>
-  ${session.profile?.must_change_password && rendering.preview === 'off' && !location.hash.startsWith('#/password') ? `<div class="pw-bar" role="status">🔑 <span>${t('pw.banner')}</span>
-    <a class="btn small gold" href="#/password">${t('pw.bannerBtn')}</a></div>` : ''}
+  ${pwBar}
   ${rendering.preview !== 'off' ? `<div class="preview-bar" role="status">${icon('eye', 18)}
     <span>${t('sim.viewingAs')} <b>${t(`sim.role.${rendering.preview}` as MessageKey)}</b></span>
     <span class="pv-roles">${PREVIEWS.map((r) => `<button data-act="pv-set" data-v="${r}" ${r === rendering.preview ? 'aria-pressed="true"' : ''}>${t(`sim.role.${r}` as MessageKey)}</button>`).join('')}</span>
@@ -562,6 +574,7 @@ function tournamentsPage(filterArg?: string): string {
   const chip = (k: ListFilter, ic: string) => `<a class="fchip" href="#/tournaments${k === 'all' ? '' : '/' + k}" ${k === filter ? 'aria-current="true"' : ''}>${ic} ${t(`tl.f.${k}` as MessageKey)} <b>${n(counts.get(k) ?? 0)}</b></a>`;
 
   const org = isOrg();
+  const focused = focus.current() !== 'player';
   if (session.loading) return `<div class="card center muted">⏳ ${t('sync.loading')}</div>`;
   return `
   <section class="hero">
@@ -575,11 +588,11 @@ function tournamentsPage(filterArg?: string): string {
       ${online() && session.profile ? `<a class="btn soft" href="#/players">👥 ${t('dir.link')}</a><a class="btn soft" href="#/admin">🛡️ ${t('users.link')}</a>` : ''}
     </div>` : ''}
   </section>
-  <div class="stats" style="margin-block:14px">
+  ${focused ? '' : `<div class="stats" style="margin-block:14px">
     <div class="stat"><b>${n(ts.length)}</b><small>${t('home.statTournaments')}</small></div>
     <div class="stat"><b>${n(players)}</b><small>${t('home.statPlayers')}</small></div>
     <div class="stat"><b>${n(done)}</b><small>${t('home.statMatches')}</small></div>
-  </div>
+  </div>`}
   ${org ? samplePanel() : ''}
   <section class="zone z-gold">
   <div class="sec-head"><h2>${icon('trophy', 22)} ${t(filter === 'mine' ? 'ws.myTournaments' : 'tl.allTitle')}</h2></div>
@@ -590,7 +603,7 @@ function tournamentsPage(filterArg?: string): string {
       <select data-act="tl-place" aria-label="${esc(t('tl.location'))}" ${places.length ? '' : 'disabled'}><option value="">${t('tl.anyPlace')}</option>${places.map((p) => `<option ${p === listFilters.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
     ${filtered ? `<button class="btn ghost small" data-act="tl-clear">${icon('x', 14)} ${t('tl.clear')}</button>` : ''}
   </div>
-  <nav class="fchips" aria-label="${esc(t('tl.filter'))}">${canMine ? chip('mine', '🛠️') : ''}${chip('all', '🏓')}${chip('open', '📝')}${chip('running', '⚡')}${chip('upcoming', '⏳')}${chip('finished', '🏆')}</nav>
+  ${focused ? '' : `<nav class="fchips" aria-label="${esc(t('tl.filter'))}">${canMine ? chip('mine', '🛠️') : ''}${chip('all', '🏓')}${chip('open', '📝')}${chip('running', '⚡')}${chip('upcoming', '⏳')}${chip('finished', '🏆')}</nav>`}
   ${filter === 'mine' && !shown.length && !filtered ? empty('trophy', t('ws.noMine'), `<a class="btn gold small" href="#/new">➕ ${t('home.create')}</a>`)
     : !ts.length ? `<div class="card center muted">${t(org ? 'home.empty' : 'home.emptyPlayer')}</div>`
     : shown.length ? `<div class="grid tgrid">${shown.map(tournamentCard).join('')}</div>`
@@ -2376,6 +2389,24 @@ function route(): void {
 
 function draw(): void {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  if (parts[0] === 'mode') {
+    // #/mode/<mode>: the focus switch. Player mode opens the page a role mode had hidden, if any.
+    const want = parts[1] as focus.Mode;
+    const ok = want === 'player' || (focus.roleModes() as string[]).includes(want);
+    if (ok) { focus.set(want); toast(t('focus.switched', { mode: focus.modeName(want) })); }
+    const back = focus.takeHidden();
+    location.hash = ok && want === 'player' ? (back && !back.startsWith('#/mode') ? back : '#/') : focus.homeOf(focus.current());
+    return;
+  }
+  focus.takeHidden();
+  // Opening a role's desk means working in that role.
+  if (parts[0] === 'desk' && (focus.roleModes() as string[]).includes(parts[1])) focus.set(parts[1] as focus.Mode);
+  const fm = focus.current();
+  if (fm !== 'player') {
+    if (!parts.length || (parts[0] === 'desk' && !parts[1])) { location.hash = focus.homeOf(fm); return; }
+    const me = session.profile?.id;
+    if (!focus.allows(fm, parts, (id) => !!me && findT(id)?.organizerId === me, (id) => assisting.has(id))) { shell(focus.hiddenCard(fm)); return; }
+  }
   if (parts[0] === 'desk') {
     // Role tools: their own frame, apart from the public site.
     if (!online()) { shell(empty('shield', t('nav.onlineOnly'))); return; }

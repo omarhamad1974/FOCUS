@@ -242,13 +242,30 @@ export interface DirPlayer {
   gender?: Gender | null;
 }
 
+/** Directory columns everyone allowed may read; phone, birth year and claim code come from players_private (migration 0022). */
+const DIR_COLS = 'id, full_name, club, gender, profile_id, merged_into';
+
 export async function listPlayers(): Promise<DirPlayer[]> {
-  const rows = check(await db().from('players').select('*').order('full_name')) as DirPlayer[];
-  return rows.filter((r) => !r.merged_into);
+  const [rows, priv] = await Promise.all([
+    db().from('players').select(DIR_COLS).order('full_name').then(check) as Promise<DirPlayer[]>,
+    db().rpc('players_private').then(check) as Promise<{ id: string; phone: string | null; birth_year: number | null; claim_code: string | null }[]>,
+  ]);
+  const extra = new Map(priv.map((x) => [x.id, x]));
+  return rows.filter((r) => !r.merged_into).map((r) => {
+    const x = extra.get(r.id);
+    return { ...r, phone: x?.phone ?? null, birth_year: x?.birth_year ?? null, claim_code: x?.claim_code ?? null };
+  });
+}
+
+/** Names of everyone with an account, no private details (organizers linking a directory player). */
+export async function listAccountNames(): Promise<Profile[]> {
+  const rows = check(await db().from('public_profiles').select('id, full_name').order('full_name')) as { id: string; full_name: string }[];
+  return rows.map((r) => ({ ...r, phone: null }) as unknown as Profile);
 }
 
 export async function addPlayer(p: { full_name: string; phone?: string | null; club?: string | null; birth_year?: number | null }): Promise<DirPlayer> {
-  return check(await db().from('players').insert(p).select('*').single()) as DirPlayer;
+  const row = check(await db().from('players').insert(p).select(DIR_COLS).single()) as DirPlayer;
+  return { ...row, phone: p.phone ?? null, birth_year: p.birth_year ?? null, claim_code: null };
 }
 
 export async function updatePlayer(id: string, p: Partial<Pick<DirPlayer, 'full_name' | 'phone' | 'club' | 'birth_year'>>): Promise<void> {

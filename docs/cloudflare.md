@@ -20,9 +20,9 @@ Every push to `main` deploys the live site. Pushes to other branches upload a pr
 Cloudflare dashboard > Workers & Pages > **pingo** > Settings > Build should show:
 
 - Git repository: `omarhamad1974/Pingo`, production branch `main`
-- Build command: empty (the build runs from `wrangler.jsonc`)
+- Build command: `npm run build` (or empty: `wrangler.jsonc` also runs it)
 - Deploy command: `npx wrangler deploy`
-- Non-production branch deploy command: `npx wrangler versions upload`
+- Non-production branch deploy command: `npx wrangler preview` (needs the `previews` block in `wrangler.jsonc`)
 
 ## Supabase settings (one time)
 

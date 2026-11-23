@@ -289,7 +289,7 @@ export const ar = {
   'auth.email': 'البريد الإلكتروني',
   'auth.password': 'كلمة المرور',
   'auth.passwordHint': '6 أحرف على الأقل',
-  'auth.fullName': 'الاسم الكامل',
+  'auth.fullName': 'الاسم الكامل (مطلوب)',
   'auth.fullNameHint': 'يظهر في الجداول كما تكتبه تماماً',
   'auth.phone': 'رقم الموبايل',
   'auth.birthYear': 'سنة الميلاد (اختياري)',
@@ -314,6 +314,7 @@ export const ar = {
   'auth.err.blocked': 'لا يمكن إضافة هذا اللاعب لهذه البطولة: هو في القائمة السوداء',
   'auth.err.inviteGone': 'هذه الدعوة لم تعد متاحة',
   'auth.err.required': 'أكمل الاسم ورقم الموبايل وكلمة المرور',
+  'auth.err.name': 'الاسم مطلوب: اكتب الاسم الحقيقي بالحروف (وليس رقم الموبايل)، فهو الذي نتعامل به معك',
 
   'me.title': 'ملفي',
   'me.save': 'حفظ البيانات',
